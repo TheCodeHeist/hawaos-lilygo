@@ -1,0 +1,6 @@
+[
+  { "label": "PIO Build",     "command": "pio run" },
+  { "label": "PIO Upload",    "command": "pio run -t upload" },
+  { "label": "PIO Monitor",   "command": "pio device monitor", "use_new_terminal": true },
+  { "label": "PIO Compiledb", "command": "pio run -t compiledb" }
+]
