@@ -14,16 +14,34 @@ bool registerApp(App *app);
 // Switch to app by index (0 .. appCount()-1).
 void switchTo(size_t idx);
 
-// Exit current app (if any) and show the HawaOS Launcher screen.
+// Exit current app (if any) and show the Redmi-style horizontal carousel
+// Launcher.
 void showLauncher();
 
-// Called from the UI task (~20 Hz) to tick the active app.
+// Open or close the 2x2 Control Center overlay (triggered by Chord).
+void openControlCenter();
+void closeControlCenter();
+
+// Enter or exit Always-On Display (AOD) mode (DESIGN.md Section 10).
+void enterAod();
+void exitAod();
+bool isInAod();
+
+// Instant theme recolor across StatusBar and current screen/app (DESIGN.md
+// Section 3.3).
+void applyActiveTheme();
+
+// Query whether the currently active view opts into double-press for Button `b`
+// (DESIGN.md Section 8).
+bool activeAppWantsDouble(Button b);
+
+// Called from the UI task to tick active app / AOD / idle timer.
 void tick(uint32_t nowMs);
 
-// Route button events to the active app or global gestures / launcher.
+// Route button events (including Chord and AOD wake) from the UI task.
 void handleButton(Button b, Press p);
 
-// Route updated DataSnapshot to the active app.
+// Route updated DataSnapshot to the active app / Launcher / AOD.
 void handleData(const DataSnapshot &d);
 
 // Execute N rapid app switches and verify zero heap leak.

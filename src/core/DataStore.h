@@ -2,6 +2,19 @@
 
 #include <stdint.h>
 
+enum class MediaPlayState : uint8_t {
+  Stopped = 0,
+  Playing = 1,
+  Paused = 2,
+};
+
+struct NotificationItem {
+  char title[48] = {0};
+  char body[96] = {0};
+  uint32_t ts = 0;
+  bool unread = false;
+};
+
 struct DataSnapshot {
   // System stats from Rust companion daemon
   uint32_t timestamp = 0;
@@ -11,17 +24,31 @@ struct DataSnapshot {
   uint32_t netDownKbps = 0;
   uint32_t lastStatsMs = 0;
 
-  // Latest notification from companion daemon
-  char notifyTitle[48] = {0};
-  char notifyBody[128] = {0};
-  uint32_t notifyTs = 0;
-  uint32_t notifySeq = 0;
+  // Notifications ring/stack (newest at index 0)
+  static constexpr uint8_t MAX_NOTIFICATIONS = 6;
+  NotificationItem notifications[MAX_NOTIFICATIONS] = {};
+  uint8_t notifyCount = 0;
+  uint8_t unreadCount = 0;
+
+  // Media state (DESIGN.md Section 11.1)
+  MediaPlayState mediaState = MediaPlayState::Stopped;
+  char mediaTitle[64] = {0};
+  char mediaArtist[48] = {0};
+  char mediaAlbum[48] = {0};
+  uint32_t mediaPosMs = 0;
+  uint32_t mediaDurMs = 0;
+  uint32_t mediaRxMillis = 0;
+  char mediaArtHash[16] = {0};
+  uint32_t mediaBgTop = 0x071115;    // Pre-darkened companion tint top
+  uint32_t mediaBgBottom = 0x05090B; // Pre-darkened companion tint bottom
+  bool mediaInkLight = true;         // true = light ink, false = dark ink
 
   // Connectivity & time state
   bool wifiConnected = false;
   int8_t wifiRssi = 0;
   char wifiSsid[33] = {0};
   char wifiIp[16] = {0};
+  bool usbConnected = false;
   bool ntpSynced = false;
   bool bleConnected = false;
 };
@@ -33,5 +60,8 @@ DataSnapshot getSnapshot();
 void setSnapshot(const DataSnapshot &snapshot);
 void updateWifi(bool connected, int8_t rssi, const char *ssid, const char *ip);
 void updateNtp(bool synced);
+void pushNotification(const char *title, const char *body, uint32_t ts);
+void dismissNotification(uint8_t index);
+void markAllNotificationsRead();
 
 } // namespace DataStore

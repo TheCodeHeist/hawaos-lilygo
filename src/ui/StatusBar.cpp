@@ -1,11 +1,10 @@
 #include "ui/StatusBar.h"
 #include "config.h"
-#include "core/Settings.h"
 #include "ui/Theme.h"
+#include "ui/icons.h"
 
 #include <Arduino.h>
 #include <lvgl.h>
-#include <time.h>
 
 namespace StatusBar {
 
@@ -13,10 +12,9 @@ namespace {
 
 lv_obj_t *s_bar = nullptr;
 lv_obj_t *s_titleLbl = nullptr;
-lv_obj_t *s_clockLbl = nullptr;
-lv_obj_t *s_wifiLbl = nullptr;
-lv_obj_t *s_batLbl = nullptr;
-uint32_t s_lastTickMs = 0;
+lv_obj_t *s_connIcon = nullptr;
+lv_obj_t *s_bleIcon = nullptr;
+lv_obj_t *s_bellIcon = nullptr;
 
 } // namespace
 
@@ -30,99 +28,113 @@ void begin() {
   s_bar = lv_obj_create(topLayer);
   lv_obj_set_size(s_bar, Config::LCD_HOR_RES, Config::STATUS_BAR_HEIGHT);
   lv_obj_align(s_bar, LV_ALIGN_TOP_MID, 0, 0);
-  lv_obj_set_style_bg_color(s_bar, lv_color_hex(0x111827), LV_PART_MAIN);
-  lv_obj_set_style_bg_opa(s_bar, LV_OPA_COVER, LV_PART_MAIN);
-  lv_obj_set_style_border_color(s_bar, lv_color_hex(Theme::BORDER_SUBTLE),
-                                LV_PART_MAIN);
-  lv_obj_set_style_border_width(s_bar, 1, LV_PART_MAIN);
-  lv_obj_set_style_border_side(s_bar, LV_BORDER_SIDE_BOTTOM, LV_PART_MAIN);
+  lv_obj_set_style_border_width(s_bar, 0, LV_PART_MAIN);
   lv_obj_set_style_radius(s_bar, 0, LV_PART_MAIN);
-  lv_obj_set_style_pad_hor(s_bar, 8, LV_PART_MAIN);
-  lv_obj_set_style_pad_ver(s_bar, 2, LV_PART_MAIN);
+  lv_obj_set_style_pad_hor(s_bar, Config::OUTER_MARGIN_PX, LV_PART_MAIN);
+  lv_obj_set_style_pad_ver(s_bar, 0, LV_PART_MAIN);
   lv_obj_clear_flag(s_bar, LV_OBJ_FLAG_SCROLLABLE);
 
-  // Left: App / View title
+  // Left: screen title (caption 12, textDim)
   s_titleLbl = lv_label_create(s_bar);
-  lv_label_set_text(s_titleLbl, "HawaOS");
-  lv_obj_set_style_text_font(s_titleLbl, &lv_font_montserrat_12, LV_PART_MAIN);
-  lv_obj_set_style_text_color(s_titleLbl, lv_color_hex(Theme::ACCENT_CYAN),
-                              LV_PART_MAIN);
+  lv_label_set_text(s_titleLbl, "Home");
+  lv_obj_set_style_text_font(s_titleLbl, Theme::fontCaption(), LV_PART_MAIN);
   lv_obj_align(s_titleLbl, LV_ALIGN_LEFT_MID, 0, 0);
 
-  // Center: Mini clock
-  s_clockLbl = lv_label_create(s_bar);
-  lv_label_set_text(s_clockLbl, "--:--");
-  lv_obj_set_style_text_font(s_clockLbl, &lv_font_montserrat_12, LV_PART_MAIN);
-  lv_obj_set_style_text_color(s_clockLbl, lv_color_hex(Theme::TEXT_PRIMARY),
-                              LV_PART_MAIN);
-  lv_obj_align(s_clockLbl, LV_ALIGN_CENTER, 10, 0);
+  // Right icons: 20 px Lucide icons, 8 px gaps
+  s_connIcon = lv_label_create(s_bar);
+  lv_label_set_text(s_connIcon, ICON_WIFI_OFF);
+  lv_obj_set_style_text_font(s_connIcon, Theme::iconFont20(), LV_PART_MAIN);
+  lv_obj_align(s_connIcon, LV_ALIGN_RIGHT_MID, 0, 0);
 
-  // Right: Battery icon/voltage
-  s_batLbl = lv_label_create(s_bar);
-  lv_label_set_text(s_batLbl, LV_SYMBOL_BATTERY_FULL);
-  lv_obj_set_style_text_font(s_batLbl, &lv_font_montserrat_12, LV_PART_MAIN);
-  lv_obj_set_style_text_color(s_batLbl, lv_color_hex(Theme::ACCENT_GREEN),
-                              LV_PART_MAIN);
-  lv_obj_align(s_batLbl, LV_ALIGN_RIGHT_MID, 0, 0);
+  s_bleIcon = lv_label_create(s_bar);
+  lv_label_set_text(s_bleIcon, ICON_BLUETOOTH);
+  lv_obj_set_style_text_font(s_bleIcon, Theme::iconFont20(), LV_PART_MAIN);
+  lv_obj_align(s_bleIcon, LV_ALIGN_RIGHT_MID, -28, 0);
+  lv_obj_add_flag(s_bleIcon, LV_OBJ_FLAG_HIDDEN);
 
-  // Right (next to battery): WiFi icon + RSSI
-  s_wifiLbl = lv_label_create(s_bar);
-  lv_label_set_text(s_wifiLbl, LV_SYMBOL_WIFI " --");
-  lv_obj_set_style_text_font(s_wifiLbl, &lv_font_montserrat_12, LV_PART_MAIN);
-  lv_obj_set_style_text_color(s_wifiLbl, lv_color_hex(Theme::TEXT_DIM),
-                              LV_PART_MAIN);
-  lv_obj_align(s_wifiLbl, LV_ALIGN_RIGHT_MID, -26, 0);
+  s_bellIcon = lv_label_create(s_bar);
+  lv_label_set_text(s_bellIcon, ICON_BELL);
+  lv_obj_set_style_text_font(s_bellIcon, Theme::iconFont20(), LV_PART_MAIN);
+  lv_obj_align(s_bellIcon, LV_ALIGN_RIGHT_MID, -28, 0);
+  lv_obj_add_flag(s_bellIcon, LV_OBJ_FLAG_HIDDEN);
 
+  applyTheme();
   updateData(DataStore::getSnapshot());
+}
+
+void setVisible(bool visible) {
+  if (s_bar == nullptr)
+    return;
+  if (visible) {
+    lv_obj_clear_flag(s_bar, LV_OBJ_FLAG_HIDDEN);
+  } else {
+    lv_obj_add_flag(s_bar, LV_OBJ_FLAG_HIDDEN);
+  }
 }
 
 void setTitle(const char *title) {
   if (s_titleLbl != nullptr && title != nullptr) {
-    lv_label_set_text_fmt(s_titleLbl, "HawaOS // %s", title);
+    lv_label_set_text(s_titleLbl, title);
   }
+}
+
+void applyTheme() {
+  if (s_bar == nullptr)
+    return;
+  const ThemeTokens::Palette &p = Theme::active();
+
+  lv_obj_set_style_bg_color(s_bar, lv_color_hex(p.bg), LV_PART_MAIN);
+  lv_obj_set_style_bg_opa(s_bar, LV_OPA_COVER, LV_PART_MAIN);
+  lv_obj_set_style_text_color(s_titleLbl, lv_color_hex(p.textDim),
+                              LV_PART_MAIN);
+
+  updateData(DataStore::getSnapshot());
 }
 
 void updateData(const DataSnapshot &d) {
-  if (s_wifiLbl == nullptr) {
+  if (s_connIcon == nullptr)
     return;
+  const ThemeTokens::Palette &p = Theme::active();
+
+  // Connection icon: usb if USB companion active, wifi if WiFi connected, else
+  // wifi-off
+  if (d.usbConnected) {
+    lv_label_set_text(s_connIcon, ICON_USB);
+    lv_obj_set_style_text_color(s_connIcon, lv_color_hex(p.accent),
+                                LV_PART_MAIN);
+  } else if (d.wifiConnected) {
+    lv_label_set_text(s_connIcon, ICON_WIFI);
+    lv_obj_set_style_text_color(s_connIcon, lv_color_hex(p.text), LV_PART_MAIN);
+  } else {
+    lv_label_set_text(s_connIcon, ICON_WIFI_OFF);
+    lv_obj_set_style_text_color(s_connIcon, lv_color_hex(p.textDim),
+                                LV_PART_MAIN);
   }
 
-  if (d.wifiConnected) {
-    lv_label_set_text_fmt(s_wifiLbl, LV_SYMBOL_WIFI " %ddB",
-                          static_cast<int>(d.wifiRssi));
-    const uint32_t color = (d.wifiRssi >= -67)   ? Theme::ACCENT_GREEN
-                           : (d.wifiRssi >= -78) ? Theme::ACCENT_CYAN
-                                                 : Theme::ACCENT_AMBER;
-    lv_obj_set_style_text_color(s_wifiLbl, lv_color_hex(color), LV_PART_MAIN);
-  } else {
-    lv_label_set_text(s_wifiLbl, LV_SYMBOL_WIFI " Off");
-    lv_obj_set_style_text_color(s_wifiLbl, lv_color_hex(Theme::TEXT_DIM),
+  int16_t rightOffset = -28; // 20px icon + 8px gap
+
+  if (d.bleConnected) {
+    lv_obj_clear_flag(s_bleIcon, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_style_text_color(s_bleIcon, lv_color_hex(p.accent),
                                 LV_PART_MAIN);
+    lv_obj_align(s_bleIcon, LV_ALIGN_RIGHT_MID, rightOffset, 0);
+    rightOffset -= 28;
+  } else {
+    lv_obj_add_flag(s_bleIcon, LV_OBJ_FLAG_HIDDEN);
+  }
+
+  if (d.unreadCount > 0) {
+    lv_obj_clear_flag(s_bellIcon, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_style_text_color(s_bellIcon, lv_color_hex(p.accent),
+                                LV_PART_MAIN);
+    lv_obj_align(s_bellIcon, LV_ALIGN_RIGHT_MID, rightOffset, 0);
+  } else {
+    lv_obj_add_flag(s_bellIcon, LV_OBJ_FLAG_HIDDEN);
   }
 }
 
-void tick(uint32_t nowMs) {
-  if (s_bar == nullptr || (nowMs - s_lastTickMs < 500)) {
-    return;
-  }
-  s_lastTickMs = nowMs;
-
-  const time_t now = time(nullptr);
-  if (now > 1700000000) {
-    struct tm ti{};
-    localtime_r(&now, &ti);
-    if (Settings::getUse24Hour()) {
-      lv_label_set_text_fmt(s_clockLbl, "%02d:%02d", ti.tm_hour, ti.tm_min);
-    } else {
-      int hr12 = ti.tm_hour % 12;
-      if (hr12 == 0)
-        hr12 = 12;
-      lv_label_set_text_fmt(s_clockLbl, "%02d:%02d %s", hr12, ti.tm_min,
-                            (ti.tm_hour >= 12) ? "PM" : "AM");
-    }
-  } else {
-    lv_label_set_text(s_clockLbl, "NTP...");
-  }
+void tick(uint32_t /*nowMs*/) {
+  // StatusBar is event-driven via updateData() and setTitle() per DESIGN.md 9.1
 }
 
 } // namespace StatusBar

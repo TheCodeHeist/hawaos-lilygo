@@ -64,4 +64,67 @@ void updateNtp(bool synced) {
   }
 }
 
+void pushNotification(const char *title, const char *body, uint32_t ts) {
+  if (title == nullptr || body == nullptr) {
+    return;
+  }
+  if (s_mutex != nullptr &&
+      xSemaphoreTake(s_mutex, pdMS_TO_TICKS(20)) == pdTRUE) {
+    const uint8_t cap = DataSnapshot::MAX_NOTIFICATIONS;
+    const uint8_t shiftCount =
+        (s_data.notifyCount < cap) ? s_data.notifyCount : (cap - 1);
+    for (int i = static_cast<int>(shiftCount); i > 0; --i) {
+      s_data.notifications[i] = s_data.notifications[i - 1];
+    }
+    NotificationItem &item = s_data.notifications[0];
+    strncpy(item.title, title, sizeof(item.title) - 1);
+    item.title[sizeof(item.title) - 1] = '\0';
+    strncpy(item.body, body, sizeof(item.body) - 1);
+    item.body[sizeof(item.body) - 1] = '\0';
+    item.ts = ts;
+    item.unread = true;
+
+    if (s_data.notifyCount < cap) {
+      ++s_data.notifyCount;
+    }
+    uint8_t unread = 0;
+    for (uint8_t i = 0; i < s_data.notifyCount; ++i) {
+      if (s_data.notifications[i].unread)
+        ++unread;
+    }
+    s_data.unreadCount = unread;
+    xSemaphoreGive(s_mutex);
+  }
+}
+
+void dismissNotification(uint8_t index) {
+  if (s_mutex != nullptr &&
+      xSemaphoreTake(s_mutex, pdMS_TO_TICKS(20)) == pdTRUE) {
+    if (index < s_data.notifyCount) {
+      for (uint8_t i = index; i + 1 < s_data.notifyCount; ++i) {
+        s_data.notifications[i] = s_data.notifications[i + 1];
+      }
+      --s_data.notifyCount;
+      uint8_t unread = 0;
+      for (uint8_t i = 0; i < s_data.notifyCount; ++i) {
+        if (s_data.notifications[i].unread)
+          ++unread;
+      }
+      s_data.unreadCount = unread;
+    }
+    xSemaphoreGive(s_mutex);
+  }
+}
+
+void markAllNotificationsRead() {
+  if (s_mutex != nullptr &&
+      xSemaphoreTake(s_mutex, pdMS_TO_TICKS(20)) == pdTRUE) {
+    for (uint8_t i = 0; i < s_data.notifyCount; ++i) {
+      s_data.notifications[i].unread = false;
+    }
+    s_data.unreadCount = 0;
+    xSemaphoreGive(s_mutex);
+  }
+}
+
 } // namespace DataStore

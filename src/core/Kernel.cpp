@@ -11,6 +11,7 @@
 #include "services/WifiService.h"
 #include "ui/StatusBar.h"
 #include "ui/Theme.h"
+#include "ui/icons.h"
 
 #include <Arduino.h>
 #include <esp_heap_caps.h>
@@ -25,85 +26,121 @@ namespace {
 TaskHandle_t s_uiTaskHandle = nullptr;
 
 // =============================================================================
-// System Memory & Uptime App (retained alongside ClockApp)
+// On-device Memory & System Diagnostics App (Styled with DESIGN.md tokens)
 // =============================================================================
 class SysMonitorApp final : public App {
 public:
-  const char *name() const override { return "System Info"; }
+  const char *name() const override { return "Stats"; }
+  const char *icon() const override { return ICON_ACTIVITY; }
 
   void onEnter(lv_obj_t *root) override {
-    Theme::styleScreen(root);
+    const ThemeTokens::Palette &p = Theme::active();
 
-    // SRAM card
-    lv_obj_t *sramCard = Theme::createCard(root, 304, 52, 0, 28);
-    m_sramLbl = lv_label_create(sramCard);
-    lv_label_set_text(m_sramLbl, "SRAM: --");
-    lv_obj_set_style_text_font(m_sramLbl, &lv_font_montserrat_12, LV_PART_MAIN);
-    lv_obj_set_style_text_color(m_sramLbl, lv_color_hex(Theme::TEXT_PRIMARY),
+    // Left Column: Two stacked cards (SRAM & PSRAM) per DESIGN.md Section 9.4
+    // layout
+    lv_obj_t *sramCard = Theme::createCard(
+        root, 144, 62, 10, Config::CONTENT_Y_START + 8, Config::RADIUS_MD);
+    lv_obj_t *sramTitle = lv_label_create(sramCard);
+    lv_label_set_text(sramTitle, "SRAM");
+    lv_obj_set_style_text_font(sramTitle, Theme::fontCaption(), LV_PART_MAIN);
+    lv_obj_set_style_text_color(sramTitle, lv_color_hex(p.textDim),
                                 LV_PART_MAIN);
-    lv_obj_align(m_sramLbl, LV_ALIGN_TOP_LEFT, 0, 0);
+    lv_obj_align(sramTitle, LV_ALIGN_TOP_LEFT, 2, 0);
+
+    m_sramValLbl = lv_label_create(sramCard);
+    lv_label_set_text(m_sramValLbl, "--%");
+    lv_obj_set_style_text_font(m_sramValLbl, Theme::fontDisplay(),
+                               LV_PART_MAIN);
+    lv_obj_set_style_text_color(m_sramValLbl, lv_color_hex(p.text),
+                                LV_PART_MAIN);
+    lv_obj_align(m_sramValLbl, LV_ALIGN_TOP_RIGHT, -2, -2);
 
     m_sramBar = lv_bar_create(sramCard);
-    lv_obj_set_size(m_sramBar, 286, 8);
+    lv_obj_set_size(m_sramBar, 124, 4);
     lv_obj_align(m_sramBar, LV_ALIGN_BOTTOM_MID, 0, 0);
     lv_bar_set_range(m_sramBar, 0, 100);
-    lv_obj_set_style_bg_color(m_sramBar, lv_color_hex(Theme::BG_DARK),
+    lv_obj_set_style_radius(m_sramBar, LV_RADIUS_CIRCLE, LV_PART_MAIN);
+    lv_obj_set_style_radius(m_sramBar, LV_RADIUS_CIRCLE, LV_PART_INDICATOR);
+    lv_obj_set_style_bg_color(m_sramBar, lv_color_hex(p.surface2),
                               LV_PART_MAIN);
-    lv_obj_set_style_bg_color(m_sramBar, lv_color_hex(Theme::ACCENT_GREEN),
+    lv_obj_set_style_bg_color(m_sramBar, lv_color_hex(p.primary),
                               LV_PART_INDICATOR);
 
-    // PSRAM card
-    lv_obj_t *psramCard = Theme::createCard(root, 304, 52, 0, 86);
-    m_psramLbl = lv_label_create(psramCard);
-    lv_label_set_text(m_psramLbl, "PSRAM: --");
-    lv_obj_set_style_text_font(m_psramLbl, &lv_font_montserrat_12,
-                               LV_PART_MAIN);
-    lv_obj_set_style_text_color(m_psramLbl, lv_color_hex(Theme::TEXT_PRIMARY),
+    lv_obj_t *psramCard = Theme::createCard(
+        root, 144, 62, 10, Config::CONTENT_Y_START + 78, Config::RADIUS_MD);
+    lv_obj_t *psramTitle = lv_label_create(psramCard);
+    lv_label_set_text(psramTitle, "PSRAM");
+    lv_obj_set_style_text_font(psramTitle, Theme::fontCaption(), LV_PART_MAIN);
+    lv_obj_set_style_text_color(psramTitle, lv_color_hex(p.textDim),
                                 LV_PART_MAIN);
-    lv_obj_align(m_psramLbl, LV_ALIGN_TOP_LEFT, 0, 0);
+    lv_obj_align(psramTitle, LV_ALIGN_TOP_LEFT, 2, 0);
+
+    m_psramValLbl = lv_label_create(psramCard);
+    lv_label_set_text(m_psramValLbl, "--%");
+    lv_obj_set_style_text_font(m_psramValLbl, Theme::fontDisplay(),
+                               LV_PART_MAIN);
+    lv_obj_set_style_text_color(m_psramValLbl, lv_color_hex(p.text),
+                                LV_PART_MAIN);
+    lv_obj_align(m_psramValLbl, LV_ALIGN_TOP_RIGHT, -2, -2);
 
     m_psramBar = lv_bar_create(psramCard);
-    lv_obj_set_size(m_psramBar, 286, 8);
+    lv_obj_set_size(m_psramBar, 124, 4);
     lv_obj_align(m_psramBar, LV_ALIGN_BOTTOM_MID, 0, 0);
     lv_bar_set_range(m_psramBar, 0, 100);
-    lv_obj_set_style_bg_color(m_psramBar, lv_color_hex(Theme::BG_DARK),
+    lv_obj_set_style_radius(m_psramBar, LV_RADIUS_CIRCLE, LV_PART_MAIN);
+    lv_obj_set_style_radius(m_psramBar, LV_RADIUS_CIRCLE, LV_PART_INDICATOR);
+    lv_obj_set_style_bg_color(m_psramBar, lv_color_hex(p.surface2),
                               LV_PART_MAIN);
-    lv_obj_set_style_bg_color(m_psramBar, lv_color_hex(Theme::ACCENT_CYAN),
+    lv_obj_set_style_bg_color(m_psramBar, lv_color_hex(p.primary),
                               LV_PART_INDICATOR);
 
-    // Footer
-    m_footerLbl = lv_label_create(root);
-    lv_label_set_text(m_footerLbl, "NEXT: Cycle Apps  |  Hold NEXT: Launcher");
-    lv_obj_set_style_text_font(m_footerLbl, &lv_font_montserrat_10,
-                               LV_PART_MAIN);
-    lv_obj_set_style_text_color(m_footerLbl, lv_color_hex(Theme::TEXT_MUTED),
+    // Right Wide Card: Device Uptime & Network Summary
+    lv_obj_t *rightCard = Theme::createCard(
+        root, 148, 132, 162, Config::CONTENT_Y_START + 8, Config::RADIUS_MD);
+    lv_obj_t *rightTitle = lv_label_create(rightCard);
+    lv_label_set_text(rightTitle, "DEVICE");
+    lv_obj_set_style_text_font(rightTitle, Theme::fontCaption(), LV_PART_MAIN);
+    lv_obj_set_style_text_color(rightTitle, lv_color_hex(p.textDim),
                                 LV_PART_MAIN);
-    lv_obj_align(m_footerLbl, LV_ALIGN_BOTTOM_MID, 0, -4);
+    lv_obj_align(rightTitle, LV_ALIGN_TOP_LEFT, 2, 0);
+
+    m_uptimeLbl = lv_label_create(rightCard);
+    lv_label_set_text(m_uptimeLbl, "00:00:00");
+    lv_obj_set_style_text_font(m_uptimeLbl, Theme::fontTitle(), LV_PART_MAIN);
+    lv_obj_set_style_text_color(m_uptimeLbl, lv_color_hex(p.accent),
+                                LV_PART_MAIN);
+    lv_obj_align(m_uptimeLbl, LV_ALIGN_TOP_LEFT, 2, 24);
+
+    m_detailLbl = lv_label_create(rightCard);
+    lv_label_set_text(m_detailLbl, "SRAM -- KB\nPSRAM -- KB");
+    lv_obj_set_style_text_font(m_detailLbl, Theme::fontCaption(), LV_PART_MAIN);
+    lv_obj_set_style_text_color(m_detailLbl, lv_color_hex(p.textDim),
+                                LV_PART_MAIN);
+    lv_obj_align(m_detailLbl, LV_ALIGN_BOTTOM_LEFT, 2, -2);
 
     onTick(millis());
   }
+
   void onExit() override {
-    m_sramLbl = nullptr;
+    m_sramValLbl = nullptr;
     m_sramBar = nullptr;
-    m_psramLbl = nullptr;
+    m_psramValLbl = nullptr;
     m_psramBar = nullptr;
-    m_footerLbl = nullptr;
+    m_uptimeLbl = nullptr;
+    m_detailLbl = nullptr;
   }
 
   void onTick(uint32_t nowMs) override {
-    if (m_sramLbl == nullptr) {
+    if (m_sramValLbl == nullptr)
       return;
-    }
+
     const size_t sramFree = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
     const size_t sramTotal = heap_caps_get_total_size(MALLOC_CAP_INTERNAL);
     const int sramPct =
         (sramTotal > 0)
             ? static_cast<int>(((sramTotal - sramFree) * 100) / sramTotal)
             : 0;
-    lv_label_set_text_fmt(m_sramLbl,
-                          "Internal SRAM: %u / %u KB free (%d%% used)",
-                          static_cast<unsigned>(sramFree / 1024),
-                          static_cast<unsigned>(sramTotal / 1024), sramPct);
+    lv_label_set_text_fmt(m_sramValLbl, "%d%%", sramPct);
     lv_bar_set_value(m_sramBar, sramPct, LV_ANIM_OFF);
 
     const size_t psramFree = heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
@@ -112,30 +149,124 @@ public:
         (psramTotal > 0)
             ? static_cast<int>(((psramTotal - psramFree) * 100) / psramTotal)
             : 0;
-    lv_label_set_text_fmt(m_psramLbl, "OPI PSRAM: %u / %u KB free (%d%% used)",
-                          static_cast<unsigned>(psramFree / 1024),
-                          static_cast<unsigned>(psramTotal / 1024), psramPct);
+    lv_label_set_text_fmt(m_psramValLbl, "%d%%", psramPct);
     lv_bar_set_value(m_psramBar, psramPct, LV_ANIM_OFF);
 
     const uint32_t sec = nowMs / 1000;
+    lv_label_set_text_fmt(m_uptimeLbl, "%02lu:%02lu:%02lu",
+                          static_cast<unsigned long>(sec / 3600),
+                          static_cast<unsigned long>((sec % 3600) / 60),
+                          static_cast<unsigned long>(sec % 60));
+
     lv_label_set_text_fmt(
-        m_footerLbl,
-        "Uptime: %02lu:%02lu:%02lu  |  NEXT: Cycle  |  Hold NEXT: Home",
-        static_cast<unsigned long>(sec / 3600),
-        static_cast<unsigned long>((sec % 3600) / 60),
-        static_cast<unsigned long>(sec % 60));
+        m_detailLbl, "SRAM: %u KB free\nPSRAM: %u KB free\nChord: Controls",
+        static_cast<unsigned>(sramFree / 1024),
+        static_cast<unsigned>(psramFree / 1024));
   }
 
 private:
-  lv_obj_t *m_sramLbl = nullptr;
+  lv_obj_t *m_sramValLbl = nullptr;
   lv_obj_t *m_sramBar = nullptr;
-  lv_obj_t *m_psramLbl = nullptr;
+  lv_obj_t *m_psramValLbl = nullptr;
   lv_obj_t *m_psramBar = nullptr;
-  lv_obj_t *m_footerLbl = nullptr;
+  lv_obj_t *m_uptimeLbl = nullptr;
+  lv_obj_t *m_detailLbl = nullptr;
 };
 
-ClockApp s_clockApp;
-SysMonitorApp s_sysMonitorApp;
+// =============================================================================
+// On-device Minimal Settings App (DESIGN.md Section 9.8)
+// =============================================================================
+class SettingsPlaceholderApp final : public App {
+public:
+  const char *name() const override { return "Settings"; }
+  const char *icon() const override { return ICON_SETTINGS; }
+
+  void onEnter(lv_obj_t *root) override {
+    const ThemeTokens::Palette &p = Theme::active();
+
+    for (int i = 0; i < 3; ++i) {
+      m_rows[i] = Theme::createCard(root, 300, 38, 10,
+                                    Config::CONTENT_Y_START + 8 +
+                                        static_cast<int16_t>(i * 44),
+                                    Config::RADIUS_SM);
+      lv_obj_set_style_pad_hor(m_rows[i], 12, LV_PART_MAIN);
+
+      m_rowNames[i] = lv_label_create(m_rows[i]);
+      lv_obj_set_style_text_font(m_rowNames[i], Theme::fontBodySb(),
+                                 LV_PART_MAIN);
+      lv_obj_set_style_text_color(m_rowNames[i], lv_color_hex(p.text),
+                                  LV_PART_MAIN);
+      lv_obj_align(m_rowNames[i], LV_ALIGN_LEFT_MID, 0, 0);
+
+      m_rowVals[i] = lv_label_create(m_rows[i]);
+      lv_obj_set_style_text_font(m_rowVals[i], Theme::fontBody(), LV_PART_MAIN);
+      lv_obj_set_style_text_color(m_rowVals[i], lv_color_hex(p.accent),
+                                  LV_PART_MAIN);
+      lv_obj_align(m_rowVals[i], LV_ALIGN_RIGHT_MID, 0, 0);
+    }
+
+    refreshRows();
+  }
+
+  void onExit() override {
+    for (int i = 0; i < 3; ++i) {
+      m_rows[i] = nullptr;
+      m_rowNames[i] = nullptr;
+      m_rowVals[i] = nullptr;
+    }
+  }
+
+  bool onButton(Button b, Press p) override {
+    if (b == Button::Next && p == Press::Short) {
+      m_cursor = (m_cursor + 1) % 3;
+      refreshRows();
+      return true;
+    }
+    if (b == Button::Select && p == Press::Short) {
+      if (m_cursor == 0) {
+        Settings::cycleBrightnessPct();
+        Display::setBrightness(Settings::getBrightnessStep());
+        refreshRows();
+      } else if (m_cursor == 1) {
+        Settings::toggleDarkLightTheme();
+        AppManager::applyActiveTheme();
+      } else if (m_cursor == 2) {
+        Settings::setReduceMotion(!Settings::getReduceMotion());
+        refreshRows();
+      }
+      return true;
+    }
+    return false;
+  }
+
+private:
+  void refreshRows() {
+    if (m_rows[0] == nullptr)
+      return;
+    lv_label_set_text(m_rowNames[0], "Brightness");
+    lv_label_set_text_fmt(m_rowVals[0], "%u%%",
+                          static_cast<unsigned>(Settings::getBrightnessPct()));
+
+    lv_label_set_text(m_rowNames[1], "Theme");
+    lv_label_set_text(m_rowVals[1], Theme::isDark() ? "Dark" : "Light");
+
+    lv_label_set_text(m_rowNames[2], "Reduce Motion");
+    lv_label_set_text(m_rowVals[2], Settings::getReduceMotion() ? "On" : "Off");
+
+    for (int i = 0; i < 3; ++i) {
+      Theme::setFocusRing(m_rows[i], i == m_cursor);
+    }
+  }
+
+  lv_obj_t *m_rows[3] = {nullptr};
+  lv_obj_t *m_rowNames[3] = {nullptr};
+  lv_obj_t *m_rowVals[3] = {nullptr};
+  int m_cursor = 0;
+};
+
+ClockApp s_homeApp;
+SysMonitorApp s_statsApp;
+SettingsPlaceholderApp s_settingsApp;
 
 void drainEvents() {
   Event ev{};
@@ -166,16 +297,17 @@ void uiTaskEntry(void * /*param*/) {
   for (;;) {
     const uint32_t nowMs = millis();
 
-    if (!bootSplashDone && (nowMs - bootMs >= Config::SPLASH_DURATION_MS)) {
+    // DESIGN.md Section 12.4: Show boot logo for at least 600ms, then go to
+    // Home
+    if (!bootSplashDone && (nowMs - bootMs >= Config::SPLASH_MIN_DURATION_MS)) {
       bootSplashDone = true;
       Event dummy{};
       while (EventBus::poll(dummy)) {
       }
 
-      // Initialize persistent top StatusBar on lv_layer_top()
       StatusBar::begin();
-      AppManager::switchTo(0);
-      logMemoryStats("clock-ready");
+      AppManager::switchTo(0); // Open Home
+      logMemoryStats("home-ready");
     }
 
     if (bootSplashDone) {
@@ -186,6 +318,8 @@ void uiTaskEntry(void * /*param*/) {
         AppManager::tick(nowMs);
         lastAppTickMs = nowMs;
       }
+
+      lv_timer_handler();
     }
 
     if (nowMs - lastHeapLogMs >= Config::HEAP_LOG_INTERVAL_MS) {
@@ -193,8 +327,11 @@ void uiTaskEntry(void * /*param*/) {
       lastHeapLogMs = nowMs;
     }
 
-    lv_timer_handler();
-    vTaskDelay(pdMS_TO_TICKS(Config::UI_TICK_PERIOD_MS));
+    // DESIGN.md Section 10: 5 Hz UI timer in AOD mode, 200 Hz when active
+    const uint32_t tickDelayMs = AppManager::isInAod()
+                                     ? Config::UI_TICK_AOD_MS
+                                     : Config::UI_TICK_ACTIVE_MS;
+    vTaskDelay(pdMS_TO_TICKS(tickDelayMs));
   }
 }
 
@@ -221,43 +358,39 @@ void logMemoryStats(const char *tag) {
 }
 
 void begin() {
-  // 1. Serial + Settings
-  Serial.begin(115200);
-  const uint32_t t0 = millis();
-  while (!Serial && (millis() - t0 < 1500)) {
-    delay(10);
-  }
-
-  Serial.println("\n================================================");
-  Serial.println("  HawaOS v0.3.0 — Milestone 3: WiFi/NTP/Clock");
-  Serial.println("================================================");
-  logMemoryStats("boot-start");
-
+  // 1. Read saved theme & brightness from NVS Preferences BEFORE drawing
+  // anything (DESIGN.md 3.3 & 12.1)
   Settings::begin();
-  DataStore::begin();
-  EventBus::begin();
 
-  // 2. Display (splash immediately, apply saved brightness)
+  // 2. Immediately initialize panel with backlight off, draw theme-matched boot
+  // logo, and ramp backlight over 300ms
   if (!Display::begin()) {
+    Serial.begin(115200);
     Serial.println("[Kernel] FATAL: Display::begin() failed!");
     return;
   }
-  Display::showSplash();
-  Display::setBrightness(Settings::getBrightness());
-  logMemoryStats("splash-shown");
 
-  // 3. Buttons driver
+  // 3. Initialize Serial, DataStore, EventBus, Buttons, AppManager, and
+  // background services behind the visible boot logo
+  Serial.begin(115200);
+  Serial.println("\n=====================================================");
+  Serial.println("  HawaOS v0.3.1 — DESIGN.md UI/UX System Activated");
+  Serial.println("=====================================================");
+  logMemoryStats("boot-logo-shown");
+
+  DataStore::begin();
+  EventBus::begin();
   Buttons::begin();
 
-  // 4. AppManager + static app registration
   AppManager::begin();
-  AppManager::registerApp(&s_clockApp);
-  AppManager::registerApp(&s_sysMonitorApp);
+  AppManager::registerApp(&s_homeApp);
+  AppManager::registerApp(&s_statsApp);
+  AppManager::registerApp(&s_settingsApp);
 
-  // 5. Services on Core 0 (WiFi first; NTP triggered on connect)
+  // 4. Start Core 0 WiFi + NTP service (non-blocking)
   WifiService::begin();
 
-  // 6. UI task on Core 1 (Rule 1: Only the UI task touches LVGL from here on)
+  // 5. Start Core 1 UI task
   xTaskCreatePinnedToCore(uiTaskEntry, "ui_task", Config::UI_TASK_STACK_BYTES,
                           nullptr, Config::UI_TASK_PRIORITY, &s_uiTaskHandle,
                           Config::UI_TASK_CORE);

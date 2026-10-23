@@ -1,5 +1,8 @@
 #include "drivers/Display.h"
+#include "boot_logo.h"
 #include "config.h"
+#include "core/Settings.h"
+#include "theme_tokens.h"
 
 #include <Arduino.h>
 #include <TFT_eSPI.h>
@@ -58,26 +61,43 @@ void flushCb(lv_disp_drv_t *disp, const lv_area_t *area, lv_color_t *color_p) {
   lv_disp_flush_ready(disp);
 }
 
+void drawDirectBootLogo() {
+  const bool useDark = Settings::isDarkThemeEffective();
+  const uint16_t bg565 = useDark ? ThemeTokens::kDarkPalette.bg565
+                                 : ThemeTokens::kLightPalette.bg565;
+  const uint16_t *logo565 =
+      useDark ? BootLogo::kLogoDark565 : BootLogo::kLogoLight565;
+
+  s_tft.fillScreen(bg565);
+  const int16_t x = (Config::LCD_HOR_RES - BootLogo::WIDTH) / 2;
+  const int16_t y = (Config::LCD_VER_RES - BootLogo::HEIGHT) / 2;
+
+  s_tft.setSwapBytes(true);
+  s_tft.pushImage(x, y, BootLogo::WIDTH, BootLogo::HEIGHT, logo565);
+  s_tft.setSwapBytes(false);
+}
+
 } // namespace
 
 bool begin() {
-  // 1. Enable board power rail (GPIO 15 MUST be HIGH for battery operation &
+  // 1. Keep backlight OFF first (DESIGN.md Section 12: hides white power-on
+  // flash)
+  pinMode(Config::PIN_LCD_BL, OUTPUT);
+  digitalWrite(Config::PIN_LCD_BL, LOW);
+  s_brightness = 0;
+
+  // 2. Enable board power rail (GPIO 15 MUST be HIGH for battery operation &
   // LCD power)
   pinMode(Config::PIN_POWER_ON, OUTPUT);
   digitalWrite(Config::PIN_POWER_ON, HIGH);
 
-  // 2. Keep LCD RD pin HIGH (write-only 8-bit parallel operation)
+  // 3. Keep LCD RD pin HIGH (write-only 8-bit parallel operation)
   pinMode(Config::PIN_LCD_RD, OUTPUT);
   digitalWrite(Config::PIN_LCD_RD, HIGH);
 
-  // Keep backlight off during panel init to prevent startup glitch
-  pinMode(Config::PIN_LCD_BL, OUTPUT);
-  digitalWrite(Config::PIN_LCD_BL, LOW);
-
-  // 3. Initialize TFT_eSPI (configured via Setup206 build_flags)
+  // 4. Initialize TFT_eSPI (configured via Setup206 build_flags)
   s_tft.begin();
 
-  // Apply LilyGo's updated ST7789V gamma/voltage table (LCD_MODULE_CMD_1)
   for (size_t i = 0; i < sizeof(kSt7789vInitCmds) / sizeof(kSt7789vInitCmds[0]);
        ++i) {
     s_tft.writecommand(kSt7789vInitCmds[i].cmd);
@@ -91,9 +111,17 @@ bool begin() {
   }
 
   s_tft.setRotation(Config::LCD_ROTATION);
-  s_tft.fillScreen(TFT_BLACK);
 
-  // 4. Initialize LVGL and allocate draw buffer in PSRAM
+  // 5. Draw theme-matched `bg` + centered multi-color boot logo directly before
+  // LVGL starts
+  drawDirectBootLogo();
+
+  // 6. Ramp backlight from 0 to saved user brightness over 300ms (DESIGN.md
+  // Section 12.2)
+  rampBrightness(Settings::getBrightnessStep(), Config::ANIM_BOOT_RAMP_MS);
+
+  // 7. Initialize LVGL and allocate full-screen draw buffer in PSRAM behind the
+  // visible boot logo
   lv_init();
 
   const size_t bufBytes = Config::LVGL_BUF_PIXELS * sizeof(lv_color_t);
@@ -103,27 +131,19 @@ bool begin() {
   if (s_buf1 != nullptr) {
     Serial.printf("[Display] Allocated LVGL draw buffer in PSRAM (%u bytes)\n",
                   static_cast<unsigned>(bufBytes));
+    lv_disp_draw_buf_init(&s_drawBuf, s_buf1, nullptr, Config::LVGL_BUF_PIXELS);
   } else {
-    // Fallback to internal RAM (1/5 screen height) only if PSRAM allocation
-    // fails
     const size_t fallbackPixels = Config::LCD_HOR_RES * 34;
     s_buf1 = static_cast<lv_color_t *>(
         heap_caps_malloc(fallbackPixels * sizeof(lv_color_t),
                          MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
-    Serial.printf("[Display] WARNING: PSRAM alloc failed; using internal "
-                  "buffer (%u px)\n",
-                  static_cast<unsigned>(fallbackPixels));
     if (s_buf1 == nullptr) {
       Serial.println("[Display] FATAL: Could not allocate LVGL draw buffer!");
       return false;
     }
     lv_disp_draw_buf_init(&s_drawBuf, s_buf1, nullptr, fallbackPixels);
-    goto register_drv;
   }
 
-  lv_disp_draw_buf_init(&s_drawBuf, s_buf1, nullptr, Config::LVGL_BUF_PIXELS);
-
-register_drv:
   lv_disp_drv_init(&s_dispDrv);
   s_dispDrv.hor_res = Config::LCD_HOR_RES;
   s_dispDrv.ver_res = Config::LCD_VER_RES;
@@ -134,34 +154,6 @@ register_drv:
   return true;
 }
 
-void showSplash() {
-  lv_obj_t *scr = lv_scr_act();
-  lv_obj_clean(scr);
-  lv_obj_set_style_bg_color(scr, lv_color_hex(0x0B0F19), LV_PART_MAIN);
-  lv_obj_set_style_bg_opa(scr, LV_OPA_COVER, LV_PART_MAIN);
-
-  // Title
-  lv_obj_t *title = lv_label_create(scr);
-  lv_label_set_text(title, "HawaOS");
-  lv_obj_set_style_text_font(title, &lv_font_montserrat_32, LV_PART_MAIN);
-  lv_obj_set_style_text_color(title, lv_color_hex(0x38BDF8), LV_PART_MAIN);
-  lv_obj_align(title, LV_ALIGN_CENTER, 0, -18);
-
-  // Subtitle
-  lv_obj_t *sub = lv_label_create(scr);
-  lv_label_set_text(sub, "LilyGo T-Display S3  |  v0.1.0");
-  lv_obj_set_style_text_font(sub, &lv_font_montserrat_14, LV_PART_MAIN);
-  lv_obj_set_style_text_color(sub, lv_color_hex(0x94A3B8), LV_PART_MAIN);
-  lv_obj_align(sub, LV_ALIGN_CENTER, 0, 18);
-
-  // Flush the splash frame before turning on the backlight
-  lv_timer_handler();
-  setBrightness(Config::DEFAULT_BRIGHTNESS);
-}
-
-// Verified from LilyGo T-Display-S3 examples/factory/factory.ino
-// The backlight IC on GPIO 38 has 16 pulse-stepped brightness levels (0 = off,
-// 16 = max)
 void setBrightness(uint8_t value) {
   constexpr uint8_t kSteps = 16;
   if (value > kSteps) {
@@ -189,6 +181,23 @@ void setBrightness(uint8_t value) {
     digitalWrite(Config::PIN_LCD_BL, HIGH);
   }
   s_brightness = value;
+}
+
+void rampBrightness(uint8_t targetStep, uint32_t durationMs) {
+  if (targetStep == 0 || Settings::getReduceMotion() || durationMs == 0) {
+    setBrightness(targetStep);
+    return;
+  }
+  if (targetStep > 16)
+    targetStep = 16;
+
+  const uint32_t stepDelayMs = durationMs / targetStep;
+  for (uint8_t step = 1; step <= targetStep; ++step) {
+    setBrightness(step);
+    if (stepDelayMs > 0) {
+      delay(stepDelayMs);
+    }
+  }
 }
 
 uint8_t getBrightness() { return s_brightness; }

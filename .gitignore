@@ -3,4 +3,4 @@ compile_commands.json
 .clangd/
 include/secrets.h
 companion/target/
-HANDOFF.md
+designs/

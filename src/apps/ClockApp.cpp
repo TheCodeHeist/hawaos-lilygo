@@ -1,138 +1,158 @@
 #include "apps/ClockApp.h"
 #include "config.h"
+#include "core/AppManager.h"
 #include "core/Settings.h"
-#include "services/NtpService.h"
-#include "services/WifiService.h"
 #include "ui/Theme.h"
+#include "ui/icons.h"
 
 #include <Arduino.h>
 #include <time.h>
 
 void ClockApp::onEnter(lv_obj_t *root) {
-  Theme::styleScreen(root);
+  const ThemeTokens::Palette &p = Theme::active();
 
-  // Main clock card below 24px StatusBar
-  lv_obj_t *clockCard = Theme::createCard(root, 304, 96, 0, 28);
-
-  // Large HH:MM label
-  m_timeLbl = lv_label_create(clockCard);
+  // --- Left Column: Hero Time (48 SemiBold) + AM/PM + Date (Body 14, textDim)
+  // ---
+  m_timeLbl = lv_label_create(root);
   lv_label_set_text(m_timeLbl, "--:--");
-  lv_obj_set_style_text_font(m_timeLbl, &lv_font_montserrat_48, LV_PART_MAIN);
-  lv_obj_set_style_text_color(m_timeLbl, lv_color_hex(Theme::TEXT_PRIMARY),
-                              LV_PART_MAIN);
-  lv_obj_align(m_timeLbl, LV_ALIGN_TOP_LEFT, 10, 2);
+  lv_obj_set_style_text_font(m_timeLbl, Theme::fontHero(), LV_PART_MAIN);
+  lv_obj_set_style_text_color(m_timeLbl, lv_color_hex(p.text), LV_PART_MAIN);
+  lv_obj_set_pos(m_timeLbl, Config::OUTER_MARGIN_PX,
+                 Config::CONTENT_Y_START + 12);
 
-  // Seconds label (:SS)
-  m_secLbl = lv_label_create(clockCard);
-  lv_label_set_text(m_secLbl, ":--");
-  lv_obj_set_style_text_font(m_secLbl, &lv_font_montserrat_24, LV_PART_MAIN);
-  lv_obj_set_style_text_color(m_secLbl, lv_color_hex(Theme::ACCENT_CYAN),
-                              LV_PART_MAIN);
-  lv_obj_align(m_secLbl, LV_ALIGN_TOP_LEFT, 162, 6);
+  m_ampmLbl = lv_label_create(root);
+  lv_label_set_text(m_ampmLbl, "");
+  lv_obj_set_style_text_font(m_ampmLbl, Theme::fontBodySb(), LV_PART_MAIN);
+  lv_obj_set_style_text_color(m_ampmLbl, lv_color_hex(p.accent), LV_PART_MAIN);
+  lv_obj_align_to(m_ampmLbl, m_timeLbl, LV_ALIGN_OUT_RIGHT_BOTTOM, 6, -8);
 
-  // AM/PM or 24H badge
-  m_ampmLbl = lv_label_create(clockCard);
-  lv_label_set_text(m_ampmLbl, "24H");
-  lv_obj_set_style_text_font(m_ampmLbl, &lv_font_montserrat_14, LV_PART_MAIN);
-  lv_obj_set_style_text_color(m_ampmLbl, lv_color_hex(Theme::TEXT_MUTED),
-                              LV_PART_MAIN);
-  lv_obj_align(m_ampmLbl, LV_ALIGN_TOP_LEFT, 165, 34);
+  m_dateLbl = lv_label_create(root);
+  lv_label_set_text(m_dateLbl, "Syncing time...");
+  lv_obj_set_style_text_font(m_dateLbl, Theme::fontBody(), LV_PART_MAIN);
+  lv_obj_set_style_text_color(m_dateLbl, lv_color_hex(p.textDim), LV_PART_MAIN);
+  lv_obj_set_pos(m_dateLbl, Config::OUTER_MARGIN_PX + 2,
+                 Config::CONTENT_Y_START + 68);
 
-  // NTP status badge (top-right inside card)
-  m_syncBadge = lv_label_create(clockCard);
-  lv_label_set_text(m_syncBadge, "SYNCING");
-  lv_obj_set_style_text_font(m_syncBadge, &lv_font_montserrat_10, LV_PART_MAIN);
-  lv_obj_set_style_text_color(m_syncBadge, lv_color_hex(Theme::ACCENT_AMBER),
-                              LV_PART_MAIN);
-  lv_obj_align(m_syncBadge, LV_ALIGN_TOP_RIGHT, -4, 4);
+  // --- Right Column: Two small solid chips with CPU % and RAM % (radius 8) ---
+  m_cpuChip = Theme::createCard(
+      root, 108, 36, 202, Config::CONTENT_Y_START + 10, Config::RADIUS_SM);
+  lv_obj_set_style_pad_hor(m_cpuChip, 10, LV_PART_MAIN);
+  lv_obj_set_style_pad_ver(m_cpuChip, 6, LV_PART_MAIN);
 
-  // Full date line at bottom of clockCard
-  m_dateLbl = lv_label_create(clockCard);
-  lv_label_set_text(m_dateLbl, "Waiting for NTP time sync...");
-  lv_obj_set_style_text_font(m_dateLbl, &lv_font_montserrat_14, LV_PART_MAIN);
-  lv_obj_set_style_text_color(m_dateLbl, lv_color_hex(Theme::TEXT_MUTED),
-                              LV_PART_MAIN);
-  lv_obj_align(m_dateLbl, LV_ALIGN_BOTTOM_LEFT, 10, -2);
+  lv_obj_t *cpuIcon = lv_label_create(m_cpuChip);
+  lv_label_set_text(cpuIcon, ICON_CPU);
+  lv_obj_set_style_text_font(cpuIcon, Theme::iconFont20(), LV_PART_MAIN);
+  lv_obj_set_style_text_color(cpuIcon, lv_color_hex(p.accent), LV_PART_MAIN);
+  lv_obj_align(cpuIcon, LV_ALIGN_LEFT_MID, 0, 0);
 
-  // Bottom info strip (WiFi SSID / IP / controls)
-  lv_obj_t *infoCard = Theme::createCard(root, 304, 34, 0, 130);
-  lv_obj_set_style_pad_ver(infoCard, 4, LV_PART_MAIN);
+  m_cpuValLbl = lv_label_create(m_cpuChip);
+  lv_label_set_text(m_cpuValLbl, "CPU --%");
+  lv_obj_set_style_text_font(m_cpuValLbl, Theme::fontBodySb(), LV_PART_MAIN);
+  lv_obj_set_style_text_color(m_cpuValLbl, lv_color_hex(p.text), LV_PART_MAIN);
+  lv_obj_align(m_cpuValLbl, LV_ALIGN_RIGHT_MID, 0, 0);
 
-  m_netLbl = lv_label_create(infoCard);
-  lv_label_set_text(m_netLbl, "WiFi: Connecting...");
-  lv_obj_set_style_text_font(m_netLbl, &lv_font_montserrat_12, LV_PART_MAIN);
-  lv_obj_set_style_text_color(m_netLbl, lv_color_hex(Theme::TEXT_MUTED),
+  m_ramChip = Theme::createCard(
+      root, 108, 36, 202, Config::CONTENT_Y_START + 54, Config::RADIUS_SM);
+  lv_obj_set_style_pad_hor(m_ramChip, 10, LV_PART_MAIN);
+  lv_obj_set_style_pad_ver(m_ramChip, 6, LV_PART_MAIN);
+
+  lv_obj_t *ramIcon = lv_label_create(m_ramChip);
+  lv_label_set_text(ramIcon, ICON_MEMORY_STICK);
+  lv_obj_set_style_text_font(ramIcon, Theme::iconFont20(), LV_PART_MAIN);
+  lv_obj_set_style_text_color(ramIcon, lv_color_hex(p.accent), LV_PART_MAIN);
+  lv_obj_align(ramIcon, LV_ALIGN_LEFT_MID, 0, 0);
+
+  m_ramValLbl = lv_label_create(m_ramChip);
+  lv_label_set_text(m_ramValLbl, "RAM --%");
+  lv_obj_set_style_text_font(m_ramValLbl, Theme::fontBodySb(), LV_PART_MAIN);
+  lv_obj_set_style_text_color(m_ramValLbl, lv_color_hex(p.text), LV_PART_MAIN);
+  lv_obj_align(m_ramValLbl, LV_ALIGN_RIGHT_MID, 0, 0);
+
+  // --- Bottom Now-Playing / Status Chip (radius 8, width 300, height 34) ---
+  m_mediaChip =
+      Theme::createCard(root, 300, 34, Config::OUTER_MARGIN_PX,
+                        Config::CONTENT_Y_START + 104, Config::RADIUS_SM);
+  lv_obj_set_style_pad_hor(m_mediaChip, 10, LV_PART_MAIN);
+  lv_obj_set_style_pad_ver(m_mediaChip, 4, LV_PART_MAIN);
+
+  lv_obj_t *musicIcon = lv_label_create(m_mediaChip);
+  lv_label_set_text(musicIcon, ICON_MUSIC);
+  lv_obj_set_style_text_font(musicIcon, Theme::iconFont20(), LV_PART_MAIN);
+  lv_obj_set_style_text_color(musicIcon, lv_color_hex(p.accent), LV_PART_MAIN);
+  lv_obj_align(musicIcon, LV_ALIGN_LEFT_MID, 0, 0);
+
+  m_mediaTextLbl = lv_label_create(m_mediaChip);
+  lv_label_set_long_mode(m_mediaTextLbl, LV_LABEL_LONG_DOT);
+  lv_obj_set_width(m_mediaTextLbl, 252);
+  lv_obj_set_style_text_font(m_mediaTextLbl, Theme::fontBody(), LV_PART_MAIN);
+  lv_obj_set_style_text_color(m_mediaTextLbl, lv_color_hex(p.textDim),
                               LV_PART_MAIN);
-  lv_obj_align(m_netLbl, LV_ALIGN_LEFT_MID, 2, 0);
+  lv_obj_align(m_mediaTextLbl, LV_ALIGN_LEFT_MID, 28, 0);
 
   m_lastSec = 0xFFFFFFFF;
-  refreshNetwork(DataStore::getSnapshot());
+  refreshDashboard(DataStore::getSnapshot());
   refreshTime();
 }
 
 void ClockApp::onExit() {
   m_timeLbl = nullptr;
-  m_secLbl = nullptr;
   m_ampmLbl = nullptr;
   m_dateLbl = nullptr;
-  m_netLbl = nullptr;
-  m_syncBadge = nullptr;
+  m_cpuChip = nullptr;
+  m_cpuValLbl = nullptr;
+  m_ramChip = nullptr;
+  m_ramValLbl = nullptr;
+  m_mediaChip = nullptr;
+  m_mediaTextLbl = nullptr;
 }
 
 void ClockApp::onTick(uint32_t /*nowMs*/) { refreshTime(); }
 
 bool ClockApp::onButton(Button b, Press p) {
+  // DESIGN.md Section 9.3: Select short opens Media if playing, or toggles
+  // 12/24h clock
   if (b == Button::Select && p == Press::Short) {
-    const bool nextMode = !Settings::getUse24Hour();
-    Settings::setUse24Hour(nextMode);
+    const DataSnapshot snap = DataStore::getSnapshot();
+    if (snap.mediaState == MediaPlayState::Playing &&
+        AppManager::appCount() > 1) {
+      AppManager::switchTo(1);
+      return true;
+    }
+    Settings::setUse24Hour(!Settings::getUse24Hour());
     m_lastSec = 0xFFFFFFFF;
     refreshTime();
     return true;
   }
-  if (b == Button::Select && p == Press::Double) {
-    NtpService::requestSync();
-    if (m_syncBadge != nullptr) {
-      lv_label_set_text(m_syncBadge, "RESYNC...");
-      lv_obj_set_style_text_color(m_syncBadge, lv_color_hex(Theme::ACCENT_CYAN),
-                                  LV_PART_MAIN);
-    }
-    return true;
-  }
-  if (b == Button::Select && p == Press::Long) {
-    WifiService::forceReconnect();
-    return true;
-  }
-  return false; // Let AppManager handle Next (Short -> cycle, Long -> Launcher)
+  return false;
 }
 
 void ClockApp::onData(const DataSnapshot &d) {
-  refreshNetwork(d);
+  refreshDashboard(d);
   m_lastSec = 0xFFFFFFFF;
   refreshTime();
 }
 
 void ClockApp::refreshTime() {
-  if (m_timeLbl == nullptr) {
+  if (m_timeLbl == nullptr)
     return;
-  }
 
   const time_t now = time(nullptr);
   if (now <= 1700000000) {
     const uint32_t upSec = millis() / 1000;
-    if (upSec == m_lastSec) {
+    if (upSec == m_lastSec)
       return;
-    }
     m_lastSec = upSec;
-    lv_label_set_text(m_timeLbl, "--:--");
-    lv_label_set_text_fmt(m_secLbl, ":%02lu",
+    lv_label_set_text_fmt(m_timeLbl, "%02lu:%02lu",
+                          static_cast<unsigned long>((upSec / 60) % 60),
                           static_cast<unsigned long>(upSec % 60));
-    lv_label_set_text(m_ampmLbl, Settings::getUse24Hour() ? "24H" : "12H");
+    if (m_ampmLbl != nullptr) {
+      lv_label_set_text(m_ampmLbl, "");
+    }
     return;
   }
 
-  if (static_cast<uint32_t>(now) == m_lastSec) {
+  if (static_cast<uint32_t>(now) == m_lastSec)
     return;
-  }
   m_lastSec = static_cast<uint32_t>(now);
 
   struct tm ti{};
@@ -142,57 +162,61 @@ void ClockApp::refreshTime() {
   int displayHour = ti.tm_hour;
   if (!use24) {
     displayHour = ti.tm_hour % 12;
-    if (displayHour == 0) {
+    if (displayHour == 0)
       displayHour = 12;
-    }
-    lv_label_set_text(m_ampmLbl, (ti.tm_hour >= 12) ? "PM" : "AM");
-  } else {
-    lv_label_set_text(m_ampmLbl, "24H");
   }
 
   lv_label_set_text_fmt(m_timeLbl, "%02d:%02d", displayHour, ti.tm_min);
-  lv_label_set_text_fmt(m_secLbl, ":%02d", ti.tm_sec);
 
-  char dateBuf[48];
-  strftime(dateBuf, sizeof(dateBuf), "%a, %b %d, %Y", &ti);
-  const int32_t gmtHours = Settings::getGmtOffsetSec() / 3600;
-  lv_label_set_text_fmt(m_dateLbl, "%s  (UTC%+ld)", dateBuf,
-                        static_cast<long>(gmtHours));
-
-  if (m_syncBadge != nullptr) {
-    lv_label_set_text(m_syncBadge, "NTP OK");
-    lv_obj_set_style_text_color(m_syncBadge, lv_color_hex(Theme::ACCENT_GREEN),
-                                LV_PART_MAIN);
+  if (m_ampmLbl != nullptr) {
+    if (!use24) {
+      lv_label_set_text(m_ampmLbl, (ti.tm_hour >= 12) ? "PM" : "AM");
+      lv_obj_align_to(m_ampmLbl, m_timeLbl, LV_ALIGN_OUT_RIGHT_BOTTOM, 6, -8);
+    } else {
+      lv_label_set_text(m_ampmLbl, "");
+    }
   }
+
+  char dateBuf[40];
+  strftime(dateBuf, sizeof(dateBuf), "%a · %b %d", &ti);
+  lv_label_set_text(m_dateLbl, dateBuf);
 }
 
-void ClockApp::refreshNetwork(const DataSnapshot &d) {
-  if (m_netLbl == nullptr) {
+void ClockApp::refreshDashboard(const DataSnapshot &d) {
+  if (m_cpuValLbl == nullptr)
     return;
-  }
+  const ThemeTokens::Palette &p = Theme::active();
 
-  if (d.wifiConnected) {
-    lv_label_set_text_fmt(m_netLbl, "%s  |  %s  |  SEL: 12/24h", d.wifiSsid,
-                          d.wifiIp);
-    lv_obj_set_style_text_color(m_netLbl, lv_color_hex(Theme::ACCENT_GREEN),
-                                LV_PART_MAIN);
+  if (d.lastStatsMs > 0) {
+    lv_label_set_text_fmt(m_cpuValLbl, "CPU %u%%",
+                          static_cast<unsigned>(d.cpuPercent));
+    lv_label_set_text_fmt(m_ramValLbl, "RAM %u%%",
+                          static_cast<unsigned>(d.ramPercent));
   } else {
-    lv_label_set_text_fmt(m_netLbl,
-                          "WiFi connecting to '%s'... (Hold SEL: Retry)",
-                          d.wifiSsid[0] ? d.wifiSsid : "none");
-    lv_obj_set_style_text_color(m_netLbl, lv_color_hex(Theme::ACCENT_AMBER),
-                                LV_PART_MAIN);
+    lv_label_set_text(m_cpuValLbl, "CPU --%");
+    lv_label_set_text(m_ramValLbl, "RAM --%");
   }
 
-  if (m_syncBadge != nullptr) {
-    if (d.ntpSynced) {
-      lv_label_set_text(m_syncBadge, "NTP OK");
-      lv_obj_set_style_text_color(
-          m_syncBadge, lv_color_hex(Theme::ACCENT_GREEN), LV_PART_MAIN);
+  if (d.mediaState == MediaPlayState::Playing && d.mediaTitle[0] != '\0') {
+    lv_obj_clear_flag(m_mediaChip, LV_OBJ_FLAG_HIDDEN);
+    Theme::setFocusRing(m_mediaChip, true);
+    lv_obj_set_style_text_color(m_mediaTextLbl, lv_color_hex(p.text),
+                                LV_PART_MAIN);
+    if (d.mediaArtist[0] != '\0') {
+      lv_label_set_text_fmt(m_mediaTextLbl, "%s · %s", d.mediaTitle,
+                            d.mediaArtist);
     } else {
-      lv_label_set_text(m_syncBadge, "SYNCING");
-      lv_obj_set_style_text_color(
-          m_syncBadge, lv_color_hex(Theme::ACCENT_AMBER), LV_PART_MAIN);
+      lv_label_set_text(m_mediaTextLbl, d.mediaTitle);
+    }
+  } else {
+    Theme::setFocusRing(m_mediaChip, false);
+    lv_obj_set_style_text_color(m_mediaTextLbl, lv_color_hex(p.textDim),
+                                LV_PART_MAIN);
+    if (d.wifiConnected) {
+      lv_label_set_text_fmt(m_mediaTextLbl, "%s · %s", d.wifiSsid, d.wifiIp);
+    } else {
+      lv_label_set_text_fmt(m_mediaTextLbl, "Connecting to %s...",
+                            d.wifiSsid[0] ? d.wifiSsid : "WiFi");
     }
   }
 }
