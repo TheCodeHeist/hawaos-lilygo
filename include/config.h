@@ -114,7 +114,7 @@ constexpr uint32_t BTN_TASK_STACK_BYTES = 3072;
 constexpr uint8_t BTN_TASK_PRIORITY = 4;
 constexpr uint8_t BTN_TASK_CORE = 1;
 
-constexpr uint32_t WIFI_TASK_STACK_BYTES = 4096;
+constexpr uint32_t WIFI_TASK_STACK_BYTES = 8192;
 constexpr uint8_t WIFI_TASK_PRIORITY = 2;
 constexpr uint8_t WIFI_TASK_CORE = 0;
 

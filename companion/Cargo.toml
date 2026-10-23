@@ -1,0 +1,14 @@
+[package]
+name = "hawaos-companion"
+version = "0.4.0"
+edition = "2021"
+description = "HawaOS Desktop Companion Daemon for LilyGo T-Display-S3"
+license = "MIT"
+
+[dependencies]
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+sha1 = "0.10"
+sysinfo = "0.31"
+ureq = "2.10"

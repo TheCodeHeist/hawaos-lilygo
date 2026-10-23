@@ -6,7 +6,22 @@
 #include "ui/icons.h"
 
 #include <Arduino.h>
+#include <stdio.h>
+#include <string.h>
 #include <time.h>
+
+namespace {
+
+void setLabelTextIfChanged(lv_obj_t *lbl, const char *newText) {
+  if (lbl == nullptr || newText == nullptr)
+    return;
+  const char *cur = lv_label_get_text(lbl);
+  if (cur == nullptr || strcmp(cur, newText) != 0) {
+    lv_label_set_text(lbl, newText);
+  }
+}
+
+} // namespace
 
 void ClockApp::onEnter(lv_obj_t *root) {
   const ThemeTokens::Palette &p = Theme::active();
@@ -82,7 +97,8 @@ void ClockApp::onEnter(lv_obj_t *root) {
   lv_obj_align(musicIcon, LV_ALIGN_LEFT_MID, 0, 0);
 
   m_mediaTextLbl = lv_label_create(m_mediaChip);
-  lv_label_set_long_mode(m_mediaTextLbl, LV_LABEL_LONG_DOT);
+  lv_label_set_long_mode(m_mediaTextLbl, LV_LABEL_LONG_SCROLL_CIRCULAR);
+  lv_obj_set_style_anim_speed(m_mediaTextLbl, 26, LV_PART_MAIN);
   lv_obj_set_width(m_mediaTextLbl, 252);
   lv_obj_set_style_text_font(m_mediaTextLbl, Theme::fontBody(), LV_PART_MAIN);
   lv_obj_set_style_text_color(m_mediaTextLbl, lv_color_hex(p.textDim),
@@ -178,7 +194,7 @@ void ClockApp::refreshTime() {
   }
 
   char dateBuf[40];
-  strftime(dateBuf, sizeof(dateBuf), "%a · %b %d", &ti);
+  strftime(dateBuf, sizeof(dateBuf), "%a \u00b7 %b %d", &ti);
   lv_label_set_text(m_dateLbl, dateBuf);
 }
 
@@ -197,26 +213,29 @@ void ClockApp::refreshDashboard(const DataSnapshot &d) {
     lv_label_set_text(m_ramValLbl, "RAM --%");
   }
 
+  char chipText[140] = {0};
   if (d.mediaState == MediaPlayState::Playing && d.mediaTitle[0] != '\0') {
     lv_obj_clear_flag(m_mediaChip, LV_OBJ_FLAG_HIDDEN);
     Theme::setFocusRing(m_mediaChip, true);
     lv_obj_set_style_text_color(m_mediaTextLbl, lv_color_hex(p.text),
                                 LV_PART_MAIN);
     if (d.mediaArtist[0] != '\0') {
-      lv_label_set_text_fmt(m_mediaTextLbl, "%s · %s", d.mediaTitle,
-                            d.mediaArtist);
+      snprintf(chipText, sizeof(chipText), "%s \u00b7 %s", d.mediaTitle,
+               d.mediaArtist);
     } else {
-      lv_label_set_text(m_mediaTextLbl, d.mediaTitle);
+      snprintf(chipText, sizeof(chipText), "%s", d.mediaTitle);
     }
   } else {
     Theme::setFocusRing(m_mediaChip, false);
     lv_obj_set_style_text_color(m_mediaTextLbl, lv_color_hex(p.textDim),
                                 LV_PART_MAIN);
     if (d.wifiConnected) {
-      lv_label_set_text_fmt(m_mediaTextLbl, "%s · %s", d.wifiSsid, d.wifiIp);
+      snprintf(chipText, sizeof(chipText), "%s \u00b7 %s", d.wifiSsid,
+               d.wifiIp);
     } else {
-      lv_label_set_text_fmt(m_mediaTextLbl, "Connecting to %s...",
-                            d.wifiSsid[0] ? d.wifiSsid : "WiFi");
+      snprintf(chipText, sizeof(chipText), "Connecting to %s...",
+               d.wifiSsid[0] ? d.wifiSsid : "WiFi");
     }
   }
+  setLabelTextIfChanged(m_mediaTextLbl, chipText);
 }

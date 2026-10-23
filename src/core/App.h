@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/DataStore.h"
+#include "ui/icons.h"
 #include <lvgl.h>
 #include <stdint.h>
 

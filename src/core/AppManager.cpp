@@ -12,6 +12,7 @@
 #include <Arduino.h>
 #include <esp_heap_caps.h>
 #include <lvgl.h>
+#include <string.h>
 #include <time.h>
 
 namespace AppManager {
@@ -54,6 +55,9 @@ lv_obj_t *s_aodClockLbl = nullptr;
 lv_obj_t *s_aodAmPmLbl = nullptr;
 lv_obj_t *s_aodDateLbl = nullptr;
 lv_obj_t *s_aodArtBox = nullptr;
+lv_obj_t *s_aodArtIcon = nullptr;
+lv_obj_t *s_aodArtImg = nullptr;
+lv_img_dsc_t s_aodArtDsc{};
 lv_obj_t *s_aodTitleLbl = nullptr;
 lv_obj_t *s_aodArtistLbl = nullptr;
 lv_obj_t *s_aodProgBar = nullptr;
@@ -62,6 +66,17 @@ uint32_t s_aodFromBot = 0x000000;
 uint32_t s_aodToTop = 0x000000;
 uint32_t s_aodToBot = 0x000000;
 uint32_t s_aodLastSec = 0xFFFFFFFF;
+bool s_aodWasPlaying = false;
+uint32_t s_aodPausedSinceMs = 0;
+
+void setLabelTextIfChanged(lv_obj_t *lbl, const char *newText) {
+  if (lbl == nullptr || newText == nullptr)
+    return;
+  const char *cur = lv_label_get_text(lbl);
+  if (cur == nullptr || strcmp(cur, newText) != 0) {
+    lv_label_set_text(lbl, newText);
+  }
+}
 
 void clearViewPointers() {
   for (int i = 0; i < 3; ++i) {
@@ -83,6 +98,8 @@ void clearViewPointers() {
   s_aodAmPmLbl = nullptr;
   s_aodDateLbl = nullptr;
   s_aodArtBox = nullptr;
+  s_aodArtIcon = nullptr;
+  s_aodArtImg = nullptr;
   s_aodTitleLbl = nullptr;
   s_aodArtistLbl = nullptr;
   s_aodProgBar = nullptr;
@@ -282,6 +299,9 @@ void aodAnimExecCb(void * /*var*/, int32_t v) {
 }
 
 void startAodTintTween(uint32_t toTop, uint32_t toBot, uint32_t durationMs) {
+  if (toTop == s_aodToTop && toBot == s_aodToBot)
+    return;
+
   s_aodToTop = toTop;
   s_aodToBot = toBot;
 
@@ -314,8 +334,33 @@ void refreshAodContent() {
   const ThemeTokens::Palette &p = Theme::dark();
 
   const bool use24 = Settings::getUse24Hour();
-  const bool showMedia =
-      (d.mediaState == MediaPlayState::Playing && d.mediaTitle[0] != '\0');
+  const uint32_t nowMs = millis();
+
+  // DESIGN.md Section 10: If media is paused, stay tinted for 30s then tween to
+  // black + clock
+  bool showMedia = false;
+  if (d.mediaTitle[0] != '\0') {
+    if (d.mediaState == MediaPlayState::Playing) {
+      showMedia = true;
+      s_aodWasPlaying = true;
+      s_aodPausedSinceMs = 0;
+    } else if (d.mediaState == MediaPlayState::Paused && s_aodWasPlaying) {
+      if (s_aodPausedSinceMs == 0) {
+        s_aodPausedSinceMs = nowMs;
+      }
+      if ((nowMs - s_aodPausedSinceMs) < 30000UL) {
+        showMedia = true;
+      } else {
+        s_aodWasPlaying = false;
+      }
+    } else {
+      s_aodWasPlaying = false;
+    }
+  }
+
+  const uint32_t targetTop = showMedia ? d.mediaBgTop : 0x000000;
+  const uint32_t targetBot = showMedia ? d.mediaBgBottom : 0x000000;
+  startAodTintTween(targetTop, targetBot, Config::ANIM_AOD_ENTER_MS);
 
   const time_t now = time(nullptr);
   const bool validTime = (now > 1700000000);
@@ -335,10 +380,9 @@ void refreshAodContent() {
       if (hr == 0)
         hr = 12;
     }
-    // Short day and short date, e.g. "Fri · Oct 23"
-    strftime(shortDateStr, sizeof(shortDateStr), "%a · %b %d", &ti);
+    strftime(shortDateStr, sizeof(shortDateStr), "%a \u00b7 %b %d", &ti);
   } else {
-    const uint32_t up = millis() / 1000;
+    const uint32_t up = nowMs / 1000;
     hr = static_cast<int>((up / 60) % 60);
     mn = static_cast<int>(up % 60);
     snprintf(shortDateStr, sizeof(shortDateStr), "Syncing NTP...");
@@ -362,7 +406,7 @@ void refreshAodContent() {
     }
 
     if (s_aodDateLbl != nullptr) {
-      lv_label_set_text(s_aodDateLbl, shortDateStr);
+      setLabelTextIfChanged(s_aodDateLbl, shortDateStr);
       lv_obj_set_style_text_font(s_aodDateLbl, Theme::fontCaption(),
                                  LV_PART_MAIN);
       lv_obj_set_style_text_color(s_aodDateLbl, lv_color_hex(p.textDim),
@@ -376,13 +420,26 @@ void refreshAodContent() {
     lv_obj_clear_flag(s_aodArtistLbl, LV_OBJ_FLAG_HIDDEN);
     lv_obj_clear_flag(s_aodProgBar, LV_OBJ_FLAG_HIDDEN);
 
-    lv_label_set_text(s_aodTitleLbl, d.mediaTitle);
-    lv_label_set_text(s_aodArtistLbl, d.mediaArtist);
+    if (d.mediaArtReady && DataStore::albumArtBuffer() != nullptr) {
+      lv_obj_clear_flag(s_aodArtImg, LV_OBJ_FLAG_HIDDEN);
+      lv_obj_add_flag(s_aodArtIcon, LV_OBJ_FLAG_HIDDEN);
+      lv_obj_invalidate(s_aodArtImg);
+    } else {
+      lv_obj_add_flag(s_aodArtImg, LV_OBJ_FLAG_HIDDEN);
+      lv_obj_clear_flag(s_aodArtIcon, LV_OBJ_FLAG_HIDDEN);
+    }
 
-    const uint32_t elapsed = d.mediaPosMs + (millis() - d.mediaRxMillis);
+    setLabelTextIfChanged(s_aodTitleLbl, d.mediaTitle);
+    setLabelTextIfChanged(s_aodArtistLbl,
+                          d.mediaArtist[0] ? d.mediaArtist : "Unknown Artist");
+
+    uint32_t curPos = d.mediaPosMs;
+    if (d.mediaState == MediaPlayState::Playing && d.mediaRxMillis > 0) {
+      curPos = min(d.mediaDurMs, d.mediaPosMs + (nowMs - d.mediaRxMillis));
+    }
     const int pct = (d.mediaDurMs > 0)
-                        ? static_cast<int>(min<uint32_t>(100, (elapsed * 100) /
-                                                                  d.mediaDurMs))
+                        ? static_cast<int>(
+                              min<uint32_t>(100, (curPos * 100) / d.mediaDurMs))
                         : 0;
     lv_bar_set_value(s_aodProgBar, pct, LV_ANIM_OFF);
   } else {
@@ -398,7 +455,7 @@ void refreshAodContent() {
 
     if (s_aodAmPmLbl != nullptr) {
       if (!use24 && validTime) {
-        lv_label_set_text(s_aodAmPmLbl, ampmStr);
+        setLabelTextIfChanged(s_aodAmPmLbl, ampmStr);
         lv_obj_set_style_text_color(s_aodAmPmLbl, lv_color_hex(p.accent),
                                     LV_PART_MAIN);
         lv_obj_clear_flag(s_aodAmPmLbl, LV_OBJ_FLAG_HIDDEN);
@@ -410,7 +467,7 @@ void refreshAodContent() {
     }
 
     if (s_aodDateLbl != nullptr) {
-      lv_label_set_text(s_aodDateLbl, shortDateStr);
+      setLabelTextIfChanged(s_aodDateLbl, shortDateStr);
       lv_obj_set_style_text_font(s_aodDateLbl, Theme::fontBody(), LV_PART_MAIN);
       lv_obj_set_style_text_color(s_aodDateLbl, lv_color_hex(p.textDim),
                                   LV_PART_MAIN);
@@ -432,10 +489,12 @@ void buildAodScreen(lv_obj_t *root) {
   const ThemeTokens::Palette &p = Theme::dark();
   const DataSnapshot d = DataStore::getSnapshot();
 
-  // Start from current active theme bg and tween to black or media tint over
-  // 450ms
   s_aodFromTop = Theme::active().bg;
   s_aodFromBot = Theme::active().bg;
+  s_aodToTop = s_aodFromTop;
+  s_aodToBot = s_aodFromBot;
+  s_aodWasPlaying = (d.mediaState == MediaPlayState::Playing);
+  s_aodPausedSinceMs = 0;
 
   s_aodClockLbl = lv_label_create(root);
   lv_obj_set_style_text_color(s_aodClockLbl, lv_color_hex(p.text),
@@ -451,20 +510,40 @@ void buildAodScreen(lv_obj_t *root) {
   lv_obj_set_style_text_color(s_aodDateLbl, lv_color_hex(p.textDim),
                               LV_PART_MAIN);
 
-  // Media playing AOD elements (96px art + title + artist + 3px progress bar)
+  // Media playing AOD elements (96px art + scrolling title & artist + 3px
+  // progress bar)
   s_aodArtBox =
       Theme::createCard(root, 96, 96, 20, 44, Config::RADIUS_SM, true);
-  lv_obj_t *musicIcon = lv_label_create(s_aodArtBox);
-  lv_label_set_text(musicIcon, ICON_MUSIC);
-  lv_obj_set_style_text_font(musicIcon, Theme::iconFont32(), LV_PART_MAIN);
-  lv_obj_set_style_text_color(musicIcon, lv_color_hex(p.textDim), LV_PART_MAIN);
-  lv_obj_center(musicIcon);
+  lv_obj_set_style_pad_all(s_aodArtBox, 0, LV_PART_MAIN);
+  lv_obj_set_style_clip_corner(s_aodArtBox, true, LV_PART_MAIN);
+
+  s_aodArtIcon = lv_label_create(s_aodArtBox);
+  lv_label_set_text(s_aodArtIcon, ICON_MUSIC);
+  lv_obj_set_style_text_font(s_aodArtIcon, Theme::iconFont32(), LV_PART_MAIN);
+  lv_obj_set_style_text_color(s_aodArtIcon, lv_color_hex(p.textDim),
+                              LV_PART_MAIN);
+  lv_obj_center(s_aodArtIcon);
+
+  s_aodArtDsc.header.always_zero = 0;
+  s_aodArtDsc.header.w = DataStore::ALBUM_ART_DIM;
+  s_aodArtDsc.header.h = DataStore::ALBUM_ART_DIM;
+  s_aodArtDsc.header.cf = LV_IMG_CF_TRUE_COLOR;
+  s_aodArtDsc.data_size = DataStore::ALBUM_ART_BYTES;
+  s_aodArtDsc.data =
+      reinterpret_cast<const uint8_t *>(DataStore::albumArtBuffer());
+
+  s_aodArtImg = lv_img_create(s_aodArtBox);
+  lv_img_set_src(s_aodArtImg, &s_aodArtDsc);
+  lv_img_set_zoom(s_aodArtImg, 192); // 128 * (192/256) = 96 px
+  lv_obj_center(s_aodArtImg);
+  lv_obj_add_flag(s_aodArtImg, LV_OBJ_FLAG_HIDDEN);
 
   s_aodTitleLbl = lv_label_create(root);
   lv_obj_set_style_text_font(s_aodTitleLbl, Theme::fontTitle(), LV_PART_MAIN);
   lv_obj_set_style_text_color(s_aodTitleLbl, lv_color_hex(p.text),
                               LV_PART_MAIN);
-  lv_label_set_long_mode(s_aodTitleLbl, LV_LABEL_LONG_DOT);
+  lv_label_set_long_mode(s_aodTitleLbl, LV_LABEL_LONG_SCROLL_CIRCULAR);
+  lv_obj_set_style_anim_speed(s_aodTitleLbl, 28, LV_PART_MAIN);
   lv_obj_set_width(s_aodTitleLbl, 170);
   lv_obj_set_pos(s_aodTitleLbl, 130, 62);
 
@@ -472,9 +551,10 @@ void buildAodScreen(lv_obj_t *root) {
   lv_obj_set_style_text_font(s_aodArtistLbl, Theme::fontBody(), LV_PART_MAIN);
   lv_obj_set_style_text_color(s_aodArtistLbl, lv_color_hex(p.textDim),
                               LV_PART_MAIN);
-  lv_label_set_long_mode(s_aodArtistLbl, LV_LABEL_LONG_DOT);
+  lv_label_set_long_mode(s_aodArtistLbl, LV_LABEL_LONG_SCROLL_CIRCULAR);
+  lv_obj_set_style_anim_speed(s_aodArtistLbl, 24, LV_PART_MAIN);
   lv_obj_set_width(s_aodArtistLbl, 170);
-  lv_obj_set_pos(s_aodArtistLbl, 130, 90);
+  lv_obj_set_pos(s_aodArtistLbl, 130, 92);
 
   s_aodProgBar = lv_bar_create(root);
   lv_obj_set_size(s_aodProgBar, 280, 3);
@@ -487,12 +567,6 @@ void buildAodScreen(lv_obj_t *root) {
 
   s_aodLastSec = 0xFFFFFFFF;
   refreshAodContent();
-
-  const bool playing =
-      (d.mediaState == MediaPlayState::Playing && d.mediaTitle[0] != '\0');
-  const uint32_t targetTop = playing ? d.mediaBgTop : 0x000000;
-  const uint32_t targetBot = playing ? d.mediaBgBottom : 0x000000;
-  startAodTintTween(targetTop, targetBot, Config::ANIM_AOD_ENTER_MS);
 }
 
 } // namespace
@@ -623,7 +697,6 @@ void exitAod() {
 bool isInAod() { return s_viewState == ViewState::Aod; }
 
 void applyActiveTheme() {
-  // DESIGN.md Section 3.3: Instant recolor on theme switch (0ms)
   StatusBar::applyTheme();
   if (s_viewState == ViewState::ControlCenter) {
     lv_obj_t *newScr = createAndSwapScreen(false, false);
@@ -676,15 +749,14 @@ void tick(uint32_t nowMs) {
 void handleButton(Button b, Press p) {
   s_lastInputMs = millis();
 
-  // 1. Any press in AOD wakes and is consumed (never forwarded to the app —
-  // DESIGN.md Section 8)
+  // 1. Any press in AOD wakes and is consumed (DESIGN.md Section 8)
   if (s_viewState == ViewState::Aod) {
     exitAod();
     return;
   }
 
-  // 2. Chord opens/closes Control Center from anywhere (DESIGN.md Section 8
-  // & 9.7)
+  // 2. Chord opens/closes Control Center from anywhere (DESIGN.md Section 8 &
+  // 9.7)
   if (p == Press::Chord) {
     openControlCenter();
     return;
@@ -732,7 +804,6 @@ void handleButton(Button b, Press p) {
                     s_apps[s_launcherCursor]->name());
       switchTo(s_launcherCursor);
     } else if (b == Button::Select && p == Press::Long) {
-      // Back to Home from Launcher
       switchTo(0);
     }
     return;

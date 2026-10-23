@@ -3,6 +3,7 @@
 #include "core/DataStore.h"
 #include "core/EventBus.h"
 #include "core/Settings.h"
+#include "services/CompanionLink.h"
 #include "services/NtpService.h"
 
 #include <Arduino.h>
@@ -40,11 +41,10 @@ void wifiTaskEntry(void * /*param*/) {
 
   WiFi.mode(WIFI_STA);
   WiFi.setAutoReconnect(true);
-  // Reduce WiFi TX power peak spikes slightly if needed while keeping solid
-  // range
   WiFi.setSleep(false);
 
   NtpService::begin();
+  CompanionLink::begin();
   startConnectAttempt(ssid, sizeof(ssid), pass, sizeof(pass));
 
   uint32_t lastAttemptMs = millis();
@@ -119,7 +119,8 @@ void wifiTaskEntry(void * /*param*/) {
       }
     }
 
-    vTaskDelay(pdMS_TO_TICKS(500));
+    CompanionLink::poll();
+    vTaskDelay(pdMS_TO_TICKS(25));
   }
 }
 
