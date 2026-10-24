@@ -23,7 +23,7 @@ SUBLINE_TEXT = "Breezy Elegance, Materialised"
 
 # Background sRGB colors from ThemeTokens (kDarkPalette.bg & kLightPalette.bg)
 DARK_BG_RGB = (0x07, 0x11, 0x15)
-LIGHT_BG_RGB = (0xF2, 0xF8, 0xF9)
+LIGHT_BG_RGB = (0xC9, 0xE6, 0xEC)
 
 
 def load_raw_logo_asset(repo_root: Path, variant: str) -> Image.Image | None:
@@ -85,9 +85,9 @@ def load_or_render_rgba(repo_root: Path, variant: str) -> Image.Image:
     draw = ImageDraw.Draw(canvas)
 
     # Theme text colors matching include/theme_tokens.h
-    text_main = (233, 243, 246, 255) if variant == "dark" else (11, 29, 36, 255)
-    text_cyan = (0, 182, 212, 255) if variant == "dark" else (0, 142, 176, 255)
-    text_dim = (130, 159, 169, 255) if variant == "dark" else (77, 107, 118, 255)
+    text_main = (233, 243, 246, 255) if variant == "dark" else (0, 20, 30, 255)
+    text_cyan = (0, 182, 212, 255) if variant == "dark" else (0, 116, 145, 255)
+    text_dim = (130, 159, 169, 255) if variant == "dark" else (45, 77, 88, 255)
 
     raw_img = load_raw_logo_asset(repo_root, variant)
     icon_size = 52

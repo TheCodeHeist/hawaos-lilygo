@@ -1,6 +1,7 @@
 #include "apps/MediaApp.h"
 #include "config.h"
 #include "core/AppManager.h"
+#include "core/Settings.h"
 #include "services/CompanionLink.h"
 #include "ui/Theme.h"
 #include "ui/icons.h"
@@ -10,6 +11,12 @@
 #include <string.h>
 
 namespace {
+
+constexpr uint32_t kDefaultBgTop = 0x008DA6;
+constexpr uint32_t kDefaultBgBot = 0x071115;
+constexpr uint32_t kTextWhite = 0xFFFFFF;
+constexpr uint32_t kTextSilver = 0xD0DCE0;
+constexpr uint32_t kTextDimSilver = 0xA0B4BA;
 
 void formatDurationMs(uint32_t ms, char *out, size_t maxLen) {
   const uint32_t totalSec = ms / 1000;
@@ -32,13 +39,31 @@ void setLabelTextIfChanged(lv_obj_t *lbl, const char *newText) {
 
 void MediaApp::onEnter(lv_obj_t *root) {
   m_root = root;
+  m_lastBgTop = 0xFFFFFFFF;
+  m_lastBgBot = 0xFFFFFFFF;
+  m_lastLightBg = false;
   const ThemeTokens::Palette &p = Theme::dark();
 
-  // Album Art container (128x128 at x=10, y=21, radius 10)
-  m_artCard = Theme::createCard(root, 128, 128, 10, 21, 10, true);
+  // Root screen uses full-screen vertical gradient tinted with companion bg_top
+  // -> bg_bottom
+  lv_obj_set_style_bg_opa(root, LV_OPA_COVER, LV_PART_MAIN);
+  lv_obj_set_style_bg_grad_dir(root, LV_GRAD_DIR_VER, LV_PART_MAIN);
+
+  // Album Art Card: 120x120 at x=12, y=25 (centered vertically on 170px height)
+  // Subtle 1px translucent border with rounded corners (radius 10)
+  m_artCard = lv_obj_create(root);
+  lv_obj_set_pos(m_artCard, 12, 25);
+  lv_obj_set_size(m_artCard, 120, 120);
+  lv_obj_set_style_bg_color(m_artCard, lv_color_hex(p.surface), LV_PART_MAIN);
+  lv_obj_set_style_bg_opa(m_artCard, LV_OPA_COVER, LV_PART_MAIN);
+  lv_obj_set_style_radius(m_artCard, 10, LV_PART_MAIN);
+  lv_obj_set_style_border_color(m_artCard, lv_color_hex(0xFFFFFF),
+                                LV_PART_MAIN);
+  lv_obj_set_style_border_opa(m_artCard, LV_OPA_20, LV_PART_MAIN);
+  lv_obj_set_style_border_width(m_artCard, 1, LV_PART_MAIN);
   lv_obj_set_style_pad_all(m_artCard, 0, LV_PART_MAIN);
-  lv_obj_set_style_bg_color(m_artCard, lv_color_hex(p.surface2), LV_PART_MAIN);
   lv_obj_set_style_clip_corner(m_artCard, true, LV_PART_MAIN);
+  lv_obj_clear_flag(m_artCard, LV_OBJ_FLAG_SCROLLABLE);
 
   m_artPlaceholderIcon = lv_label_create(m_artCard);
   lv_label_set_text(m_artPlaceholderIcon, ICON_MUSIC);
@@ -58,33 +83,44 @@ void MediaApp::onEnter(lv_obj_t *root) {
 
   m_artImg = lv_img_create(m_artCard);
   lv_img_set_src(m_artImg, &m_artDsc);
+  lv_img_set_zoom(m_artImg, 240); // 128 * (240/256) = 120px exact fit
   lv_obj_center(m_artImg);
   lv_obj_add_flag(m_artImg, LV_OBJ_FLAG_HIDDEN);
 
-  // Right column starts at x=150 (width 158)
-  // Both Title and Artist use single-line circular scroll so long names never
-  // wrap and overwrite each other
+  // Right column starts at x=144 (width 164 px)
+  // Small discrete "NOW PLAYING" header
+  m_kickerLbl = lv_label_create(root);
+  lv_label_set_text(m_kickerLbl, "NOW PLAYING");
+  lv_obj_set_style_text_font(m_kickerLbl, Theme::fontCaption(), LV_PART_MAIN);
+  lv_obj_set_style_text_color(m_kickerLbl, lv_color_hex(kTextDimSilver),
+                              LV_PART_MAIN);
+  lv_obj_set_pos(m_kickerLbl, 144, 14);
+
+  // Track Title: Bold white 18 SemiBold, circular marquee scroll
   m_titleLbl = lv_label_create(root);
   lv_obj_set_style_text_font(m_titleLbl, Theme::fontTitle(), LV_PART_MAIN);
-  lv_obj_set_style_text_color(m_titleLbl, lv_color_hex(p.text), LV_PART_MAIN);
+  lv_obj_set_style_text_color(m_titleLbl, lv_color_hex(kTextWhite),
+                              LV_PART_MAIN);
   lv_label_set_long_mode(m_titleLbl, LV_LABEL_LONG_SCROLL_CIRCULAR);
   lv_obj_set_style_anim_speed(m_titleLbl, 28, LV_PART_MAIN);
-  lv_obj_set_width(m_titleLbl, 158);
-  lv_obj_set_pos(m_titleLbl, 150, 20);
+  lv_obj_set_width(m_titleLbl, 164);
+  lv_obj_set_pos(m_titleLbl, 144, 30);
 
+  // Artist Name: Soft silver-tinted white 14 Regular, circular marquee scroll
   m_artistLbl = lv_label_create(root);
   lv_obj_set_style_text_font(m_artistLbl, Theme::fontBody(), LV_PART_MAIN);
-  lv_obj_set_style_text_color(m_artistLbl, lv_color_hex(p.textDim),
+  lv_obj_set_style_text_color(m_artistLbl, lv_color_hex(kTextSilver),
                               LV_PART_MAIN);
   lv_label_set_long_mode(m_artistLbl, LV_LABEL_LONG_SCROLL_CIRCULAR);
   lv_obj_set_style_anim_speed(m_artistLbl, 24, LV_PART_MAIN);
-  lv_obj_set_width(m_artistLbl, 158);
-  lv_obj_set_pos(m_artistLbl, 150, 48);
+  lv_obj_set_width(m_artistLbl, 164);
+  lv_obj_set_pos(m_artistLbl, 144, 56);
 
-  // Progress bar (4 px, primary on surface2)
+  // Sleek progress bar: 3 px thin, translucent track with dynamic tint
+  // indicator
   m_progBar = lv_bar_create(root);
-  lv_obj_set_size(m_progBar, 158, 4);
-  lv_obj_set_pos(m_progBar, 150, 82);
+  lv_obj_set_size(m_progBar, 164, 3);
+  lv_obj_set_pos(m_progBar, 144, 88);
   lv_bar_set_range(m_progBar, 0, 1000);
   lv_obj_set_style_radius(m_progBar, LV_RADIUS_CIRCLE, LV_PART_MAIN);
   lv_obj_set_style_radius(m_progBar, LV_RADIUS_CIRCLE, LV_PART_INDICATOR);
@@ -92,27 +128,32 @@ void MediaApp::onEnter(lv_obj_t *root) {
   lv_obj_set_style_bg_opa(m_progBar, LV_OPA_30, LV_PART_MAIN);
   lv_obj_set_style_bg_color(m_progBar, lv_color_hex(p.primary),
                             LV_PART_INDICATOR);
+  lv_obj_set_style_bg_opa(m_progBar, LV_OPA_COVER, LV_PART_INDICATOR);
 
   m_posLbl = lv_label_create(root);
   lv_obj_set_style_text_font(m_posLbl, Theme::fontCaption(), LV_PART_MAIN);
-  lv_obj_set_style_text_color(m_posLbl, lv_color_hex(p.textDim), LV_PART_MAIN);
-  lv_obj_set_pos(m_posLbl, 150, 90);
+  lv_obj_set_style_text_color(m_posLbl, lv_color_hex(kTextDimSilver),
+                              LV_PART_MAIN);
+  lv_obj_set_pos(m_posLbl, 144, 95);
 
   m_durLbl = lv_label_create(root);
   lv_obj_set_style_text_font(m_durLbl, Theme::fontCaption(), LV_PART_MAIN);
-  lv_obj_set_style_text_color(m_durLbl, lv_color_hex(p.textDim), LV_PART_MAIN);
-  lv_obj_align(m_durLbl, LV_ALIGN_TOP_RIGHT, -12, 90);
+  lv_obj_set_style_text_color(m_durLbl, lv_color_hex(kTextDimSilver),
+                              LV_PART_MAIN);
+  lv_obj_align(m_durLbl, LV_ALIGN_TOP_RIGHT, -12, 95);
 
   // Transport controls: [skip-back] [ (play/pause circle) ] [skip-forward]
-  lv_obj_t *prevIcon = lv_label_create(root);
-  lv_label_set_text(prevIcon, ICON_SKIP_BACK);
-  lv_obj_set_style_text_font(prevIcon, Theme::iconFont24(), LV_PART_MAIN);
-  lv_obj_set_style_text_color(prevIcon, lv_color_hex(p.text), LV_PART_MAIN);
-  lv_obj_set_pos(prevIcon, 166, 118);
+  m_prevIcon = lv_label_create(root);
+  lv_label_set_text(m_prevIcon, ICON_SKIP_BACK);
+  lv_obj_set_style_text_font(m_prevIcon, Theme::iconFont24(), LV_PART_MAIN);
+  lv_obj_set_style_text_color(m_prevIcon, lv_color_hex(kTextWhite),
+                              LV_PART_MAIN);
+  lv_obj_set_pos(m_prevIcon, 156, 120);
 
+  // Play button: 36x36 circular button with adaptive icon
   m_playBtnCircle = lv_obj_create(root);
-  lv_obj_set_size(m_playBtnCircle, 38, 38);
-  lv_obj_set_pos(m_playBtnCircle, 210, 111);
+  lv_obj_set_size(m_playBtnCircle, 36, 36);
+  lv_obj_set_pos(m_playBtnCircle, 208, 114);
   lv_obj_set_style_radius(m_playBtnCircle, LV_RADIUS_CIRCLE, LV_PART_MAIN);
   lv_obj_set_style_bg_color(m_playBtnCircle, lv_color_hex(p.primary),
                             LV_PART_MAIN);
@@ -127,11 +168,12 @@ void MediaApp::onEnter(lv_obj_t *root) {
                               LV_PART_MAIN);
   lv_obj_center(m_playIconLbl);
 
-  lv_obj_t *nextIcon = lv_label_create(root);
-  lv_label_set_text(nextIcon, ICON_SKIP_FORWARD);
-  lv_obj_set_style_text_font(nextIcon, Theme::iconFont24(), LV_PART_MAIN);
-  lv_obj_set_style_text_color(nextIcon, lv_color_hex(p.text), LV_PART_MAIN);
-  lv_obj_set_pos(nextIcon, 268, 118);
+  m_nextIcon = lv_label_create(root);
+  lv_label_set_text(m_nextIcon, ICON_SKIP_FORWARD);
+  lv_obj_set_style_text_font(m_nextIcon, Theme::iconFont24(), LV_PART_MAIN);
+  lv_obj_set_style_text_color(m_nextIcon, lv_color_hex(kTextWhite),
+                              LV_PART_MAIN);
+  lv_obj_set_pos(m_nextIcon, 264, 120);
 
   m_lastProgressSec = 0xFFFFFFFF;
   const DataSnapshot snap = DataStore::getSnapshot();
@@ -144,13 +186,16 @@ void MediaApp::onExit() {
   m_artCard = nullptr;
   m_artPlaceholderIcon = nullptr;
   m_artImg = nullptr;
+  m_kickerLbl = nullptr;
   m_titleLbl = nullptr;
   m_artistLbl = nullptr;
   m_progBar = nullptr;
   m_posLbl = nullptr;
   m_durLbl = nullptr;
+  m_prevIcon = nullptr;
   m_playBtnCircle = nullptr;
   m_playIconLbl = nullptr;
+  m_nextIcon = nullptr;
 }
 
 void MediaApp::onTick(uint32_t nowMs) {
@@ -190,25 +235,97 @@ void MediaApp::onData(const DataSnapshot &d) {
 void MediaApp::refreshMedia(const DataSnapshot &d) {
   if (m_root == nullptr)
     return;
+
+  const bool hasTrack = (d.mediaTitle[0] != '\0');
+
+  // Background gradient: Uses bg_top and bg_bottom parsed from CompanionLink
+  const uint32_t bgTop = (d.mediaBgTop != 0) ? d.mediaBgTop : kDefaultBgTop;
+  const uint32_t bgBot =
+      (d.mediaBgBottom != 0) ? d.mediaBgBottom : kDefaultBgBot;
+
   const ThemeTokens::Palette &p = Theme::dark();
+  const bool lightBg =
+      Theme::isColorLight(bgTop) || (!d.mediaInkLight && hasTrack);
 
-  // Apply companion tinted gradient background (or fallback to dark bg)
-  const bool hasTrack =
-      (d.mediaState != MediaPlayState::Stopped && d.mediaTitle[0] != '\0');
-  const uint32_t bgTop = hasTrack ? d.mediaBgTop : p.bg;
-  const uint32_t bgBot = hasTrack ? d.mediaBgBottom : p.bg;
+  // Dynamic high-contrast typography tokens based on background tint:
+  const uint32_t titleColor = lightBg ? 0x0A1014 : 0xFFFFFF;
+  const uint32_t artistColor = lightBg ? 0x243238 : 0xD0DCE0;
+  const uint32_t kickerColor = lightBg ? 0x354850 : 0xA0B4BA;
+  const uint32_t subColor = lightBg ? 0x354850 : 0xA0B4BA;
+  const uint32_t iconColor = lightBg ? 0x0A1014 : 0xFFFFFF;
 
-  lv_obj_set_style_bg_color(m_root, lv_color_hex(bgTop), LV_PART_MAIN);
-  lv_obj_set_style_bg_grad_color(m_root, lv_color_hex(bgBot), LV_PART_MAIN);
-  lv_obj_set_style_bg_grad_dir(m_root, LV_GRAD_DIR_VER, LV_PART_MAIN);
+  // Dynamic progress bar indicator derived directly from the dominant album art
+  // tint:
+  const uint32_t progIndicatorColor =
+      hasTrack ? Theme::tintAccent(bgTop, p.primary) : p.primary;
+  const uint32_t progTrackColor = lightBg ? 0x000000 : 0xFFFFFF;
+  const lv_opa_t progTrackOpa = lightBg ? LV_OPA_20 : LV_OPA_30;
+
+  if (bgTop != m_lastBgTop || bgBot != m_lastBgBot ||
+      lightBg != m_lastLightBg) {
+    m_lastBgTop = bgTop;
+    m_lastBgBot = bgBot;
+    m_lastLightBg = lightBg;
+
+    lv_obj_set_style_bg_color(m_root, lv_color_hex(bgTop), LV_PART_MAIN);
+    lv_obj_set_style_bg_grad_color(m_root, lv_color_hex(bgBot), LV_PART_MAIN);
+    lv_obj_set_style_bg_grad_dir(
+        m_root, (bgTop != bgBot) ? LV_GRAD_DIR_VER : LV_GRAD_DIR_NONE,
+        LV_PART_MAIN);
+
+    // Apply high-contrast text and indicator colors
+    lv_obj_set_style_text_color(m_titleLbl, lv_color_hex(titleColor),
+                                LV_PART_MAIN);
+    lv_obj_set_style_text_color(m_artistLbl, lv_color_hex(artistColor),
+                                LV_PART_MAIN);
+    lv_obj_set_style_text_color(m_kickerLbl, lv_color_hex(kickerColor),
+                                LV_PART_MAIN);
+    lv_obj_set_style_text_color(m_posLbl, lv_color_hex(subColor), LV_PART_MAIN);
+    lv_obj_set_style_text_color(m_durLbl, lv_color_hex(subColor), LV_PART_MAIN);
+    lv_obj_set_style_text_color(m_prevIcon, lv_color_hex(iconColor),
+                                LV_PART_MAIN);
+    lv_obj_set_style_text_color(m_nextIcon, lv_color_hex(iconColor),
+                                LV_PART_MAIN);
+
+    // Progress bar styles: indicator uses album art tint; track adapts contrast
+    lv_obj_set_style_bg_color(m_progBar, lv_color_hex(progIndicatorColor),
+                              LV_PART_INDICATOR);
+    lv_obj_set_style_bg_color(m_progBar, lv_color_hex(progTrackColor),
+                              LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(m_progBar, progTrackOpa, LV_PART_MAIN);
+
+    // Play button circle styles: matching vibrant tint accent with adaptive
+    // icon ink
+    lv_obj_set_style_bg_color(m_playBtnCircle, lv_color_hex(progIndicatorColor),
+                              LV_PART_MAIN);
+    const uint32_t playIconColor =
+        Theme::isColorLight(progIndicatorColor) ? 0x051920 : 0xFFFFFF;
+    lv_obj_set_style_text_color(m_playIconLbl, lv_color_hex(playIconColor),
+                                LV_PART_MAIN);
+
+    // Art card border contrast: subtle 1px border with high contrast
+    lv_obj_set_style_border_color(
+        m_artCard, lv_color_hex(lightBg ? 0x000000 : 0xFFFFFF), LV_PART_MAIN);
+
+    lv_obj_invalidate(m_root);
+    Serial.printf(
+        "[MediaApp] Applied tint: top=0x%06lX, bot=0x%06lX, prog=0x%06lX, "
+        "lightBg=%d\n",
+        static_cast<unsigned long>(bgTop), static_cast<unsigned long>(bgBot),
+        static_cast<unsigned long>(progIndicatorColor), lightBg ? 1 : 0);
+  }
 
   if (hasTrack) {
     setLabelTextIfChanged(m_titleLbl, d.mediaTitle);
     setLabelTextIfChanged(m_artistLbl,
                           d.mediaArtist[0] ? d.mediaArtist : "Unknown Artist");
+    setLabelTextIfChanged(m_kickerLbl, (d.mediaState == MediaPlayState::Playing)
+                                           ? "NOW PLAYING"
+                                           : "PAUSED");
   } else {
     setLabelTextIfChanged(m_titleLbl, "Nothing playing");
     setLabelTextIfChanged(m_artistLbl, "Play music on your PC");
+    setLabelTextIfChanged(m_kickerLbl, "SPOTIFY PLAYER");
   }
 
   // Show pause icon when playing, play icon when paused/stopped
@@ -216,7 +333,7 @@ void MediaApp::refreshMedia(const DataSnapshot &d) {
       (d.mediaState == MediaPlayState::Playing) ? ICON_PAUSE : ICON_PLAY;
   setLabelTextIfChanged(m_playIconLbl, targetIcon);
 
-  // Show 128x128 RGB565 album art from PSRAM if ready
+  // Show 120x120 RGB565 album art from PSRAM if ready
   if (hasTrack && d.mediaArtReady && DataStore::albumArtBuffer() != nullptr) {
     lv_obj_clear_flag(m_artImg, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(m_artPlaceholderIcon, LV_OBJ_FLAG_HIDDEN);

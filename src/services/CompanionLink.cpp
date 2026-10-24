@@ -42,10 +42,17 @@ uint32_t s_pendingAckVer = 0;
 bool s_hasPendingAck = false;
 
 uint32_t parseHexColor(const char *hexStr, uint32_t fallback) {
-  if (hexStr == nullptr || hexStr[0] == '\0') {
+  if (hexStr == nullptr) {
     return fallback;
   }
-  if (hexStr[0] == '#') {
+  while (*hexStr == ' ' || *hexStr == '\t' || *hexStr == '"' ||
+         *hexStr == '\'') {
+    ++hexStr;
+  }
+  if (*hexStr == '\0') {
+    return fallback;
+  }
+  if (*hexStr == '#') {
     ++hexStr;
   }
   char *endPtr = nullptr;
@@ -59,6 +66,12 @@ uint32_t parseHexColor(const char *hexStr, uint32_t fallback) {
 void postDataUpdated() {
   Event ev{};
   ev.type = EventType::DataUpdated;
+  EventBus::post(ev);
+}
+
+void postNotificationArrived() {
+  Event ev{};
+  ev.type = EventType::NotificationArrived;
   EventBus::post(ev);
 }
 
@@ -76,9 +89,7 @@ void sendJsonPacket(const char *jsonStr) {
     s_udp.write(reinterpret_cast<const uint8_t *>(jsonStr), strlen(jsonStr));
     s_udp.endPacket();
   }
-  if (s_lastRxViaUsb) {
-    Serial.println(jsonStr);
-  }
+  Serial.println(jsonStr);
 }
 
 void handleJsonMessage(const char *payload, size_t len, bool viaUsb) {
@@ -89,7 +100,22 @@ void handleJsonMessage(const char *payload, size_t len, bool viaUsb) {
   }
 
   s_lastRxViaUsb = viaUsb;
+
+  const char *hostIpStr = doc["host_ip"] | "";
+  if (hostIpStr[0] != '\0') {
+    IPAddress hostIp;
+    if (hostIp.fromString(hostIpStr)) {
+      s_companionIp = hostIp;
+      s_hasCompanionPeer = true;
+    }
+  }
+
   const char *type = doc["type"] | "";
+
+  if (strcmp(type, "query") == 0) {
+    sendConfigAck(Settings::getConfigVersion());
+    return;
+  }
 
   if (strcmp(type, "stats") == 0) {
     const uint32_t ts = doc["ts"] | 0U;
@@ -106,6 +132,7 @@ void handleJsonMessage(const char *payload, size_t len, bool viaUsb) {
 
     DataStore::updateStats(ts, cpu, ram, netUp, netDown, viaUsb);
 
+    bool pushedNotify = false;
     if (doc["notify"].is<JsonArrayConst>()) {
       JsonArrayConst arr = doc["notify"].as<JsonArrayConst>();
       for (JsonObjectConst item : arr) {
@@ -114,11 +141,16 @@ void handleJsonMessage(const char *payload, size_t len, bool viaUsb) {
         const uint32_t nts = item["ts"] | ts;
         if (title[0] != '\0') {
           DataStore::pushNotification(title, body, nts);
+          pushedNotify = true;
         }
       }
     }
 
-    postDataUpdated();
+    if (pushedNotify) {
+      postNotificationArrived();
+    } else {
+      postDataUpdated();
+    }
     return;
   }
 
@@ -137,9 +169,22 @@ void handleJsonMessage(const char *payload, size_t len, bool viaUsb) {
     const uint32_t posMs = doc["pos_ms"] | 0U;
     const uint32_t durMs = doc["dur_ms"] | 0U;
     const char *artHash = doc["art"] | "";
-    const uint32_t bgTop = parseHexColor(doc["bg_top"] | "#071115", 0x071115);
-    const uint32_t bgBot =
-        parseHexColor(doc["bg_bottom"] | "#05090b", 0x05090B);
+
+    const char *bgTopStr = doc["bg_top"].is<const char *>()
+                               ? doc["bg_top"].as<const char *>()
+                               : nullptr;
+    const char *bgBotStr = doc["bg_bottom"].is<const char *>()
+                               ? doc["bg_bottom"].as<const char *>()
+                               : nullptr;
+    const uint32_t bgTop = parseHexColor(bgTopStr, 0x008DA6);
+    const uint32_t bgBot = parseHexColor(bgBotStr, 0x071115);
+
+    Serial.printf(
+        "[CompanionLink] Media RX: '%s' | bgTop=0x%06lX (raw='%s') | "
+        "bgBot=0x%06lX (raw='%s')\n",
+        title, static_cast<unsigned long>(bgTop), bgTopStr ? bgTopStr : "null",
+        static_cast<unsigned long>(bgBot), bgBotStr ? bgBotStr : "null");
+
     const char *inkStr = doc["ink"] | "light";
     const bool inkLight = (strcmp(inkStr, "dark") != 0);
 
@@ -167,17 +212,13 @@ void handleJsonMessage(const char *payload, size_t len, bool viaUsb) {
     const uint32_t ts = doc["ts"] | static_cast<uint32_t>(millis() / 1000);
     if (title[0] != '\0') {
       DataStore::pushNotification(title, body, ts);
-      postDataUpdated();
+      postNotificationArrived();
     }
     return;
   }
 
   if (strcmp(type, "config") == 0) {
     const uint32_t v = doc["v"] | 0U;
-    if (v > 0 && v < Settings::getConfigVersion()) {
-      sendConfigAck(Settings::getConfigVersion());
-      return;
-    }
 
     if (doc["theme"].is<const char *>()) {
       const char *th = doc["theme"];
@@ -211,8 +252,13 @@ void handleJsonMessage(const char *payload, size_t len, bool viaUsb) {
     if (doc["use_24h"].is<bool>()) {
       Settings::setUse24Hour(doc["use_24h"].as<bool>());
     }
-    if (doc["wifi_ssid"].is<const char *>() &&
-        doc["wifi_pass"].is<const char *>()) {
+    if (doc["notify_popup"].is<bool>()) {
+      Settings::setNotifyPopupEnabled(doc["notify_popup"].as<bool>());
+    }
+    if (doc["forget_wifi"].is<bool>() && doc["forget_wifi"].as<bool>()) {
+      WifiService::forgetWifi();
+    } else if (doc["wifi_ssid"].is<const char *>() &&
+               doc["wifi_pass"].is<const char *>()) {
       const char *newSsid = doc["wifi_ssid"];
       const char *newPass = doc["wifi_pass"];
       if (newSsid[0] != '\0') {
@@ -220,10 +266,10 @@ void handleJsonMessage(const char *payload, size_t len, bool viaUsb) {
       }
     }
 
-    if (v > 0) {
-      Settings::setConfigVersion(v);
-      sendConfigAck(v);
-    }
+    const uint32_t curVer = Settings::getConfigVersion();
+    const uint32_t nextVer = (v > curVer) ? v : (curVer + 1);
+    Settings::setConfigVersion(nextVer);
+    sendConfigAck(nextVer);
     postSettingsChanged();
     return;
   }
@@ -238,11 +284,22 @@ void fetchPendingAlbumArt() {
     s_pendingArtHash[0] = '\0';
     return;
   }
-  if (!s_hasCompanionPeer || WiFi.status() != WL_CONNECTED)
-    return;
 
   const uint32_t nowMs = millis();
-  if (nowMs - s_lastArtAttemptMs < 2000)
+  if (!s_hasCompanionPeer || WiFi.status() != WL_CONNECTED) {
+    static uint32_t s_lastArtDiagMs = 0;
+    if (nowMs - s_lastArtDiagMs >= 3000) {
+      s_lastArtDiagMs = nowMs;
+      Serial.printf(
+          "[CompanionLink] Pending art '%s' waiting (wifi=%d, peer=%d, "
+          "companionIp=%s)\n",
+          s_pendingArtHash, WiFi.status() == WL_CONNECTED ? 1 : 0,
+          s_hasCompanionPeer ? 1 : 0, s_companionIp.toString().c_str());
+    }
+    return;
+  }
+
+  if (nowMs - s_lastArtAttemptMs < 1200)
     return;
   s_lastArtAttemptMs = nowMs;
 
@@ -258,6 +315,7 @@ void fetchPendingAlbumArt() {
   HTTPClient http;
   http.setTimeout(1500);
   if (!http.begin(url)) {
+    Serial.printf("[CompanionLink] Art HTTP begin failed: %s\n", url);
     return;
   }
 
@@ -292,7 +350,14 @@ void fetchPendingAlbumArt() {
       Serial.printf("[CompanionLink] Pulled 128x128 RGB565 art (%s)\n",
                     s_loadedArtHash);
       postDataUpdated();
+    } else {
+      Serial.printf("[CompanionLink] Art read truncated (%u / %u bytes)\n",
+                    static_cast<unsigned>(totalRead),
+                    static_cast<unsigned>(DataStore::ALBUM_ART_BYTES));
     }
+  } else {
+    Serial.printf("[CompanionLink] Art GET failed: %s code=%d size=%d\n", url,
+                  code, http.getSize());
   }
   http.end();
 }
@@ -307,7 +372,7 @@ void flushPendingOutbound() {
   if (s_txMutex != nullptr &&
       xSemaphoreTake(s_txMutex, pdMS_TO_TICKS(10)) == pdTRUE) {
     if (s_hasPendingCmd) {
-      strncpy(cmdLocal, s_pendingCmd, sizeof(cmdLocal) - 1);
+      strncpy(cmdLocal, s_pendingCmd, sizeof(s_pendingCmd) - 1);
       posLocal = s_pendingCmdPosMs;
       s_hasPendingCmd = false;
       sendCmd = true;
@@ -328,9 +393,35 @@ void flushPendingOutbound() {
     sendJsonPacket(buf);
   }
   if (sendAck) {
-    char buf[64];
-    snprintf(buf, sizeof(buf), "{\"type\":\"config_ack\",\"v\":%lu}",
-             static_cast<unsigned long>(ackVer));
+    const char *themeStr = "dark";
+    const ThemeMode tm = Settings::getThemeMode();
+    if (tm == ThemeMode::Light) {
+      themeStr = "light";
+    } else if (tm == ThemeMode::Auto) {
+      themeStr = "auto";
+    }
+    const char *wpStr = (Settings::getWallpaperMode() == WallpaperMode::Solid)
+                            ? "solid"
+                            : "gradient";
+    const String ipStr = WifiService::isConnected() ? WiFi.localIP().toString()
+                                                    : String("0.0.0.0");
+    char ssidBuf[33] = {0};
+    Settings::getWifiSsid(ssidBuf, sizeof(ssidBuf));
+
+    char buf[340];
+    snprintf(buf, sizeof(buf),
+             "{\"type\":\"config_ack\",\"v\":%lu,\"ip\":\"%s\",\"wifi\":%s,"
+             "\"ssid\":\"%s\",\"theme\":\"%s\",\"brightness\":%u,\"aod\":%s,"
+             "\"aod_timeout_s\":%u,\"reduce_motion\":%s,\"wallpaper\":\"%s\","
+             "\"use_24h\":%s,\"notify_popup\":%s}",
+             static_cast<unsigned long>(ackVer), ipStr.c_str(),
+             WifiService::isConnected() ? "true" : "false", ssidBuf, themeStr,
+             static_cast<unsigned>(Settings::getBrightnessPct()),
+             Settings::getAodEnabled() ? "true" : "false",
+             static_cast<unsigned>(Settings::getAodTimeoutSec()),
+             Settings::getReduceMotion() ? "true" : "false", wpStr,
+             Settings::getUse24Hour() ? "true" : "false",
+             Settings::getNotifyPopupEnabled() ? "true" : "false");
     sendJsonPacket(buf);
   }
 }
@@ -343,6 +434,16 @@ void pollUsbSerial() {
         s_serialLine[s_serialLen] = '\0';
         if (s_serialLine[0] == '{') {
           handleJsonMessage(s_serialLine, s_serialLen, true);
+        } else if (s_serialLen == 1) {
+          const char ch = s_serialLine[0];
+          if (ch == 't' || ch == 'T') {
+            Event ev{};
+            ev.type = EventType::RunStressTest;
+            ev.stressIterations = 200;
+            EventBus::post(ev);
+          } else if (ch == 'r' || ch == 'R') {
+            WifiService::forceReconnect();
+          }
         }
         s_serialLen = 0;
       }
@@ -423,5 +524,7 @@ void sendConfigAck(uint32_t version) {
     xSemaphoreGive(s_txMutex);
   }
 }
+
+bool hasPeer() { return s_hasCompanionPeer || s_lastRxViaUsb; }
 
 } // namespace CompanionLink

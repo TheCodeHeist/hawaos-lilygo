@@ -27,6 +27,9 @@ void enterAod();
 void exitAod();
 bool isInAod();
 
+// Reset idle activity timer (e.g. on notifications or user interaction).
+void resetActivity();
+
 // Instant theme recolor across StatusBar and current screen/app (DESIGN.md
 // Section 3.3).
 void applyActiveTheme();

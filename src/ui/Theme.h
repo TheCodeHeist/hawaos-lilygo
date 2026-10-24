@@ -33,6 +33,11 @@ void setFocusRing(lv_obj_t *obj, bool focused, bool forceDark = false);
 // (DESIGN.md Section 7)
 uint32_t animDuration(uint32_t normalMs);
 
+// Color luminance and contrast helpers
+uint8_t luminance(uint32_t rgb888);
+bool isColorLight(uint32_t rgb888);
+uint32_t tintAccent(uint32_t bgTop, uint32_t fallbackRgb);
+
 // Typography role helpers (DESIGN.md Section 4)
 inline const lv_font_t *fontCaption() { return &font_inter_12_reg; }
 inline const lv_font_t *fontBody() { return &font_inter_14_reg; }

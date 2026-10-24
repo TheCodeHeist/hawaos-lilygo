@@ -1,14 +1,21 @@
 [package]
 name = "hawaos-companion"
 version = "0.4.0"
-edition = "2021"
-description = "HawaOS Desktop Companion Daemon for LilyGo T-Display-S3"
+edition = "2024"
+description = "HawaOS Desktop Companion Application & Tray Daemon for LilyGo T-Display-S3"
 license = "MIT"
 
 [dependencies]
-image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp"] }
+gpui-kit = "0.8.0"
+image = { version = "0.25", default-features = false, features = [
+  "png",
+  "jpeg",
+  "webp",
+] }
+ksni = { version = "0.3", features = ["blocking"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-sha1 = "0.10"
-sysinfo = "0.31"
-ureq = "2.10"
+serialport = { version = "4.10.1", default-features = false }
+sha1 = "0.11.0"
+sysinfo = "0.39.6"
+ureq = "3.5.0"

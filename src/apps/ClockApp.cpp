@@ -135,6 +135,7 @@ bool ClockApp::onButton(Button b, Press p) {
       return true;
     }
     Settings::setUse24Hour(!Settings::getUse24Hour());
+    Settings::bumpLocalConfigVersion();
     m_lastSec = 0xFFFFFFFF;
     refreshTime();
     return true;
@@ -232,9 +233,11 @@ void ClockApp::refreshDashboard(const DataSnapshot &d) {
     if (d.wifiConnected) {
       snprintf(chipText, sizeof(chipText), "%s \u00b7 %s", d.wifiSsid,
                d.wifiIp);
+    } else if (d.wifiSsid[0] != '\0') {
+      snprintf(chipText, sizeof(chipText), "Connecting to %s...", d.wifiSsid);
     } else {
-      snprintf(chipText, sizeof(chipText), "Connecting to %s...",
-               d.wifiSsid[0] ? d.wifiSsid : "WiFi");
+      snprintf(chipText, sizeof(chipText),
+               "Setup WiFi in HawaOS Companion (USB)");
     }
   }
   setLabelTextIfChanged(m_mediaTextLbl, chipText);

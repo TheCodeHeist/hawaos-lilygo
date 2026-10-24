@@ -85,34 +85,34 @@ constexpr Palette kDarkPalette = {
 };
 
 constexpr Palette kLightPalette = {
-    /* .bg = */ 0xF2F8F9, // oklch(97.5% 0.006 215.0)
-    /* .bgGradEnd = */ 0xDDEDF1, // oklch(93.5% 0.018 215.0)
-    /* .surface = */ 0xFAFCFD, // oklch(99.0% 0.003 215.0)
-    /* .surface2 = */ 0xE7F0F3, // oklch(95.0% 0.01 215.0)
-    /* .border = */ 0xD6E0E3, // oklch(90.0% 0.012 215.0)
-    /* .text = */ 0x0A1D26, // oklch(22.0% 0.03 230.0)
-    /* .textDim = */ 0x4C626B, // oklch(48.0% 0.03 225.0)
-    /* .primary = */ 0x00B6D4, // oklch(71.5% 0.143 215.221)
+    /* .bg = */ 0xC9E6EC, // oklch(90.5% 0.032 212.0)
+    /* .bgGradEnd = */ 0xA9D5DE, // oklch(84.5% 0.048 212.0)
+    /* .surface = */ 0xFCFEFE, // oklch(99.5% 0.002 215.0)
+    /* .surface2 = */ 0xACCED6, // oklch(83.0% 0.038 214.0)
+    /* .border = */ 0x71A1AE, // oklch(68.0% 0.055 216.0)
+    /* .text = */ 0x00141E, // oklch(18.0% 0.035 228.0)
+    /* .textDim = */ 0x2D4D58, // oklch(40.0% 0.042 222.0)
+    /* .primary = */ 0x0091B3, // oklch(60.9% 0.126 221.7)
     /* .accent = */ 0x007491, // oklch(52.0% 0.105 223.0)
     /* .pressed = */ 0x005F78, // oklch(45.0% 0.085 224.0)
-    /* .onPrimary = */ 0x051920, // oklch(20.0% 0.03 225.0)
-    /* .ok = */ 0x009253, // oklch(58.0% 0.15 155.0)
-    /* .warn = */ 0xB97500, // oklch(62.0% 0.15 70.0)
-    /* .err = */ 0xCC272E, // oklch(55.0% 0.2 25.0)
-    /* .bg565 = */ 0xF7DF,
-    /* .bgGradEnd565 = */ 0xDF7E,
+    /* .onPrimary = */ 0xFAFCFD, // oklch(99.0% 0.003 215.0)
+    /* .ok = */ 0x00884D, // oklch(55.0% 0.155 155.0)
+    /* .warn = */ 0xA96B00, // oklch(58.0% 0.155 70.0)
+    /* .err = */ 0xC21725, // oklch(52.0% 0.2 25.0)
+    /* .bg565 = */ 0xCF3D,
+    /* .bgGradEnd565 = */ 0xAEBB,
     /* .surface565 = */ 0xFFFF,
-    /* .surface2565 = */ 0xE79E,
-    /* .border565 = */ 0xD71C,
-    /* .text565 = */ 0x08E4,
-    /* .textDim565 = */ 0x4B0D,
-    /* .primary565 = */ 0x05BA,
+    /* .surface2565 = */ 0xAE7A,
+    /* .border565 = */ 0x7515,
+    /* .text565 = */ 0x00A3,
+    /* .textDim565 = */ 0x2A6B,
+    /* .primary565 = */ 0x0496,
     /* .accent565 = */ 0x03B2,
     /* .pressed565 = */ 0x02EF,
-    /* .onPrimary565 = */ 0x00C4,
-    /* .ok565 = */ 0x048A,
-    /* .warn565 = */ 0xBBA0,
-    /* .err565 = */ 0xC925,
+    /* .onPrimary565 = */ 0xFFFF,
+    /* .ok565 = */ 0x0449,
+    /* .warn565 = */ 0xAB40,
+    /* .err565 = */ 0xC0A4,
 };
 
 } // namespace ThemeTokens

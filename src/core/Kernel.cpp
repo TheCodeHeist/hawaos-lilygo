@@ -41,12 +41,30 @@ void drainEvents() {
   while (EventBus::poll(ev)) {
     switch (ev.type) {
     case EventType::ButtonPressed:
+      if (StatusBar::isPopupVisible() && ev.btn.press == Press::Short) {
+        StatusBar::dismissNotificationPopup();
+        break;
+      }
       AppManager::handleButton(ev.btn.button, ev.btn.press);
       break;
     case EventType::DataUpdated: {
       const DataSnapshot snap = DataStore::getSnapshot();
       StatusBar::updateData(snap);
       AppManager::handleData(snap);
+      break;
+    }
+    case EventType::NotificationArrived: {
+      const DataSnapshot snap = DataStore::getSnapshot();
+      StatusBar::updateData(snap);
+      AppManager::handleData(snap);
+      if (Settings::getNotifyPopupEnabled() && snap.notifyCount > 0) {
+        if (AppManager::isInAod()) {
+          AppManager::exitAod();
+        }
+        AppManager::resetActivity();
+        StatusBar::showNotificationPopup(snap.notifications[0].title,
+                                         snap.notifications[0].body);
+      }
       break;
     }
     case EventType::SettingsChanged:

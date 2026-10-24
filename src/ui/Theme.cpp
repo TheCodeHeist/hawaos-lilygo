@@ -85,4 +85,37 @@ uint32_t animDuration(uint32_t normalMs) {
   return Settings::getReduceMotion() ? 0 : normalMs;
 }
 
+uint8_t luminance(uint32_t rgb888) {
+  const uint32_t r = (rgb888 >> 16) & 0xFF;
+  const uint32_t g = (rgb888 >> 8) & 0xFF;
+  const uint32_t b = rgb888 & 0xFF;
+  return static_cast<uint8_t>((r * 2126U + g * 7152U + b * 722U) / 10000U);
+}
+
+bool isColorLight(uint32_t rgb888) { return luminance(rgb888) > 118U; }
+
+uint32_t tintAccent(uint32_t bgTop, uint32_t fallbackRgb) {
+  if (bgTop == 0 || bgTop == 0x071115 || bgTop == 0x05090B) {
+    return fallbackRgb;
+  }
+  uint32_t r = (bgTop >> 16) & 0xFF;
+  uint32_t g = (bgTop >> 8) & 0xFF;
+  uint32_t b = bgTop & 0xFF;
+
+  const uint32_t maxCh = (r > g) ? ((r > b) ? r : b) : ((g > b) ? g : b);
+  if (maxCh > 0 && maxCh < 120) {
+    const uint32_t factor = (160U * 255U) / maxCh;
+    r = (r * factor) / 255U;
+    g = (g * factor) / 255U;
+    b = (b * factor) / 255U;
+    if (r > 255)
+      r = 255;
+    if (g > 255)
+      g = 255;
+    if (b > 255)
+      b = 255;
+  }
+  return (r << 16) | (g << 8) | b;
+}
+
 } // namespace Theme

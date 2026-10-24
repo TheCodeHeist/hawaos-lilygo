@@ -6,6 +6,7 @@
 enum class EventType : uint8_t {
   ButtonPressed,
   DataUpdated,
+  NotificationArrived,
   SettingsChanged,
   RunStressTest,
 };

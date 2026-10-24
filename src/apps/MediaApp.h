@@ -8,6 +8,7 @@ public:
   const char *name() const override { return "Media"; }
   const char *icon() const override { return ICON_MUSIC; }
   bool hidesStatusBar() const override { return true; }
+  bool usesWallpaper() const override { return false; }
 
   bool wantsDouble(Button b) const override { return b == Button::Next; }
 
@@ -27,13 +28,19 @@ private:
   lv_obj_t *m_artImg = nullptr;
   lv_img_dsc_t m_artDsc{};
 
+  lv_obj_t *m_kickerLbl = nullptr;
   lv_obj_t *m_titleLbl = nullptr;
   lv_obj_t *m_artistLbl = nullptr;
   lv_obj_t *m_progBar = nullptr;
   lv_obj_t *m_posLbl = nullptr;
   lv_obj_t *m_durLbl = nullptr;
+  lv_obj_t *m_prevIcon = nullptr;
   lv_obj_t *m_playBtnCircle = nullptr;
   lv_obj_t *m_playIconLbl = nullptr;
+  lv_obj_t *m_nextIcon = nullptr;
 
+  uint32_t m_lastBgTop = 0xFFFFFFFF;
+  uint32_t m_lastBgBot = 0xFFFFFFFF;
+  bool m_lastLightBg = false;
   uint32_t m_lastProgressSec = 0xFFFFFFFF;
 };

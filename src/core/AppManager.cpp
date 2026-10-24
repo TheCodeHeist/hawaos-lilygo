@@ -63,6 +63,8 @@ lv_obj_t *s_aodArtistLbl = nullptr;
 lv_obj_t *s_aodProgBar = nullptr;
 uint32_t s_aodFromTop = 0x000000;
 uint32_t s_aodFromBot = 0x000000;
+uint32_t s_aodCurTop = 0x000000;
+uint32_t s_aodCurBot = 0x000000;
 uint32_t s_aodToTop = 0x000000;
 uint32_t s_aodToBot = 0x000000;
 uint32_t s_aodLastSec = 0xFFFFFFFF;
@@ -229,7 +231,10 @@ void refreshControlCenterTiles() {
   // Tile 2: Connection (WiFi / USB state, Select = reconnect)
   lv_label_set_text(s_ccIcons[2], d.wifiConnected ? ICON_WIFI : ICON_WIFI_OFF);
   lv_label_set_text(s_ccTitleLbls[2], "Connection");
-  lv_label_set_text(s_ccValLbls[2], d.wifiConnected ? "WiFi OK" : "Reconnect");
+  lv_label_set_text(s_ccValLbls[2],
+                    d.wifiConnected
+                        ? "WiFi OK"
+                        : (d.wifiSsid[0] ? "Reconnect" : "Use Companion"));
 
   // Tile 3: AOD (Enter AOD now)
   lv_label_set_text(s_ccIcons[3], ICON_CLOCK);
@@ -284,32 +289,45 @@ void buildControlCenterScreen(lv_obj_t *root) {
 // =============================================================================
 // Always-On Display (AOD) State Machine & Color Tween (DESIGN.md Section 10)
 // =============================================================================
+uint32_t lerpRgb888(uint32_t fromRgb, uint32_t toRgb, uint8_t t) {
+  const uint32_t inv = 255U - t;
+  const uint32_t r =
+      (((fromRgb >> 16) & 0xFFU) * inv + ((toRgb >> 16) & 0xFFU) * t) / 255U;
+  const uint32_t g =
+      (((fromRgb >> 8) & 0xFFU) * inv + ((toRgb >> 8) & 0xFFU) * t) / 255U;
+  const uint32_t b = ((fromRgb & 0xFFU) * inv + (toRgb & 0xFFU) * t) / 255U;
+  return (r << 16) | (g << 8) | b;
+}
+
 void aodAnimExecCb(void * /*var*/, int32_t v) {
   if (s_aodScreen == nullptr)
     return;
-  const uint8_t mix = static_cast<uint8_t>(v); // 0..255
-  const lv_color_t cTop =
-      lv_color_mix(lv_color_hex(s_aodToTop), lv_color_hex(s_aodFromTop), mix);
-  const lv_color_t cBot =
-      lv_color_mix(lv_color_hex(s_aodToBot), lv_color_hex(s_aodFromBot), mix);
+  const uint8_t mix = static_cast<uint8_t>(constrain(v, 0, 255));
+  s_aodCurTop = lerpRgb888(s_aodFromTop, s_aodToTop, mix);
+  s_aodCurBot = lerpRgb888(s_aodFromBot, s_aodToBot, mix);
 
-  lv_obj_set_style_bg_color(s_aodScreen, cTop, LV_PART_MAIN);
-  lv_obj_set_style_bg_grad_color(s_aodScreen, cBot, LV_PART_MAIN);
+  lv_obj_set_style_bg_color(s_aodScreen, lv_color_hex(s_aodCurTop),
+                            LV_PART_MAIN);
+  lv_obj_set_style_bg_grad_color(s_aodScreen, lv_color_hex(s_aodCurBot),
+                                 LV_PART_MAIN);
   lv_obj_set_style_bg_grad_dir(s_aodScreen, LV_GRAD_DIR_VER, LV_PART_MAIN);
+  lv_obj_invalidate(s_aodScreen);
 }
 
 void startAodTintTween(uint32_t toTop, uint32_t toBot, uint32_t durationMs) {
   if (toTop == s_aodToTop && toBot == s_aodToBot)
     return;
 
+  s_aodFromTop = s_aodCurTop;
+  s_aodFromBot = s_aodCurBot;
   s_aodToTop = toTop;
   s_aodToBot = toBot;
+
+  lv_anim_del(s_aodScreen, aodAnimExecCb);
 
   const uint32_t dur = Theme::animDuration(durationMs);
   if (dur == 0) {
     aodAnimExecCb(nullptr, 255);
-    s_aodFromTop = toTop;
-    s_aodFromBot = toBot;
     return;
   }
 
@@ -321,9 +339,6 @@ void startAodTintTween(uint32_t toTop, uint32_t toBot, uint32_t durationMs) {
   lv_anim_set_path_cb(&a, lv_anim_path_ease_out);
   lv_anim_set_exec_cb(&a, aodAnimExecCb);
   lv_anim_start(&a);
-
-  s_aodFromTop = toTop;
-  s_aodFromBot = toBot;
 }
 
 void refreshAodContent() {
@@ -389,10 +404,21 @@ void refreshAodContent() {
   }
 
   if (showMedia) {
-    // Media playing AOD: top bar has time (+ AM/PM) and short day/date
+    const uint32_t aodBgTop = (d.mediaBgTop != 0) ? d.mediaBgTop : 0x071115;
+    const bool aodLightBg =
+        Theme::isColorLight(aodBgTop) || (!d.mediaInkLight && showMedia);
+    const uint32_t clockColor = aodLightBg ? 0x0A1014 : 0xFFFFFF;
+    const uint32_t dateColor = aodLightBg ? 0x2D3E45 : 0xA0B4BA;
+    const uint32_t titleColor = aodLightBg ? 0x0A1014 : 0xFFFFFF;
+    const uint32_t artistColor = aodLightBg ? 0x243238 : 0xD0DCE0;
+    const uint32_t aodProgColor = Theme::tintAccent(aodBgTop, p.primary);
+    const uint32_t aodTrackColor = aodLightBg ? 0x000000 : 0xFFFFFF;
+    const lv_opa_t aodTrackOpa = aodLightBg ? LV_OPA_20 : LV_OPA_30;
+
+    // Media playing AOD: top bar has time (+ AM/PM) and short day/date with adaptive contrast
     lv_obj_set_style_text_font(s_aodClockLbl, Theme::fontDisplay(),
                                LV_PART_MAIN);
-    lv_obj_set_style_text_color(s_aodClockLbl, lv_color_hex(p.text),
+    lv_obj_set_style_text_color(s_aodClockLbl, lv_color_hex(clockColor),
                                 LV_PART_MAIN);
     if (!use24 && validTime) {
       lv_label_set_text_fmt(s_aodClockLbl, "%02d:%02d %s", hr, mn, ampmStr);
@@ -409,7 +435,7 @@ void refreshAodContent() {
       setLabelTextIfChanged(s_aodDateLbl, shortDateStr);
       lv_obj_set_style_text_font(s_aodDateLbl, Theme::fontCaption(),
                                  LV_PART_MAIN);
-      lv_obj_set_style_text_color(s_aodDateLbl, lv_color_hex(p.textDim),
+      lv_obj_set_style_text_color(s_aodDateLbl, lv_color_hex(dateColor),
                                   LV_PART_MAIN);
       lv_obj_align(s_aodDateLbl, LV_ALIGN_TOP_RIGHT, -20, 16);
       lv_obj_clear_flag(s_aodDateLbl, LV_OBJ_FLAG_HIDDEN);
@@ -430,8 +456,19 @@ void refreshAodContent() {
     }
 
     setLabelTextIfChanged(s_aodTitleLbl, d.mediaTitle);
+    lv_obj_set_style_text_color(s_aodTitleLbl, lv_color_hex(titleColor),
+                                LV_PART_MAIN);
     setLabelTextIfChanged(s_aodArtistLbl,
                           d.mediaArtist[0] ? d.mediaArtist : "Unknown Artist");
+    lv_obj_set_style_text_color(s_aodArtistLbl, lv_color_hex(artistColor),
+                                LV_PART_MAIN);
+
+    // Dynamic progress bar indicator derived directly from dominant tint
+    lv_obj_set_style_bg_color(s_aodProgBar, lv_color_hex(aodProgColor),
+                              LV_PART_INDICATOR);
+    lv_obj_set_style_bg_color(s_aodProgBar, lv_color_hex(aodTrackColor),
+                              LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(s_aodProgBar, aodTrackOpa, LV_PART_MAIN);
 
     uint32_t curPos = d.mediaPosMs;
     if (d.mediaState == MediaPlayState::Playing && d.mediaRxMillis > 0) {
@@ -489,12 +526,17 @@ void buildAodScreen(lv_obj_t *root) {
   const ThemeTokens::Palette &p = Theme::dark();
   const DataSnapshot d = DataStore::getSnapshot();
 
-  s_aodFromTop = Theme::active().bg;
-  s_aodFromBot = Theme::active().bg;
-  s_aodToTop = s_aodFromTop;
-  s_aodToBot = s_aodFromBot;
-  s_aodWasPlaying = (d.mediaState == MediaPlayState::Playing);
-  s_aodPausedSinceMs = 0;
+  s_aodCurTop = Theme::active().bg;
+  s_aodCurBot = Theme::active().bg;
+  s_aodFromTop = s_aodCurTop;
+  s_aodFromBot = s_aodCurBot;
+  s_aodToTop = s_aodCurTop;
+  s_aodToBot = s_aodCurBot;
+  s_aodWasPlaying =
+      (d.mediaState != MediaPlayState::Stopped && d.mediaTitle[0] != '\0');
+  s_aodPausedSinceMs = (d.mediaState == MediaPlayState::Paused) ? millis() : 0;
+
+  lv_obj_set_style_bg_grad_dir(s_aodScreen, LV_GRAD_DIR_VER, LV_PART_MAIN);
 
   s_aodClockLbl = lv_label_create(root);
   lv_obj_set_style_text_color(s_aodClockLbl, lv_color_hex(p.text),
@@ -560,8 +602,8 @@ void buildAodScreen(lv_obj_t *root) {
   lv_obj_set_size(s_aodProgBar, 280, 3);
   lv_obj_set_pos(s_aodProgBar, 20, 154);
   lv_bar_set_range(s_aodProgBar, 0, 100);
-  lv_obj_set_style_bg_color(s_aodProgBar, lv_color_hex(p.surface2),
-                            LV_PART_MAIN);
+  lv_obj_set_style_bg_color(s_aodProgBar, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
+  lv_obj_set_style_bg_opa(s_aodProgBar, LV_OPA_30, LV_PART_MAIN);
   lv_obj_set_style_bg_color(s_aodProgBar, lv_color_hex(p.primary),
                             LV_PART_INDICATOR);
 
@@ -612,8 +654,7 @@ void switchTo(size_t idx) {
   StatusBar::setVisible(!nextApp->hidesStatusBar());
   StatusBar::setTitle(nextApp->name());
 
-  lv_obj_t *newScr =
-      createAndSwapScreen(nextApp->usesWallpaper(), nextApp->hidesStatusBar());
+  lv_obj_t *newScr = createAndSwapScreen(nextApp->usesWallpaper(), false);
   nextApp->onEnter(newScr);
 }
 
@@ -647,7 +688,7 @@ void openControlCenter() {
   clearViewPointers();
   s_viewState = ViewState::ControlCenter;
 
-  lv_obj_t *newScr = createAndSwapScreen(false, false);
+  lv_obj_t *newScr = createAndSwapScreen(true, false);
   buildControlCenterScreen(newScr);
   Serial.println("[AppManager] Opened Control Center");
 }
@@ -696,15 +737,23 @@ void exitAod() {
 
 bool isInAod() { return s_viewState == ViewState::Aod; }
 
+void resetActivity() {
+  s_lastInputMs = millis();
+}
+
 void applyActiveTheme() {
   StatusBar::applyTheme();
   if (s_viewState == ViewState::ControlCenter) {
-    lv_obj_t *newScr = createAndSwapScreen(false, false);
+    lv_obj_t *newScr = createAndSwapScreen(true, false);
     buildControlCenterScreen(newScr);
   } else if (s_viewState == ViewState::Launcher) {
     showLauncher();
   } else if (s_viewState == ViewState::InApp) {
     switchTo(static_cast<size_t>(s_activeAppIdx >= 0 ? s_activeAppIdx : 0));
+  } else if (s_viewState == ViewState::Aod) {
+    if (s_aodScreen != nullptr) {
+      buildAodScreen(s_aodScreen);
+    }
   }
 }
 
@@ -717,7 +766,12 @@ bool activeAppWantsDouble(Button b) {
 }
 
 void tick(uint32_t nowMs) {
-  if (s_lastInputMs == 0) {
+  if (s_lastInputMs == 0 || nowMs < s_lastInputMs) {
+    s_lastInputMs = nowMs;
+  }
+
+  // Keep idle timer awake while notification popup is actively displayed
+  if (StatusBar::isPopupVisible()) {
     s_lastInputMs = nowMs;
   }
 

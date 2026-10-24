@@ -177,7 +177,6 @@ void buttonsTaskEntry(void * /*param*/) {
       updateSingleFsm(s_select, nowMs);
     }
 
-    pollSerialCommands();
     vTaskDelay(pdMS_TO_TICKS(Config::BTN_POLL_PERIOD_MS));
   }
 }

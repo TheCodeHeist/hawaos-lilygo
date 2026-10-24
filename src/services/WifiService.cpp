@@ -18,6 +18,7 @@ namespace {
 TaskHandle_t s_wifiTaskHandle = nullptr;
 volatile bool s_reconfigRequested = false;
 volatile bool s_forceReconnect = false;
+volatile bool s_forgetRequested = false;
 bool s_wasConnected = false;
 
 void startConnectAttempt(char *ssidBuf, size_t ssidLen, char *passBuf,
@@ -26,7 +27,13 @@ void startConnectAttempt(char *ssidBuf, size_t ssidLen, char *passBuf,
   Settings::getWifiPass(passBuf, passLen);
 
   if (ssidBuf[0] == '\0') {
-    Serial.println("[WifiService] No SSID configured in Settings.");
+    Serial.println("[WifiService] No WiFi provisioned yet. Waiting for HawaOS "
+                   "Companion setup.");
+    WiFi.disconnect(true, true);
+    DataStore::updateWifi(false, 0, "", "");
+    Event ev{};
+    ev.type = EventType::DataUpdated;
+    EventBus::post(ev);
     return;
   }
 
@@ -39,6 +46,9 @@ void wifiTaskEntry(void * /*param*/) {
   char ssid[33] = {0};
   char pass[65] = {0};
 
+  // Do not let ESP-IDF auto-connect from its hidden net80211 flash sector;
+  // only connect using credentials provisioned in HawaOS Settings.
+  WiFi.persistent(false);
   WiFi.mode(WIFI_STA);
   WiFi.setAutoReconnect(true);
   WiFi.setSleep(false);
@@ -54,10 +64,26 @@ void wifiTaskEntry(void * /*param*/) {
   for (;;) {
     const uint32_t nowMs = millis();
 
+    if (s_forgetRequested) {
+      s_forgetRequested = false;
+      s_reconfigRequested = false;
+      s_forceReconnect = false;
+      s_wasConnected = false;
+      ssid[0] = '\0';
+      pass[0] = '\0';
+      WiFi.disconnect(true, true);
+      DataStore::updateWifi(false, 0, "", "");
+      Event ev{};
+      ev.type = EventType::DataUpdated;
+      EventBus::post(ev);
+      CompanionLink::sendConfigAck(Settings::getConfigVersion());
+    }
+
     if (s_reconfigRequested || s_forceReconnect) {
       s_reconfigRequested = false;
       s_forceReconnect = false;
       s_wasConnected = false;
+      Settings::getWifiSsid(ssid, sizeof(ssid));
       DataStore::updateWifi(false, 0, ssid, "");
       Event ev{};
       ev.type = EventType::DataUpdated;
@@ -68,7 +94,7 @@ void wifiTaskEntry(void * /*param*/) {
     }
 
     const wl_status_t st = WiFi.status();
-    const bool connected = (st == WL_CONNECTED);
+    const bool connected = (ssid[0] != '\0') && (st == WL_CONNECTED);
 
     if (connected) {
       const int8_t rssi = static_cast<int8_t>(WiFi.RSSI());
@@ -88,6 +114,7 @@ void wifiTaskEntry(void * /*param*/) {
         EventBus::post(ev);
 
         NtpService::onWifiConnected();
+        CompanionLink::sendConfigAck(Settings::getConfigVersion());
       } else if ((nowMs - lastRssiPublishMs >= 3000) &&
                  (abs(static_cast<int>(rssi) -
                       static_cast<int>(lastPublishedRssi)) >= 2)) {
@@ -135,6 +162,11 @@ void begin() {
 void reconfigure(const char *ssid, const char *pass) {
   Settings::setWifiCredentials(ssid, pass);
   s_reconfigRequested = true;
+}
+
+void forgetWifi() {
+  Settings::clearWifiCredentials();
+  s_forgetRequested = true;
 }
 
 void forceReconnect() {

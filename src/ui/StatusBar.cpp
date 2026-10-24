@@ -16,6 +16,61 @@ lv_obj_t *s_connIcon = nullptr;
 lv_obj_t *s_bleIcon = nullptr;
 lv_obj_t *s_bellIcon = nullptr;
 
+// Floating Notification Popup Banner on lv_layer_top()
+lv_obj_t *s_popupCard = nullptr;
+lv_obj_t *s_popupIcon = nullptr;
+lv_obj_t *s_popupTitleLbl = nullptr;
+lv_obj_t *s_popupBodyLbl = nullptr;
+lv_obj_t *s_popupBadgeLbl = nullptr;
+bool s_popupVisible = false;
+uint32_t s_popupShownAtMs = 0;
+
+constexpr uint32_t kPopupDurationMs = 4500;
+constexpr int16_t kPopupVisibleY = 6;
+constexpr int16_t kPopupHiddenY = -64;
+
+void popupAnimYCb(void *var, int32_t v) {
+  lv_obj_t *obj = static_cast<lv_obj_t *>(var);
+  if (obj != nullptr) {
+    lv_obj_set_y(obj, static_cast<lv_coord_t>(v));
+  }
+}
+
+void popupHideReadyCb(lv_anim_t * /*a*/) {
+  if (s_popupCard != nullptr && !s_popupVisible) {
+    lv_obj_add_flag(s_popupCard, LV_OBJ_FLAG_HIDDEN);
+  }
+}
+
+void stylePopupCard() {
+  if (s_popupCard == nullptr)
+    return;
+  const ThemeTokens::Palette &p = Theme::active();
+
+  lv_obj_set_style_bg_color(s_popupCard, lv_color_hex(p.surface), LV_PART_MAIN);
+  lv_obj_set_style_bg_opa(s_popupCard, LV_OPA_COVER, LV_PART_MAIN);
+  lv_obj_set_style_border_color(s_popupCard, lv_color_hex(p.primary),
+                                LV_PART_MAIN);
+  lv_obj_set_style_border_width(s_popupCard, 2, LV_PART_MAIN);
+
+  if (s_popupIcon != nullptr) {
+    lv_obj_set_style_text_color(s_popupIcon, lv_color_hex(p.accent),
+                                LV_PART_MAIN);
+  }
+  if (s_popupTitleLbl != nullptr) {
+    lv_obj_set_style_text_color(s_popupTitleLbl, lv_color_hex(p.text),
+                                LV_PART_MAIN);
+  }
+  if (s_popupBodyLbl != nullptr) {
+    lv_obj_set_style_text_color(s_popupBodyLbl, lv_color_hex(p.textDim),
+                                LV_PART_MAIN);
+  }
+  if (s_popupBadgeLbl != nullptr) {
+    lv_obj_set_style_text_color(s_popupBadgeLbl, lv_color_hex(p.accent),
+                                LV_PART_MAIN);
+  }
+}
+
 } // namespace
 
 void begin() {
@@ -58,6 +113,41 @@ void begin() {
   lv_obj_align(s_bellIcon, LV_ALIGN_RIGHT_MID, -28, 0);
   lv_obj_add_flag(s_bellIcon, LV_OBJ_FLAG_HIDDEN);
 
+  // Create floating notification popup card on lv_layer_top() (above s_bar)
+  s_popupCard = lv_obj_create(topLayer);
+  lv_obj_set_size(s_popupCard, 300, 54);
+  lv_obj_set_pos(s_popupCard, 10, kPopupHiddenY);
+  lv_obj_set_style_radius(s_popupCard, Config::RADIUS_MD, LV_PART_MAIN);
+  lv_obj_set_style_pad_all(s_popupCard, 8, LV_PART_MAIN);
+  lv_obj_clear_flag(s_popupCard, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_add_flag(s_popupCard, LV_OBJ_FLAG_HIDDEN);
+
+  s_popupIcon = lv_label_create(s_popupCard);
+  lv_label_set_text(s_popupIcon, ICON_BELL);
+  lv_obj_set_style_text_font(s_popupIcon, Theme::iconFont24(), LV_PART_MAIN);
+  lv_obj_align(s_popupIcon, LV_ALIGN_LEFT_MID, 2, 0);
+
+  s_popupTitleLbl = lv_label_create(s_popupCard);
+  lv_obj_set_style_text_font(s_popupTitleLbl, Theme::fontBodySb(),
+                             LV_PART_MAIN);
+  lv_label_set_long_mode(s_popupTitleLbl, LV_LABEL_LONG_DOT);
+  lv_obj_set_width(s_popupTitleLbl, 196);
+  lv_obj_align(s_popupTitleLbl, LV_ALIGN_TOP_LEFT, 34, 0);
+
+  s_popupBadgeLbl = lv_label_create(s_popupCard);
+  lv_label_set_text(s_popupBadgeLbl, "NOW");
+  lv_obj_set_style_text_font(s_popupBadgeLbl, Theme::fontCaption(),
+                             LV_PART_MAIN);
+  lv_obj_align(s_popupBadgeLbl, LV_ALIGN_TOP_RIGHT, -2, 1);
+
+  s_popupBodyLbl = lv_label_create(s_popupCard);
+  lv_obj_set_style_text_font(s_popupBodyLbl, Theme::fontCaption(),
+                             LV_PART_MAIN);
+  lv_label_set_long_mode(s_popupBodyLbl, LV_LABEL_LONG_SCROLL_CIRCULAR);
+  lv_obj_set_style_anim_speed(s_popupBodyLbl, 28, LV_PART_MAIN);
+  lv_obj_set_width(s_popupBodyLbl, 244);
+  lv_obj_align(s_popupBodyLbl, LV_ALIGN_BOTTOM_LEFT, 34, 0);
+
   applyTheme();
   updateData(DataStore::getSnapshot());
 }
@@ -88,6 +178,7 @@ void applyTheme() {
   lv_obj_set_style_text_color(s_titleLbl, lv_color_hex(p.textDim),
                               LV_PART_MAIN);
 
+  stylePopupCard();
   updateData(DataStore::getSnapshot());
 }
 
@@ -133,8 +224,69 @@ void updateData(const DataSnapshot &d) {
   }
 }
 
-void tick(uint32_t /*nowMs*/) {
-  // StatusBar is event-driven via updateData() and setTitle() per DESIGN.md 9.1
+void showNotificationPopup(const char *title, const char *body) {
+  if (s_popupCard == nullptr || title == nullptr || title[0] == '\0')
+    return;
+
+  stylePopupCard();
+  lv_label_set_text(s_popupTitleLbl, title);
+  lv_label_set_text(s_popupBodyLbl, (body != nullptr && body[0] != '\0')
+                                        ? body
+                                        : "New notification received");
+
+  s_popupVisible = true;
+  s_popupShownAtMs = millis();
+  lv_anim_del(s_popupCard, popupAnimYCb);
+  lv_obj_clear_flag(s_popupCard, LV_OBJ_FLAG_HIDDEN);
+  lv_obj_move_foreground(s_popupCard);
+
+  const uint32_t dur = Theme::animDuration(180);
+  if (dur == 0) {
+    lv_obj_set_y(s_popupCard, kPopupVisibleY);
+    return;
+  }
+
+  lv_anim_t a;
+  lv_anim_init(&a);
+  lv_anim_set_var(&a, s_popupCard);
+  lv_anim_set_values(&a, kPopupHiddenY, kPopupVisibleY);
+  lv_anim_set_time(&a, dur);
+  lv_anim_set_path_cb(&a, lv_anim_path_ease_out);
+  lv_anim_set_exec_cb(&a, popupAnimYCb);
+  lv_anim_start(&a);
+}
+
+void dismissNotificationPopup() {
+  if (s_popupCard == nullptr || !s_popupVisible)
+    return;
+
+  s_popupVisible = false;
+  lv_anim_del(s_popupCard, popupAnimYCb);
+
+  const uint32_t dur = Theme::animDuration(160);
+  if (dur == 0) {
+    lv_obj_set_y(s_popupCard, kPopupHiddenY);
+    lv_obj_add_flag(s_popupCard, LV_OBJ_FLAG_HIDDEN);
+    return;
+  }
+
+  lv_anim_t a;
+  lv_anim_init(&a);
+  lv_anim_set_var(&a, s_popupCard);
+  lv_anim_set_values(&a, lv_obj_get_y(s_popupCard), kPopupHiddenY);
+  lv_anim_set_time(&a, dur);
+  lv_anim_set_path_cb(&a, lv_anim_path_ease_in);
+  lv_anim_set_exec_cb(&a, popupAnimYCb);
+  lv_anim_set_ready_cb(&a, popupHideReadyCb);
+  lv_anim_start(&a);
+}
+
+bool isPopupVisible() { return s_popupVisible; }
+
+void tick(uint32_t nowMs) {
+  if (s_popupVisible && (nowMs - s_popupShownAtMs >= kPopupDurationMs)) {
+    dismissNotificationPopup();
+  }
 }
 
 } // namespace StatusBar

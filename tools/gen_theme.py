@@ -47,7 +47,11 @@ def linear_to_srgb_channel(x: float) -> float:
 
 
 def in_srgb_gamut(r: float, g: float, b: float, eps: float = 1e-6) -> bool:
-    return (-eps <= r <= 1.0 + eps) and (-eps <= g <= 1.0 + eps) and (-eps <= b <= 1.0 + eps)
+    return (
+        (-eps <= r <= 1.0 + eps)
+        and (-eps <= g <= 1.0 + eps)
+        and (-eps <= b <= 1.0 + eps)
+    )
 
 
 def oklch_to_srgb8(L_pct: float, C: float, h_deg: float):
@@ -108,37 +112,48 @@ CYAN_SCALE = {
 
 # Semantic tokens from DESIGN.md Section 3.2 & Section 6 (vertical gradient bottom tint)
 DARK_TOKENS = {
-    "bg":        (17.0, 0.018, 225.0),
-    "bgGradEnd": (20.5, 0.028, 220.0),  # Subtle tinted vertical wallpaper gradient bottom
-    "surface":   (22.0, 0.020, 225.0),
-    "surface2":  (27.0, 0.022, 225.0),
-    "border":    (32.0, 0.020, 225.0),
-    "text":      (96.0, 0.010, 215.0),
-    "textDim":   (72.0, 0.020, 220.0),
-    "primary":   CYAN_SCALE["CYAN_500"],
-    "accent":    CYAN_SCALE["CYAN_400"],
-    "pressed":   CYAN_SCALE["CYAN_600"],
+    "bg": (17.0, 0.018, 225.0),
+    "bgGradEnd": (
+        20.5,
+        0.028,
+        220.0,
+    ),  # Subtle tinted vertical wallpaper gradient bottom
+    "surface": (22.0, 0.020, 225.0),
+    "surface2": (27.0, 0.022, 225.0),
+    "border": (32.0, 0.020, 225.0),
+    "text": (96.0, 0.010, 215.0),
+    "textDim": (72.0, 0.020, 220.0),
+    "primary": CYAN_SCALE["CYAN_500"],
+    "accent": CYAN_SCALE["CYAN_400"],
+    "pressed": CYAN_SCALE["CYAN_600"],
     "onPrimary": (20.0, 0.030, 225.0),
-    "ok":        (72.0, 0.170, 155.0),
-    "warn":      (80.0, 0.150, 80.0),
-    "err":       (66.0, 0.200, 25.0),
+    "ok": (72.0, 0.170, 155.0),
+    "warn": (80.0, 0.150, 80.0),
+    "err": (66.0, 0.200, 25.0),
 }
 
+# Tuned for 16-bit RGB565 ST7789V LCD gamma so pure white cards (`surface`),
+# cool ice-cyan backgrounds (`bg` / `bgGradEnd`), progress tracks (`surface2`),
+# and borders (`border`) have crisp separation without washing out.
 LIGHT_TOKENS = {
-    "bg":        (97.5, 0.006, 215.0),
-    "bgGradEnd": (93.5, 0.018, 215.0),  # Subtle tinted vertical wallpaper gradient bottom
-    "surface":   (99.0, 0.003, 215.0),
-    "surface2":  (95.0, 0.010, 215.0),
-    "border":    (90.0, 0.012, 215.0),
-    "text":      (22.0, 0.030, 230.0),
-    "textDim":   (48.0, 0.030, 225.0),
-    "primary":   CYAN_SCALE["CYAN_500"],
-    "accent":    CYAN_SCALE["CYAN_700"],
-    "pressed":   CYAN_SCALE["CYAN_800"],
-    "onPrimary": (20.0, 0.030, 225.0),
-    "ok":        (58.0, 0.150, 155.0),
-    "warn":      (62.0, 0.150, 70.0),
-    "err":       (55.0, 0.200, 25.0),
+    "bg": (90.5, 0.032, 212.0),
+    "bgGradEnd": (
+        84.5,
+        0.048,
+        212.0,
+    ),  # Crisp sky-cyan vertical wallpaper gradient bottom
+    "surface": (99.5, 0.002, 215.0),  # Pure white cards
+    "surface2": (83.0, 0.038, 214.0),  # Distinct cool cyan-slate track/chip fill
+    "border": (68.0, 0.055, 216.0),  # Crisp card border on 16-bit RGB565
+    "text": (18.0, 0.035, 228.0),  # Deep ink
+    "textDim": (40.0, 0.042, 222.0),  # High-contrast secondary ink
+    "primary": CYAN_SCALE["CYAN_600"],
+    "accent": CYAN_SCALE["CYAN_700"],
+    "pressed": CYAN_SCALE["CYAN_800"],
+    "onPrimary": (99.0, 0.003, 215.0),  # Crisp white icon/text on primary buttons
+    "ok": (55.0, 0.155, 155.0),
+    "warn": (58.0, 0.155, 70.0),
+    "err": (52.0, 0.200, 25.0),
 }
 
 
@@ -165,48 +180,58 @@ def generate_header(repo_root: Path):
         lines.append(
             f"constexpr uint32_t {name}_RGB888 = 0x{c888:06X}; // oklch({l_pct}% {c} {h})"
         )
-        lines.append(
-            f"constexpr uint16_t {name}_RGB565 = 0x{c565:04X};"
-        )
+        lines.append(f"constexpr uint16_t {name}_RGB565 = 0x{c565:04X};")
 
-    lines.extend([
-        "",
-        "struct Palette {",
-    ])
+    lines.extend(
+        [
+            "",
+            "struct Palette {",
+        ]
+    )
     for key in DARK_TOKENS.keys():
         lines.append(f"    uint32_t {key};")
     for key in DARK_TOKENS.keys():
         lines.append(f"    uint16_t {key}565;")
-    lines.extend([
-        "};",
-        "",
-        "constexpr Palette kDarkPalette = {",
-    ])
+    lines.extend(
+        [
+            "};",
+            "",
+            "constexpr Palette kDarkPalette = {",
+        ]
+    )
 
     for key, (l_pct, c, h) in DARK_TOKENS.items():
         r, g, b = oklch_to_srgb8(l_pct, c, h)
-        lines.append(f"    /* .{key} = */ 0x{rgb888_hex(r, g, b):06X}, // oklch({l_pct}% {c} {h})")
+        lines.append(
+            f"    /* .{key} = */ 0x{rgb888_hex(r, g, b):06X}, // oklch({l_pct}% {c} {h})"
+        )
     for key, (l_pct, c, h) in DARK_TOKENS.items():
         r, g, b = oklch_to_srgb8(l_pct, c, h)
         lines.append(f"    /* .{key}565 = */ 0x{rgb565_hex(r, g, b):04X},")
-    lines.extend([
-        "};",
-        "",
-        "constexpr Palette kLightPalette = {",
-    ])
+    lines.extend(
+        [
+            "};",
+            "",
+            "constexpr Palette kLightPalette = {",
+        ]
+    )
 
     for key, (l_pct, c, h) in LIGHT_TOKENS.items():
         r, g, b = oklch_to_srgb8(l_pct, c, h)
-        lines.append(f"    /* .{key} = */ 0x{rgb888_hex(r, g, b):06X}, // oklch({l_pct}% {c} {h})")
+        lines.append(
+            f"    /* .{key} = */ 0x{rgb888_hex(r, g, b):06X}, // oklch({l_pct}% {c} {h})"
+        )
     for key, (l_pct, c, h) in LIGHT_TOKENS.items():
         r, g, b = oklch_to_srgb8(l_pct, c, h)
         lines.append(f"    /* .{key}565 = */ 0x{rgb565_hex(r, g, b):04X},")
-    lines.extend([
-        "};",
-        "",
-        "} // namespace ThemeTokens",
-        "",
-    ])
+    lines.extend(
+        [
+            "};",
+            "",
+            "} // namespace ThemeTokens",
+            "",
+        ]
+    )
 
     content = "\n".join(lines)
     if out_path.exists() and out_path.read_text() == content:

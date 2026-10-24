@@ -21,6 +21,7 @@ void begin();
 void getWifiSsid(char *outBuf, size_t maxLen);
 void getWifiPass(char *outBuf, size_t maxLen);
 void setWifiCredentials(const char *ssid, const char *pass);
+void clearWifiCredentials();
 
 // Brightness stored as percentage (20, 40, 60, 80, 100) and mapped to 1..16
 // hardware steps
@@ -46,8 +47,12 @@ void setReduceMotion(bool reduce);
 WallpaperMode getWallpaperMode();
 void setWallpaperMode(WallpaperMode mode);
 
+bool getNotifyPopupEnabled();
+void setNotifyPopupEnabled(bool enabled);
+
 uint32_t getConfigVersion();
 void setConfigVersion(uint32_t version);
+void bumpLocalConfigVersion();
 
 int32_t getGmtOffsetSec();
 void setGmtOffsetSec(int32_t offsetSec);

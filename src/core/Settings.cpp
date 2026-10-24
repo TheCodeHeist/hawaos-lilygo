@@ -1,14 +1,11 @@
 #include "core/Settings.h"
 #include "config.h"
+#include "services/CompanionLink.h"
 
 #include <Arduino.h>
 #include <Preferences.h>
 #include <string.h>
 #include <time.h>
-
-#if __has_include("secrets.h")
-#include "secrets.h"
-#endif
 
 namespace Settings {
 
@@ -25,6 +22,7 @@ bool s_aodEnabled = true;
 uint16_t s_aodTimeoutSec = Config::DEFAULT_AOD_TIMEOUT_S;
 bool s_reduceMotion = false;
 WallpaperMode s_wallpaperMode = WallpaperMode::Gradient;
+bool s_notifyPopupEnabled = true;
 uint32_t s_configVersion = 0;
 int32_t s_gmtOffsetSec = Config::DEFAULT_GMT_OFFSET_SEC;
 bool s_use24Hour = false;
@@ -46,20 +44,18 @@ uint8_t snapBrightnessPct(uint8_t pct) {
 void begin() {
   s_prefs.begin(kNamespace, false);
 
-  String storedSsid = s_prefs.getString("wifi_ssid", "");
-  String storedPass = s_prefs.getString("wifi_pass", "");
-
-#if defined(SECRET_WIFI_SSID) && defined(SECRET_WIFI_PASS)
-  if (storedSsid.isEmpty() && strlen(SECRET_WIFI_SSID) > 0) {
-    storedSsid = SECRET_WIFI_SSID;
-    storedPass = SECRET_WIFI_PASS;
-    s_prefs.putString("wifi_ssid", storedSsid);
-    s_prefs.putString("wifi_pass", storedPass);
-    Serial.printf(
-        "[Settings] Seeded NVS WiFi credentials from secrets.h (SSID: %s)\n",
-        storedSsid.c_str());
+  // Clean up legacy testing keys ("wifi_ssid" / "wifi_pass") that were seeded
+  // from secrets.h, and use dedicated Companion provisioning keys ("prov_ssid"
+  // / "prov_pass").
+  if (s_prefs.isKey("wifi_ssid") || s_prefs.isKey("wifi_pass")) {
+    s_prefs.remove("wifi_ssid");
+    s_prefs.remove("wifi_pass");
+    Serial.println("[Settings] Cleared legacy testing WiFi keys; using "
+                   "Companion provisioning.");
   }
-#endif
+
+  String storedSsid = s_prefs.getString("prov_ssid", "");
+  String storedPass = s_prefs.getString("prov_pass", "");
 
   strncpy(s_wifiSsid, storedSsid.c_str(), sizeof(s_wifiSsid) - 1);
   s_wifiSsid[sizeof(s_wifiSsid) - 1] = '\0';
@@ -81,15 +77,17 @@ void begin() {
   s_reduceMotion = s_prefs.getBool("red_motion", false);
   s_wallpaperMode =
       static_cast<WallpaperMode>(s_prefs.getUChar("wallpaper", 0));
-  s_configVersion = s_prefs.getUInt("cfg_ver", 0);
+  s_notifyPopupEnabled = s_prefs.getBool("notif_pop", true);
+  s_configVersion = s_prefs.getUInt("cfg_ver", 1);
   s_gmtOffsetSec = s_prefs.getInt("gmt_offset", Config::DEFAULT_GMT_OFFSET_SEC);
   s_use24Hour = s_prefs.getBool("use_24h", false);
 
   Serial.printf("[Settings] Loaded: SSID='%s', bright=%u%%, theme=%u, "
-                "aod=%d(%us), redMotion=%d, v=%lu\n",
+                "aod=%d(%us), redMotion=%d, notifyPopup=%d, v=%lu\n",
                 s_wifiSsid, static_cast<unsigned>(s_brightnessPct),
                 static_cast<unsigned>(s_themeMode), s_aodEnabled ? 1 : 0,
                 static_cast<unsigned>(s_aodTimeoutSec), s_reduceMotion ? 1 : 0,
+                s_notifyPopupEnabled ? 1 : 0,
                 static_cast<unsigned long>(s_configVersion));
 }
 
@@ -116,10 +114,19 @@ void setWifiCredentials(const char *ssid, const char *pass) {
   strncpy(s_wifiPass, pass, sizeof(s_wifiPass) - 1);
   s_wifiPass[sizeof(s_wifiPass) - 1] = '\0';
 
-  s_prefs.putString("wifi_ssid", s_wifiSsid);
-  s_prefs.putString("wifi_pass", s_wifiPass);
-  Serial.printf("[Settings] Saved new WiFi credentials to NVS (SSID: '%s')\n",
-                s_wifiSsid);
+  s_prefs.putString("prov_ssid", s_wifiSsid);
+  s_prefs.putString("prov_pass", s_wifiPass);
+  Serial.printf(
+      "[Settings] Saved provisioned WiFi credentials to NVS (SSID: '%s')\n",
+      s_wifiSsid);
+}
+
+void clearWifiCredentials() {
+  s_wifiSsid[0] = '\0';
+  s_wifiPass[0] = '\0';
+  s_prefs.remove("prov_ssid");
+  s_prefs.remove("prov_pass");
+  Serial.println("[Settings] Cleared provisioned WiFi credentials from NVS");
 }
 
 uint8_t getBrightnessPct() { return s_brightnessPct; }
@@ -160,6 +167,7 @@ void cycleBrightnessPct() {
   else
     next = 20;
   setBrightnessPct(next);
+  bumpLocalConfigVersion();
 }
 
 ThemeMode getThemeMode() { return s_themeMode; }
@@ -187,6 +195,7 @@ void setThemeMode(ThemeMode mode) {
 void toggleDarkLightTheme() {
   const bool currentlyDark = isDarkThemeEffective();
   setThemeMode(currentlyDark ? ThemeMode::Light : ThemeMode::Dark);
+  bumpLocalConfigVersion();
 }
 
 bool getAodEnabled() { return s_aodEnabled; }
@@ -219,11 +228,24 @@ void setWallpaperMode(WallpaperMode mode) {
   s_prefs.putUChar("wallpaper", static_cast<uint8_t>(mode));
 }
 
+bool getNotifyPopupEnabled() { return s_notifyPopupEnabled; }
+
+void setNotifyPopupEnabled(bool enabled) {
+  s_notifyPopupEnabled = enabled;
+  s_prefs.putBool("notif_pop", s_notifyPopupEnabled);
+}
+
 uint32_t getConfigVersion() { return s_configVersion; }
 
 void setConfigVersion(uint32_t version) {
   s_configVersion = version;
   s_prefs.putUInt("cfg_ver", s_configVersion);
+}
+
+void bumpLocalConfigVersion() {
+  ++s_configVersion;
+  s_prefs.putUInt("cfg_ver", s_configVersion);
+  CompanionLink::sendConfigAck(s_configVersion);
 }
 
 int32_t getGmtOffsetSec() { return s_gmtOffsetSec; }

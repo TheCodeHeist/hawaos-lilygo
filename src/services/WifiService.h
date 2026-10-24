@@ -8,6 +8,9 @@ void begin();
 // Update WiFi credentials in Settings and trigger immediate reconnect.
 void reconfigure(const char *ssid, const char *pass);
 
+// Clear saved WiFi credentials from NVS and disconnect from AP.
+void forgetWifi();
+
 // Force a disconnect + reconnect cycle (useful for testing router-drop
 // recovery).
 void forceReconnect();
