@@ -28,6 +28,7 @@ pub struct CompanionConfig {
     pub autostart_enabled: bool,
     pub close_to_tray: bool,
     pub companion_dark_mode: bool,
+    pub window_transparency: String, // "auto" | "on" | "off"
 
     // Device configuration fields (DESIGN.md Section 11.3)
     pub config_version: u32,
@@ -58,6 +59,7 @@ impl Default for CompanionConfig {
             autostart_enabled: is_autostart_installed(),
             close_to_tray: true,
             companion_dark_mode: true,
+            window_transparency: "auto".to_string(),
             config_version: 1,
             device_theme: "dark".to_string(),
             brightness: 80,

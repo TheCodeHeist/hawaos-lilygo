@@ -1,4 +1,4 @@
-use gpui_kit::component::{Sizable, StyledExt};
+pub mod components;
 pub mod daemon_settings;
 pub mod device_settings;
 pub mod initial_setup;
@@ -13,10 +13,14 @@ use gpui_kit::component::button::{Button, ButtonVariants};
 use gpui_kit::assets::IconName;
 use gpui_kit::component::input::InputState;
 use gpui_kit::component::scroll::ScrollableElement;
-use gpui_kit::component::{h_flex, v_flex};
-use gpui_kit::prelude::FluentBuilder as _;
+use gpui_kit::component::{h_flex, v_flex, Sizable};
 
-pub use theme::{apply_hawaos_gpui_theme, HawaPalette};
+/// Below this window width the sidebar collapses to icons only.
+const COMPACT_SIDEBAR_BELOW: f32 = 920.;
+/// Content column stops growing past this width so lines stay readable.
+const CONTENT_MAX_W: f32 = 1240.;
+
+pub use theme::{apply_hawaos_gpui_theme, use_translucent_window, window_background, HawaPalette};
 
 use crate::config::{save_config, DEFAULT_DEVICE_IP, LOGO_PNG_BYTES};
 use crate::models::{CompanionConfig, OutboundAction, SharedState};
@@ -88,25 +92,39 @@ impl CompanionWindowView {
                 .placeholder("e.g. London, Tokyo, New York")
                 .default_value(weather_city)
         });
+        // Setting min/max/step makes NumberInput apply -/+ itself (clamped);
+        // without them it only emits Step events and the value never changes.
         let timer_h_input = cx.new(|cx| {
             InputState::new(window, cx)
-                .placeholder("00")
-                .default_value("00")
+                .placeholder("0")
+                .default_value("0")
+                .min(0.)
+                .max(59.)
+                .step(1.)
         });
         let timer_m_input = cx.new(|cx| {
             InputState::new(window, cx)
-                .placeholder("05")
-                .default_value("05")
+                .placeholder("0")
+                .default_value("5")
+                .min(0.)
+                .max(99.)
+                .step(1.)
         });
         let timer_s_input = cx.new(|cx| {
             InputState::new(window, cx)
-                .placeholder("00")
-                .default_value("00")
+                .placeholder("0")
+                .default_value("0")
+                .min(0.)
+                .max(99.)
+                .step(1.)
         });
         let timer_ms_input = cx.new(|cx| {
             InputState::new(window, cx)
-                .placeholder("000")
-                .default_value("000")
+                .placeholder("0")
+                .default_value("0")
+                .min(0.)
+                .max(999.)
+                .step(100.)
         });
 
         // Pre-resize logo to 96x96 via Lanczos3 for crisp rendering without pixelation/aliasing
@@ -123,7 +141,7 @@ impl CompanionWindowView {
 
         Self {
             state,
-            active_section: NavSection::Overview,
+            active_section: dev_start_section(),
             logo_image,
             ip_input,
             ssid_input,
@@ -162,17 +180,17 @@ impl CompanionWindowView {
 }
 
 impl Render for CompanionWindowView {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let dark_mode = if let Ok(g) = self.state.lock() {
-            g.config.companion_dark_mode
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let (dark_mode, translucent) = if let Ok(g) = self.state.lock() {
+            (
+                g.config.companion_dark_mode,
+                use_translucent_window(&g.config.window_transparency),
+            )
         } else {
-            true
+            (true, false)
         };
-        let pal = if dark_mode {
-            HawaPalette::dark()
-        } else {
-            HawaPalette::light()
-        };
+        let pal = HawaPalette::new(dark_mode, translucent);
+        let compact = window.viewport_size().width < px(COMPACT_SIDEBAR_BELOW);
 
         let content = match self.active_section {
             NavSection::Overview => self.render_overview(pal, cx).into_any_element(),
@@ -183,73 +201,129 @@ impl Render for CompanionWindowView {
 
         let banner = self.status_banner.clone();
 
+        // Translucent tinted gradient over the compositor-blurred window = the glass backdrop.
         h_flex()
             .size_full()
-            .bg(pal.bg)
+            .bg(linear_gradient(
+                160.,
+                linear_color_stop(pal.bg_top, 0.),
+                linear_color_stop(pal.bg_bottom, 1.),
+            ))
             .text_color(pal.text)
-            .child(self.render_sidebar(pal, cx))
+            .p_3()
+            .gap_3()
+            .child(self.render_sidebar(pal, compact, cx))
             .child(
                 v_flex()
+                    .id("content-scroll")
                     .flex_1()
                     .h_full()
                     .min_w_0()
-                    .p_6()
-                    .gap_4()
                     .overflow_y_scrollbar()
-                    .when_some(banner, |this, msg| {
-                        this.child(
-                            h_flex()
-                                .px_4()
-                                .py_2()
-                                .rounded(px(10.))
-                                .bg(pal.primary.opacity(0.16))
-                                .border_1()
-                                .border_color(pal.primary.opacity(0.45))
-                                .justify_between()
-                                .items_center()
-                                .child(
+                    .child(
+                        v_flex()
+                            .w_full()
+                            .max_w(px(CONTENT_MAX_W))
+                            .mx_auto()
+                            .px_3()
+                            .py_3()
+                            .gap_4()
+                            .when_some(banner, |this, msg| {
+                                this.child(
                                     h_flex()
-                                        .gap_2()
+                                        .w_full()
+                                        .gap_3()
+                                        .pl_4()
+                                        .pr_2()
+                                        .py_1p5()
+                                        .rounded_full()
+                                        .bg(pal.primary.opacity(0.14))
+                                        .border_1()
+                                        .border_color(pal.primary.opacity(0.35))
+                                        .justify_between()
                                         .items_center()
                                         .child(
-                                            div()
-                                                .text_color(pal.accent)
-                                                .child(IconName::CircleCheck),
+                                            h_flex()
+                                                .gap_2()
+                                                .min_w_0()
+                                                .items_center()
+                                                .child(
+                                                    div()
+                                                        .flex_shrink_0()
+                                                        .text_color(pal.accent)
+                                                        .child(IconName::CircleCheck),
+                                                )
+                                                .child(
+                                                    div()
+                                                        .min_w_0()
+                                                        .truncate()
+                                                        .text_sm()
+                                                        .text_color(pal.text)
+                                                        .child(msg),
+                                                ),
                                         )
                                         .child(
-                                            div()
-                                                .text_xs()
-                                                .font_semibold()
-                                                .text_color(pal.text)
-                                                .child(msg),
+                                            Button::new("dismiss-banner")
+                                                .small()
+                                                .ghost()
+                                                .icon(IconName::Close)
+                                                .on_click(cx.listener(|this, _, _, cx| {
+                                                    this.status_banner = None;
+                                                    cx.notify();
+                                                })),
                                         ),
                                 )
-                                .child(
-                                    Button::new("dismiss-banner")
-                                        .small()
-                                        .ghost()
-                                        .label("Dismiss")
-                                        .on_click(cx.listener(|this, _, _, cx| {
-                                            this.status_banner = None;
-                                            cx.notify();
-                                        })),
-                                ),
-                        )
-                    })
-                    .child(content),
+                            })
+                            .child(content),
+                    ),
             )
     }
 }
 
+/// Dev aid for screenshots: `HAWAOS_DEV_SECTION=device|setup|background`.
+fn dev_start_section() -> NavSection {
+    match std::env::var("HAWAOS_DEV_SECTION").as_deref() {
+        Ok("device") => NavSection::DeviceSettings,
+        Ok("setup") => NavSection::InitialSetup,
+        Ok("background") => NavSection::DaemonSettings,
+        _ => NavSection::Overview,
+    }
+}
+
+/// Dev aid for layout checks: `HAWAOS_DEV_SIZE=760x560`.
+fn dev_window_size() -> Option<Size<Pixels>> {
+    let v = std::env::var("HAWAOS_DEV_SIZE").ok()?;
+    let (w, h) = v.split_once('x')?;
+    Some(size(px(w.parse().ok()?), px(h.parse().ok()?)))
+}
+
 pub fn open_companion_window(cx: &mut App, state: SharedState) {
+    let translucent = if let Ok(mut g) = state.lock() {
+        let setting = g.config.window_transparency.clone();
+        let translucent = use_translucent_window(&setting);
+        let msg = format!(
+            "Window transparency '{}': {}",
+            setting,
+            if translucent { "blurred glass" } else { "solid backdrop" }
+        );
+        eprintln!("[companion] {}", msg);
+        g.push_log(msg);
+        translucent
+    } else {
+        false
+    };
     let options = WindowOptions {
         window_bounds: Some(WindowBounds::Windowed(Bounds::centered(
             None,
-            size(px(1040.), px(700.)),
+            dev_window_size().unwrap_or(size(px(1120.), px(760.))),
             cx,
         ))),
+        // Below this the card grid can no longer wrap cleanly.
+        window_min_size: Some(size(px(760.), px(560.))),
+        // Blurred glass where gpui can blur (see `use_translucent_window`), else opaque.
+        window_background: window_background(translucent),
         titlebar: Some(TitlebarOptions {
-            title: Some("HawaOS Desktop Companion — Breezy Elegance, Materialised".into()),
+            title: Some("HawaOS Companion".into()),
             ..Default::default()
         }),
         app_id: Some("hawaos-companion".into()),

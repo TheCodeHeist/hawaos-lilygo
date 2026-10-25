@@ -1,6 +1,5 @@
 use crate::media::handle_device_command;
 use ksni::blocking::TrayMethods;
-use ksni::Tray;
 
 use crate::config::{save_config, set_autostart_installed, DEFAULT_DEVICE_IP, LOGO_PNG_BYTES};
 use crate::models::{OutboundAction, SharedState};

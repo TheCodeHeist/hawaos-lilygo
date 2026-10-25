@@ -4,3 +4,4 @@ compile_commands.json
 include/secrets.h
 companion/target/
 designs/
+SESSION_CONTEXT_1.md

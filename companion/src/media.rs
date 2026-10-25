@@ -3,7 +3,7 @@ use gpui_kit::gpui::ImageFormat;
 use image::GenericImageView;
 use sha1::{Digest, Sha1};
 use std::fs;
-use std::io::{BufRead, Read, Write};
+use std::io::{Read, Write};
 use std::net::TcpListener;
 use std::process::Command;
 use std::sync::Arc;

@@ -4,14 +4,20 @@ use gpui_kit::gpui::prelude::*;
 use gpui_kit::gpui::*;
 use gpui_kit::component::button::{Button, ButtonVariants};
 use gpui_kit::assets::IconName;
-use gpui_kit::component::input::{Input, NumberInput};
+use gpui_kit::component::input::{Input, InputState, NumberInput};
 use gpui_kit::component::{h_flex, v_flex, Sizable, StyledExt};
-use gpui_kit::prelude::FluentBuilder as _;
 
 use crate::config::save_config;
 use crate::models::{CompanionConfig, OutboundAction};
+use crate::ui::components::{
+    button_row, card_header, card_row, choice, glass_card, page_header, parse_hex, pill,
+    progress_bar, row_card, state_pill, time_readout,
+};
 use crate::ui::theme::HawaPalette;
 use crate::ui::CompanionWindowView;
+
+const METRIC_MIN_W: f32 = 200.;
+const WIDE_CARD_MIN_W: f32 = 340.;
 
 impl CompanionWindowView {
     pub(crate) fn render_overview(&mut self, pal: HawaPalette, cx: &mut Context<Self>) -> impl IntoElement {
@@ -26,7 +32,6 @@ impl CompanionWindowView {
             media,
             art_img,
             cfg,
-            reported_ip,
             active_player,
             sw_state,
             sw_elapsed_ms,
@@ -34,6 +39,7 @@ impl CompanionWindowView {
             tm_duration_sec,
             tm_remaining_sec,
             tm_remaining_ms,
+            weather,
         ) = if let Ok(g) = self.state.lock() {
             (
                 g.cpu_pct,
@@ -46,7 +52,6 @@ impl CompanionWindowView {
                 g.media.clone(),
                 g.current_art_png.clone(),
                 g.config.clone(),
-                g.device_reported_ip.clone(),
                 g.active_player.clone(),
                 g.stopwatch_state.clone(),
                 g.stopwatch_elapsed_ms,
@@ -54,6 +59,7 @@ impl CompanionWindowView {
                 g.timer_duration_sec,
                 g.timer_remaining_sec,
                 g.timer_remaining_ms,
+                g.weather.clone(),
             )
         } else {
             (
@@ -68,84 +74,77 @@ impl CompanionWindowView {
                 None,
                 CompanionConfig::default(),
                 None,
-                None,
                 "stopped".to_string(),
                 0,
                 "stopped".to_string(),
                 300,
                 300,
                 300_000,
+                None,
             )
         };
 
-        let tm_progress_pct = if tm_duration_sec > 0 {
-            ((tm_remaining_sec as f32 / tm_duration_sec as f32) * 100.0).clamp(0.0, 100.0)
+        let tm_frac = if tm_duration_sec > 0 {
+            tm_remaining_sec as f32 / tm_duration_sec as f32
         } else {
             0.0
         };
-
-        let progress_pct = if media.dur_ms > 0 {
-            ((media.pos_ms as f32 / media.dur_ms as f32) * 100.0).clamp(0.0, 100.0)
+        let media_frac = if media.dur_ms > 0 {
+            media.pos_ms as f32 / media.dur_ms as f32
         } else {
             0.0
         };
-
         let fmt_ms = |ms: u32| {
             let total_s = ms / 1000;
             format!("{}:{:02}", total_s / 60, total_s % 60)
         };
-
-        let player_label = match &active_player {
-            Some(p) => format!("NOW PLAYING ({} -> DEVICE)", p.to_uppercase()),
-            None => "NOW PLAYING (MPRIS -> DEVICE)".to_string(),
+        let fmt_rate = |kbps: u64| {
+            if kbps >= 1024 {
+                format!("{:.1} MB/s", kbps as f64 / 1024.0)
+            } else {
+                format!("{} KB/s", kbps)
+            }
         };
+        let load_color = |pct: u8| {
+            if pct > 85 {
+                pal.danger
+            } else if pct > 65 {
+                pal.warn
+            } else {
+                pal.primary
+            }
+        };
+
+        // Scale the sparkline to its recent peak (at least 25%) so low load still shows a shape.
+        let hist_peak = hist.iter().copied().max().unwrap_or(0).max(25) as f32;
 
         let p_prev = active_player.clone();
         let p_play = active_player.clone();
         let p_next = active_player.clone();
+        let has_track = !media.title.is_empty();
+        let is_playing = media.state == "playing";
+        // Album tint washes the Now Playing card, like the device's media screen.
+        let tint = if has_track { parse_hex(&media.bg_top) } else { None };
 
         v_flex()
-            .gap_5()
             .w_full()
-            .min_w_0()
+            .gap_4()
             .child(
-                // Top Page Title Row
-                h_flex()
-                    .justify_between()
-                    .items_center()
+                page_header(pal, "Overview", "Live PC stats, media and tools on your T-Display S3")
                     .child(
-                        v_flex()
-                            .gap_1()
-                            .child(
-                                div()
-                                    .text_xl()
-                                    .font_bold()
-                                    .text_color(pal.text)
-                                    .child("Live Telemetry & Media Dashboard"),
-                            )
-                            .child(
-                                div()
-                                    .text_sm()
-                                    .text_color(pal.text_dim)
-                                    .child("Streaming real-time PC metrics, MPRIS album art & notifications to your LilyGo T-Display-S3"),
-                            ),
-                    )
-                    .child(
-                        h_flex()
-                            .gap_2()
+                        button_row()
                             .child(
                                 Button::new("overview-ping-btn")
                                     .secondary()
                                     .icon(IconName::RefreshCw)
-                                    .label("Sync Status")
+                                    .label("Sync")
                                     .on_click(cx.listener(|this, _, _, cx| {
                                         if let Ok(mut g) = this.state.lock() {
                                             g.outbound_queue.push_back(
                                                 OutboundAction::QueryDevice { via_usb: false },
                                             );
                                         }
-                                        this.status_banner =
-                                            Some("Sent status query to T-Display-S3.".into());
+                                        this.status_banner = Some("Asked the device for its status.".into());
                                         cx.notify();
                                     })),
                             )
@@ -153,416 +152,184 @@ impl CompanionWindowView {
                                 Button::new("overview-push-cfg-btn")
                                     .primary()
                                     .icon(IconName::Send)
-                                    .label("Push Config")
+                                    .label("Push config")
                                     .on_click(cx.listener(|this, _, _, cx| {
                                         if let Ok(mut g) = this.state.lock() {
                                             g.config.config_version += 1;
                                             save_config(&g.config);
-                                            g.outbound_queue.push_back(
-                                                OutboundAction::PushConfig {
-                                                    wifi_ssid: None,
-                                                    wifi_pass: None,
-                                                    forget_wifi: false,
-                                                    force_usb: false,
-                                                },
-                                            );
+                                            g.outbound_queue.push_back(OutboundAction::PushConfig {
+                                                wifi_ssid: None,
+                                                wifi_pass: None,
+                                                forget_wifi: false,
+                                                force_usb: false,
+                                            });
                                         }
-                                        this.status_banner =
-                                            Some("Pushed active configuration to device.".into());
+                                        this.status_banner = Some("Configuration pushed to device.".into());
                                         cx.notify();
                                     })),
                             ),
                     ),
             )
-            // 3 Metric Cards Row (CPU, RAM, Network)
+            // Metrics
             .child(
-                h_flex()
-                    .gap_4()
-                    .w_full()
+                card_row()
                     .child(
-                        // CPU Card
-                        v_flex()
-                            .flex_1()
-                            .p_4()
-                            .rounded(px(14.))
-                            .bg(pal.surface)
-                            .border_1()
-                            .border_color(pal.border)
-                            .gap_3()
+                        row_card(pal, METRIC_MIN_W)
                             .child(
-                                h_flex()
-                                    .justify_between()
-                                    .items_center()
-                                    .child(
-                                        h_flex()
-                                            .gap_2()
-                                            .items_center()
-                                            .child(
-                                                div()
-                                                    .text_color(pal.accent)
-                                                    .child(IconName::Cpu),
-                                            )
-                                            .child(
-                                                div()
-                                                    .text_xs()
-                                                    .font_semibold()
-                                                    .text_color(pal.text_dim)
-                                                    .child("CPU LOAD"),
-                                            ),
-                                    )
-                                    .child(
-                                        div()
-                                            .text_2xl()
-                                            .font_bold()
-                                            .text_color(pal.text)
-                                            .child(format!("{}%", cpu)),
-                                    ),
+                                card_header(pal, IconName::Cpu, "CPU")
+                                    .child(div().text_2xl().font_bold().child(format!("{}%", cpu))),
                             )
                             .child(
-                                div()
-                                    .w_full()
-                                    .h(px(8.))
-                                    .rounded_full()
-                                    .bg(pal.surface2)
-                                    .overflow_hidden()
-                                    .child(
-                                        div()
-                                            .h_full()
-                                            .w(relative((cpu as f32) / 100.0))
-                                            .rounded_full()
-                                            .bg(if cpu > 85 {
-                                                pal.danger
-                                            } else if cpu > 65 {
-                                                pal.warn
-                                            } else {
-                                                pal.primary
-                                            }),
-                                    ),
-                            )
-                            .child(
+                                // Sparkline of recent CPU load; each bar sits in a faint track
+                                // so the chart keeps its shape even at low load.
                                 h_flex()
-                                    .gap_1()
-                                    .h(px(28.))
-                                    .items_end()
+                                    .gap(px(3.))
+                                    .h(px(36.))
                                     .children(hist.into_iter().map(|val| {
-                                        let h_frac = ((val as f32) / 100.0).clamp(0.12, 1.0);
-                                        div()
+                                        v_flex()
                                             .flex_1()
-                                            .h(relative(h_frac))
+                                            .h_full()
+                                            .justify_end()
                                             .rounded(px(2.))
-                                            .bg(pal.primary.opacity(0.65))
+                                            .bg(pal.well)
+                                            .overflow_hidden()
+                                            .child(
+                                                div()
+                                                    .w_full()
+                                                    .h(relative((val as f32 / hist_peak).clamp(0.06, 1.0)))
+                                                    .rounded(px(2.))
+                                                    .bg(load_color(val)),
+                                            )
                                     })),
                             ),
                     )
                     .child(
-                        // RAM Card
-                        v_flex()
-                            .flex_1()
-                            .p_4()
-                            .rounded(px(14.))
-                            .bg(pal.surface)
-                            .border_1()
-                            .border_color(pal.border)
-                            .gap_3()
+                        row_card(pal, METRIC_MIN_W)
                             .child(
-                                h_flex()
-                                    .justify_between()
-                                    .items_center()
-                                    .child(
-                                        h_flex()
-                                            .gap_2()
-                                            .items_center()
-                                            .child(
-                                                div()
-                                                    .text_color(pal.accent)
-                                                    .child(IconName::HardDrive),
-                                            )
-                                            .child(
-                                                div()
-                                                    .text_xs()
-                                                    .font_semibold()
-                                                    .text_color(pal.text_dim)
-                                                    .child("MEMORY"),
-                                            ),
-                                    )
-                                    .child(
-                                        div()
-                                            .text_2xl()
-                                            .font_bold()
-                                            .text_color(pal.text)
-                                            .child(format!("{}%", ram)),
-                                    ),
+                                card_header(pal, IconName::MemoryStick, "Memory")
+                                    .child(div().text_2xl().font_bold().child(format!("{}%", ram))),
                             )
-                            .child(
-                                div()
-                                    .w_full()
-                                    .h(px(8.))
-                                    .rounded_full()
-                                    .bg(pal.surface2)
-                                    .overflow_hidden()
-                                    .child(
-                                        div()
-                                            .h_full()
-                                            .w(relative((ram as f32) / 100.0))
-                                            .rounded_full()
-                                            .bg(pal.accent),
-                                    ),
-                            )
+                            .child(progress_bar(pal, ram as f32 / 100.0, load_color(ram), 8.))
                             .child(
                                 div()
                                     .text_xs()
                                     .text_color(pal.text_dim)
-                                    .child(format!(
-                                        "{:.1} GB / {:.1} GB used",
-                                        used_gb, total_gb
-                                    )),
+                                    .child(format!("{:.1} of {:.1} GB", used_gb, total_gb)),
                             ),
                     )
                     .child(
-                        // Network Throughput Card
-                        v_flex()
-                            .flex_1()
-                            .p_4()
-                            .rounded(px(14.))
-                            .bg(pal.surface)
-                            .border_1()
-                            .border_color(pal.border)
-                            .gap_3()
+                        row_card(pal, METRIC_MIN_W)
+                            .child(card_header(pal, IconName::ArrowDownUp, "Network"))
                             .child(
-                                h_flex()
-                                    .justify_between()
-                                    .items_center()
+                                v_flex()
+                                    .gap_1p5()
                                     .child(
                                         h_flex()
                                             .gap_2()
                                             .items_center()
-                                            .child(
-                                                div()
-                                                    .text_color(pal.accent)
-                                                    .child(IconName::Wifi),
-                                            )
-                                            .child(
-                                                div()
-                                                    .text_xs()
-                                                    .font_semibold()
-                                                    .text_color(pal.text_dim)
-                                                    .child("NETWORK I/O"),
-                                            ),
-                                    )
-                                    .child(
-                                        div()
-                                            .px_2()
-                                            .py_0p5()
-                                            .rounded(px(6.))
-                                            .bg(pal.primary.opacity(0.18))
-                                            .text_xs()
-                                            .font_semibold()
-                                            .text_color(pal.accent)
-                                            .child("1 Hz UDP"),
-                                    ),
-                            )
-                            .child(
-                                h_flex()
-                                    .justify_between()
-                                    .items_center()
-                                    .child(
-                                        h_flex()
-                                            .gap_1p5()
-                                            .items_center()
-                                            .child(
-                                                div()
-                                                    .text_color(pal.success)
-                                                    .child(IconName::ArrowDown),
-                                            )
-                                            .child(
-                                                div()
-                                                    .text_sm()
-                                                    .font_semibold()
-                                                    .text_color(pal.text)
-                                                    .child(format!("{} KB/s", down_kbps)),
-                                            ),
+                                            .child(div().text_color(pal.success).child(IconName::ArrowDown))
+                                            .child(div().text_lg().font_semibold().child(fmt_rate(down_kbps as u64))),
                                     )
                                     .child(
                                         h_flex()
-                                            .gap_1p5()
+                                            .gap_2()
                                             .items_center()
-                                            .child(
-                                                div()
-                                                    .text_color(pal.accent)
-                                                    .child(IconName::ArrowUp),
-                                            )
-                                            .child(
-                                                div()
-                                                    .text_sm()
-                                                    .font_semibold()
-                                                    .text_color(pal.text)
-                                                    .child(format!("{} KB/s", up_kbps)),
-                                            ),
+                                            .child(div().text_color(pal.accent).child(IconName::ArrowUp))
+                                            .child(div().text_lg().font_semibold().child(fmt_rate(up_kbps as u64))),
                                     ),
-                            )
-                            .child(
-                                div().text_xs().text_color(pal.text_dim).child(format!(
-                                    "Device IP: {}",
-                                    reported_ip.unwrap_or_else(|| cfg.target_ip.clone())
-                                )),
                             ),
                     ),
             )
-            // Middle Row: Now Playing Card + Quick Notification Dispatcher
+            // Now Playing + Notification composer
             .child(
-                h_flex()
-                    .gap_4()
-                    .w_full()
-                    .items_stretch()
+                card_row()
                     .child(
-                        // Spotify-style Now Playing Preview Card
-                        v_flex()
-                            .flex_1()
-                            .p_4()
-                            .rounded(px(14.))
-                            .bg(pal.surface)
-                            .border_1()
-                            .border_color(pal.border)
+                        row_card(pal, WIDE_CARD_MIN_W)
+                            .when_some(tint, |this, t| {
+                                this.bg(linear_gradient(
+                                    135.,
+                                    linear_color_stop(t.opacity(if pal.dark { 0.45 } else { 0.3 }), 0.),
+                                    linear_color_stop(pal.glass, 0.85),
+                                ))
+                            })
                             .justify_between()
-                            .gap_4()
                             .child(
-                                h_flex()
-                                    .justify_between()
-                                    .items_center()
-                                    .child(
-                                        h_flex()
-                                            .gap_2()
-                                            .items_center()
-                                            .child(
-                                                div()
-                                                    .text_color(pal.accent)
-                                                    .child(IconName::Music),
-                                            )
-                                            .child(
-                                                div()
-                                                    .text_xs()
-                                                    .font_semibold()
-                                                    .text_color(pal.text_dim)
-                                                    .child(player_label),
-                                            ),
-                                    )
-                                    .child(
-                                        div()
-                                            .px_2()
-                                            .py_0p5()
-                                            .rounded(px(6.))
-                                            .bg(pal.surface2)
-                                            .text_xs()
-                                            .text_color(pal.text_dim)
-                                            .child(media.state.to_uppercase()),
-                                    ),
+                                card_header(pal, IconName::Music, "Now Playing").child(
+                                    h_flex()
+                                        .gap_1p5()
+                                        .when_some(active_player.clone(), |this, p| {
+                                            this.child(pill(p, pal.text_dim, pal.well))
+                                        })
+                                        .child(state_pill(pal, &media.state)),
+                                ),
                             )
                             .child(
                                 h_flex()
                                     .gap_4()
                                     .items_center()
                                     .child(if let Some(art) = art_img {
-                                        div()
-                                            .w(px(76.))
-                                            .h(px(76.))
+                                        img(art)
+                                            .flex_shrink_0()
+                                            .size(px(72.))
                                             .rounded(px(12.))
-                                            .overflow_hidden()
-                                            .border_1()
-                                            .border_color(pal.border)
-                                            .child(img(art).w(px(76.)).h(px(76.)))
                                             .into_any_element()
                                     } else {
                                         h_flex()
-                                            .w(px(76.))
-                                            .h(px(76.))
+                                            .flex_shrink_0()
+                                            .size(px(72.))
                                             .rounded(px(12.))
-                                            .bg(pal.surface2)
-                                            .border_1()
-                                            .border_color(pal.border)
+                                            .bg(pal.well)
                                             .items_center()
                                             .justify_center()
-                                            .text_color(pal.accent)
-                                            .child(IconName::Music)
+                                            .text_color(pal.text_muted)
+                                            .child(IconName::Disc)
                                             .into_any_element()
                                     })
                                     .child(
                                         v_flex()
                                             .flex_1()
-                                            .gap_1()
-                                            .overflow_hidden()
+                                            .min_w_0()
+                                            .gap_0p5()
                                             .child(
                                                 div()
+                                                    .truncate()
                                                     .text_base()
                                                     .font_bold()
-                                                    .text_color(pal.text)
-                                                    .child(if media.title.is_empty() {
-                                                        "No Active Track".to_string()
-                                                    } else {
+                                                    .child(if has_track {
                                                         media.title.clone()
+                                                    } else {
+                                                        "Nothing playing".to_string()
                                                     }),
                                             )
                                             .child(
                                                 div()
+                                                    .truncate()
                                                     .text_sm()
                                                     .text_color(pal.text_dim)
-                                                    .child(if media.artist.is_empty() {
-                                                        "Play audio in Spotify, Sonora, Firefox, or any MPRIS player".to_string()
-                                                    } else {
+                                                    .child(if has_track {
                                                         media.artist.clone()
+                                                    } else {
+                                                        "Start any MPRIS player".to_string()
                                                     }),
-                                            )
-                                            .child(
-                                                div()
-                                                    .text_xs()
-                                                    .text_color(pal.text_muted)
-                                                    .child(format!(
-                                                        "Tint: {} -> {} · Art hash: {}",
-                                                        media.bg_top,
-                                                        media.bg_bottom,
-                                                        if media.art.is_empty() {
-                                                            "none"
-                                                        } else {
-                                                            &media.art
-                                                        }
-                                                    )),
                                             ),
                                     ),
                             )
                             .child(
                                 v_flex()
                                     .gap_2()
-                                    .child(
-                                        div()
-                                            .w_full()
-                                            .h(px(6.))
-                                            .rounded_full()
-                                            .bg(pal.surface2)
-                                            .overflow_hidden()
-                                            .child(
-                                                div()
-                                                    .h_full()
-                                                    .w(relative(progress_pct / 100.0))
-                                                    .rounded_full()
-                                                    .bg(pal.primary),
-                                            ),
-                                    )
+                                    .child(progress_bar(pal, media_frac, tint.unwrap_or(pal.primary), 4.))
                                     .child(
                                         h_flex()
                                             .justify_between()
                                             .items_center()
-                                            .child(
-                                                div()
-                                                    .text_xs()
-                                                    .text_color(pal.text_dim)
-                                                    .child(fmt_ms(media.pos_ms)),
-                                            )
+                                            .child(div().w(px(40.)).text_xs().text_color(pal.text_dim).child(fmt_ms(media.pos_ms)))
                                             .child(
                                                 h_flex()
                                                     .gap_2()
                                                     .child(
                                                         Button::new("media-prev")
                                                             .small()
-                                                            .secondary()
+                                                            .ghost()
                                                             .icon(IconName::SkipBack)
                                                             .on_click(move |_, _, _| {
                                                                 handle_device_command("prev", p_prev.as_deref())
@@ -570,18 +337,8 @@ impl CompanionWindowView {
                                                     )
                                                     .child(
                                                         Button::new("media-play-pause")
-                                                            .small()
                                                             .primary()
-                                                            .icon(if media.state == "playing" {
-                                                                IconName::Pause
-                                                            } else {
-                                                                IconName::Play
-                                                            })
-                                                            .label(if media.state == "playing" {
-                                                                "Pause"
-                                                            } else {
-                                                                "Play"
-                                                            })
+                                                            .icon(if is_playing { IconName::Pause } else { IconName::Play })
                                                             .on_click(move |_, _, _| {
                                                                 handle_device_command("play_pause", p_play.as_deref())
                                                             }),
@@ -589,7 +346,7 @@ impl CompanionWindowView {
                                                     .child(
                                                         Button::new("media-next")
                                                             .small()
-                                                            .secondary()
+                                                            .ghost()
                                                             .icon(IconName::SkipForward)
                                                             .on_click(move |_, _, _| {
                                                                 handle_device_command("next", p_next.as_deref())
@@ -598,6 +355,9 @@ impl CompanionWindowView {
                                             )
                                             .child(
                                                 div()
+                                                    .w(px(40.))
+                                                    .flex()
+                                                    .justify_end()
                                                     .text_xs()
                                                     .text_color(pal.text_dim)
                                                     .child(fmt_ms(media.dur_ms)),
@@ -606,204 +366,63 @@ impl CompanionWindowView {
                             ),
                     )
                     .child(
-                        // Push Notification to T-Display-S3 Card
-                        v_flex()
-                            .flex_1()
-                            .p_4()
-                            .rounded(px(14.))
-                            .bg(pal.surface)
-                            .border_1()
-                            .border_color(pal.border)
+                        row_card(pal, WIDE_CARD_MIN_W)
                             .justify_between()
-                            .gap_3()
-                            .child(
-                                h_flex()
-                                    .gap_2()
-                                    .items_center()
-                                    .child(div().text_color(pal.accent).child(IconName::Bell))
-                                    .child(
-                                        div()
-                                            .text_xs()
-                                            .font_semibold()
-                                            .text_color(pal.text_dim)
-                                            .child("PUSH NOTIFICATION TO DEVICE"),
-                                    ),
-                            )
+                            .child(card_header(pal, IconName::Bell, "Send Notification"))
                             .child(
                                 v_flex()
                                     .gap_2()
-                                    .child(
-                                        div()
-                                            .text_xs()
-                                            .text_color(pal.text_dim)
-                                            .child("Title"),
-                                    )
                                     .child(Input::new(&self.notify_title_input).cleanable(true))
-                                    .child(
-                                        div()
-                                            .text_xs()
-                                            .text_color(pal.text_dim)
-                                            .child("Message Body"),
-                                    )
                                     .child(Input::new(&self.notify_body_input).cleanable(true)),
                             )
                             .child(
-                                h_flex()
-                                    .justify_end()
-                                    .child(
-                                        Button::new("send-notify-btn")
-                                            .primary()
-                                            .icon(IconName::Send)
-                                            .label("Send to T-Display-S3")
-                                            .on_click(cx.listener(|this, _, _, cx| {
-                                                let title =
-                                                    this.notify_title_input.read(cx).value().to_string();
-                                                let body =
-                                                    this.notify_body_input.read(cx).value().to_string();
-                                                if !title.trim().is_empty() {
-                                                    if let Ok(mut g) = this.state.lock() {
-                                                        g.outbound_queue.push_back(
-                                                            OutboundAction::SendNotification {
-                                                                app: title.clone(),
-                                                                title: title.clone(),
-                                                                body,
-                                                            },
-                                                        );
-                                                        g.push_log(format!(
-                                                            "Sent notification '{}' to device",
-                                                            title
-                                                        ));
-                                                    }
-                                                    this.status_banner = Some(format!(
-                                                        "Notification '{}' dispatched to device.",
-                                                        title
-                                                    ));
-                                                    cx.notify();
-                                                }
-                                            })),
-                                    ),
+                                h_flex().justify_end().child(
+                                    Button::new("send-notify-btn")
+                                        .primary()
+                                        .icon(IconName::Send)
+                                        .label("Send")
+                                        .on_click(cx.listener(|this, _, _, cx| {
+                                            let title = this.notify_title_input.read(cx).value().to_string();
+                                            let body = this.notify_body_input.read(cx).value().to_string();
+                                            if title.trim().is_empty() {
+                                                return;
+                                            }
+                                            if let Ok(mut g) = this.state.lock() {
+                                                g.outbound_queue.push_back(OutboundAction::SendNotification {
+                                                    app: title.clone(),
+                                                    title: title.clone(),
+                                                    body,
+                                                });
+                                                g.push_log(format!("Sent notification '{}' to device", title));
+                                            }
+                                            this.status_banner = Some(format!("Sent '{}' to device.", title));
+                                            cx.notify();
+                                        })),
+                                ),
                             ),
                     ),
             )
-            // Clock Tools Card: Live Stopwatch & Countdown Timer
+            // Clock tools
             .child(
-                h_flex()
-                    .gap_4()
-                    .w_full()
-                    .items_stretch()
+                card_row()
                     .child(
-                        // Stopwatch Card
-                        v_flex()
-                            .flex_1()
-                            .p_4()
-                            .rounded(px(14.))
-                            .bg(pal.surface)
-                            .border_1()
-                            .border_color(pal.border)
+                        row_card(pal, CARD_TOOL_MIN_W)
                             .justify_between()
-                            .gap_4()
+                            .child(card_header(pal, IconName::Timer, "Stopwatch").child(state_pill(pal, &sw_state)))
                             .child(
                                 h_flex()
-                                    .justify_between()
-                                    .items_center()
-                                    .child(
-                                        h_flex()
-                                            .gap_2()
-                                            .items_center()
-                                            .child(div().text_color(pal.accent).child(IconName::Timer))
-                                            .child(
-                                                div()
-                                                    .text_xs()
-                                                    .font_semibold()
-                                                    .text_color(pal.text_dim)
-                                                    .child("STOPWATCH"),
-                                            ),
-                                    )
-                                    .child(
-                                        div()
-                                            .px_2()
-                                            .py_0p5()
-                                            .rounded(px(6.))
-                                            .bg(if sw_state == "running" {
-                                                pal.primary.opacity(0.18)
-                                            } else if sw_state == "paused" {
-                                                pal.warn.opacity(0.18)
-                                            } else {
-                                                pal.surface2
-                                            })
-                                            .text_xs()
-                                            .font_semibold()
-                                            .text_color(if sw_state == "running" {
-                                                pal.accent
-                                            } else if sw_state == "paused" {
-                                                pal.warn
-                                            } else {
-                                                pal.text_dim
-                                            })
-                                            .child(sw_state.to_uppercase()),
-                                    ),
+                                    .justify_center()
+                                    .py_4()
+                                    .child(time_readout(pal, sw_elapsed_ms as u64)),
                             )
-                            .child({
-                                let total_s = sw_elapsed_ms / 1000;
-                                let msec = sw_elapsed_ms % 1000;
-                                let h = total_s / 3600;
-                                let m = (total_s / 60) % 60;
-                                let s = total_s % 60;
-                                let sw_hms = format!("{:02}:{:02}:{:02}", h, m, s);
-                                let sw_ms = format!(".{:03}", msec);
-
-                                v_flex()
-                                    .gap_1()
-                                    .items_center()
-                                    .py_2()
-                                    .child(
-                                        h_flex()
-                                            .items_baseline()
-                                            .gap_0p5()
-                                            .child(
-                                                div()
-                                                    .text_3xl()
-                                                    .font_bold()
-                                                    .text_color(pal.text)
-                                                    .child(sw_hms),
-                                            )
-                                            .child(
-                                                div()
-                                                    .text_sm()
-                                                    .font_semibold()
-                                                    .text_color(pal.text_dim)
-                                                    .child(sw_ms),
-                                            ),
-                                    )
-                                    .child(
-                                        div()
-                                            .text_xs()
-                                            .text_color(pal.text_dim)
-                                            .child("Live stopwatch synced to LilyGo AOD & Clock app"),
-                                    )
-                            })
                             .child(
-                                h_flex()
-                                    .justify_end()
-                                    .gap_2()
+                                button_row()
+                                    .justify_center()
                                     .child(
                                         Button::new("sw-toggle-btn")
-                                            .small()
-                                            .with_variant(if sw_state == "running" {
-                                                gpui_kit::component::button::ButtonVariant::Secondary
-                                            } else {
-                                                gpui_kit::component::button::ButtonVariant::Primary
-                                            })
-                                            .icon(if sw_state == "running" {
-                                                IconName::Pause
-                                            } else {
-                                                IconName::Play
-                                            })
-                                            .label(if sw_state == "running" {
-                                                "Pause"
-                                            } else {
-                                                "Start"
-                                            })
+                                            .with_variant(choice(sw_state != "running"))
+                                            .icon(if sw_state == "running" { IconName::Pause } else { IconName::Play })
+                                            .label(if sw_state == "running" { "Pause" } else { "Start" })
                                             .on_click(cx.listener(|this, _, _, cx| {
                                                 if let Ok(mut g) = this.state.lock() {
                                                     g.toggle_stopwatch();
@@ -813,7 +432,6 @@ impl CompanionWindowView {
                                     )
                                     .child(
                                         Button::new("sw-reset-btn")
-                                            .small()
                                             .secondary()
                                             .icon(IconName::RotateCcw)
                                             .label("Reset")
@@ -826,562 +444,129 @@ impl CompanionWindowView {
                                     ),
                             ),
                     )
-                    .child(
-                        // Countdown Timer Card
-                        v_flex()
-                            .flex_1()
-                            .p_4()
-                            .rounded(px(14.))
-                            .bg(pal.surface)
-                            .border_1()
-                            .border_color(pal.border)
-                            .justify_between()
-                            .gap_4()
-                            .child(
-                                h_flex()
-                                    .justify_between()
-                                    .items_center()
-                                    .child(
-                                        h_flex()
-                                            .gap_2()
-                                            .items_center()
-                                            .child(div().text_color(pal.accent).child(IconName::Clock))
-                                            .child(
-                                                div()
-                                                    .text_xs()
-                                                    .font_semibold()
-                                                    .text_color(pal.text_dim)
-                                                    .child("COUNTDOWN TIMER"),
-                                            ),
-                                    )
-                                    .child(
-                                        div()
-                                            .px_2()
-                                            .py_0p5()
-                                            .rounded(px(6.))
-                                            .bg(if tm_state == "running" {
-                                                pal.primary.opacity(0.18)
-                                            } else if tm_state == "paused" {
-                                                pal.warn.opacity(0.18)
-                                            } else {
-                                                pal.surface2
-                                            })
-                                            .text_xs()
-                                            .font_semibold()
-                                            .text_color(if tm_state == "running" {
-                                                pal.accent
-                                            } else if tm_state == "paused" {
-                                                pal.warn
-                                            } else {
-                                                pal.text_dim
-                                            })
-                                            .child(tm_state.to_uppercase()),
-                                    ),
-                            )
-                            .child({
-                                let total_s = tm_remaining_ms / 1000;
-                                let msec = tm_remaining_ms % 1000;
-                                let h = total_s / 3600;
-                                let m = (total_s / 60) % 60;
-                                let s = total_s % 60;
-                                let tm_hms = format!("{:02}:{:02}:{:02}", h, m, s);
-                                let tm_ms = format!(".{:03}", msec);
-
-                                v_flex()
-                                    .gap_2()
-                                    .items_center()
-                                    .child(
-                                        h_flex()
-                                            .items_baseline()
-                                            .gap_0p5()
-                                            .child(
-                                                div()
-                                                    .text_3xl()
-                                                    .font_bold()
-                                                    .text_color(pal.text)
-                                                    .child(tm_hms),
-                                            )
-                                            .child(
-                                                div()
-                                                    .text_sm()
-                                                    .font_semibold()
-                                                    .text_color(pal.text_dim)
-                                                    .child(tm_ms),
-                                            ),
-                                    )
-                                    .child(
-                                        div()
-                                            .w_full()
-                                            .h(px(6.))
-                                            .rounded_full()
-                                            .bg(pal.surface2)
-                                            .overflow_hidden()
-                                            .child(
-                                                div()
-                                                    .h_full()
-                                                    .w(relative(tm_progress_pct / 100.0))
-                                                    .rounded_full()
-                                                    .bg(pal.accent),
-                                            ),
-                                    )
-                                    .child(
-                                        // Arbitrary Time Selector (up to 59:99:99.999 max) using GPUI NumberInput
-                                        h_flex()
-                                            .w_full()
-                                            .items_center()
-                                            .justify_between()
-                                            .gap_2()
-                                            .p_2()
-                                            .rounded(px(10.))
-                                            .bg(pal.surface2)
-                                            .child(
-                                                h_flex()
-                                                    .items_center()
-                                                    .gap_1()
-                                                    .child(
-                                                        v_flex()
-                                                            .items_center()
-                                                            .child(div().text_xs().text_color(pal.text_dim).child("HH"))
-                                                            .child(
-                                                                div()
-                                                                    .w(px(48.))
-                                                                    .child(NumberInput::new(&self.timer_h_input).placeholder("00"))
-                                                            )
-                                                    )
-                                                    .child(div().text_sm().font_bold().text_color(pal.text_dim).child(":"))
-                                                    .child(
-                                                        v_flex()
-                                                            .items_center()
-                                                            .child(div().text_xs().text_color(pal.text_dim).child("MM"))
-                                                            .child(
-                                                                div()
-                                                                    .w(px(48.))
-                                                                    .child(NumberInput::new(&self.timer_m_input).placeholder("05"))
-                                                            )
-                                                    )
-                                                    .child(div().text_sm().font_bold().text_color(pal.text_dim).child(":"))
-                                                    .child(
-                                                        v_flex()
-                                                            .items_center()
-                                                            .child(div().text_xs().text_color(pal.text_dim).child("SS"))
-                                                            .child(
-                                                                div()
-                                                                    .w(px(48.))
-                                                                    .child(NumberInput::new(&self.timer_s_input).placeholder("00"))
-                                                            )
-                                                    )
-                                                    .child(div().text_sm().font_bold().text_color(pal.text_dim).child("."))
-                                                    .child(
-                                                        v_flex()
-                                                            .items_center()
-                                                            .child(div().text_xs().text_color(pal.text_dim).child("MS"))
-                                                            .child(
-                                                                div()
-                                                                    .w(px(56.))
-                                                                    .child(NumberInput::new(&self.timer_ms_input).placeholder("000"))
-                                                            )
-                                                    )
-                                            )
-                                            .child(
-                                                Button::new("set-timer-val-btn")
-                                                    .primary()
-                                                    .small()
-                                                    .icon(IconName::Clock)
-                                                    .label("Set")
-                                                    .on_click(cx.listener(|this, _, _, cx| {
-                                                        let h = this.timer_h_input.read(cx).value().trim().parse::<u32>().unwrap_or(0).min(59);
-                                                        let m = this.timer_m_input.read(cx).value().trim().parse::<u32>().unwrap_or(0).min(99);
-                                                        let s = this.timer_s_input.read(cx).value().trim().parse::<u32>().unwrap_or(0).min(99);
-                                                        let ms = this.timer_ms_input.read(cx).value().trim().parse::<u32>().unwrap_or(0).min(999);
-                                                        let total_ms = (h * 3600 + m * 60 + s) * 1000 + ms;
-                                                        if total_ms > 0 {
-                                                            if let Ok(mut g) = this.state.lock() {
-                                                                g.start_timer_ms(total_ms);
-                                                            }
-                                                            this.status_banner = Some(format!("Timer set to {:02}:{:02}:{:02}.{:03}", h, m, s, ms));
-                                                            cx.notify();
-                                                        }
-                                                    }))
-                                            )
-                                    )
-                                    .child(
-                                        h_flex()
-                                            .gap_1p5()
-                                            .items_center()
-                                            .child(
-                                                Button::new("tm-pre-1m")
-                                                    .small()
-                                                    .secondary()
-                                                    .label("1m")
-                                                    .on_click(cx.listener(|this, _, _, cx| {
-                                                        if let Ok(mut g) = this.state.lock() {
-                                                            g.start_timer(60);
-                                                        }
-                                                        cx.notify();
-                                                    })),
-                                            )
-                                            .child(
-                                                Button::new("tm-pre-3m")
-                                                    .small()
-                                                    .secondary()
-                                                    .label("3m")
-                                                    .on_click(cx.listener(|this, _, _, cx| {
-                                                        if let Ok(mut g) = this.state.lock() {
-                                                            g.start_timer(180);
-                                                        }
-                                                        cx.notify();
-                                                    })),
-                                            )
-                                            .child(
-                                                Button::new("tm-pre-5m")
-                                                    .small()
-                                                    .secondary()
-                                                    .label("5m")
-                                                    .on_click(cx.listener(|this, _, _, cx| {
-                                                        if let Ok(mut g) = this.state.lock() {
-                                                            g.start_timer(300);
-                                                        }
-                                                        cx.notify();
-                                                    })),
-                                            )
-                                            .child(
-                                                Button::new("tm-pre-10m")
-                                                    .small()
-                                                    .secondary()
-                                                    .label("10m")
-                                                    .on_click(cx.listener(|this, _, _, cx| {
-                                                        if let Ok(mut g) = this.state.lock() {
-                                                            g.start_timer(600);
-                                                        }
-                                                        cx.notify();
-                                                    })),
-                                            )
-                                            .child(
-                                                Button::new("tm-pre-15m")
-                                                    .small()
-                                                    .secondary()
-                                                    .label("15m")
-                                                    .on_click(cx.listener(|this, _, _, cx| {
-                                                        if let Ok(mut g) = this.state.lock() {
-                                                            g.start_timer(900);
-                                                        }
-                                                        cx.notify();
-                                                    })),
-                                            )
-                                            .child(
-                                                Button::new("tm-pre-25m")
-                                                    .small()
-                                                    .secondary()
-                                                    .label("25m")
-                                                    .on_click(cx.listener(|this, _, _, cx| {
-                                                        if let Ok(mut g) = this.state.lock() {
-                                                            g.start_timer(1500);
-                                                        }
-                                                        cx.notify();
-                                                    })),
-                                            ),
-                                    )
-                            })
-                            .child(
-                                h_flex()
-                                    .justify_end()
-                                    .gap_2()
-                                    .child(
-                                        Button::new("tm-toggle-btn")
-                                            .small()
-                                            .with_variant(if tm_state == "running" {
-                                                gpui_kit::component::button::ButtonVariant::Secondary
-                                            } else {
-                                                gpui_kit::component::button::ButtonVariant::Primary
-                                            })
-                                            .icon(if tm_state == "running" {
-                                                IconName::Pause
-                                            } else {
-                                                IconName::Play
-                                            })
-                                            .label(if tm_state == "running" {
-                                                "Pause"
-                                            } else if tm_state == "paused" {
-                                                "Resume"
-                                            } else {
-                                                "Start"
-                                            })
-                                            .on_click(cx.listener(|this, _, _, cx| {
-                                                if let Ok(mut g) = this.state.lock() {
-                                                    g.toggle_timer();
-                                                }
-                                                cx.notify();
-                                            })),
-                                    )
-                                    .child(
-                                        Button::new("tm-reset-btn")
-                                            .small()
-                                            .secondary()
-                                            .icon(IconName::RotateCcw)
-                                            .label("Reset")
-                                            .on_click(cx.listener(|this, _, _, cx| {
-                                                if let Ok(mut g) = this.state.lock() {
-                                                    g.reset_timer();
-                                                }
-                                                cx.notify();
-                                            })),
-                                    ),
-                            ),
-                    ),
+                    .child(self.render_timer_card(pal, &tm_state, tm_remaining_ms as u64, tm_frac, cx)),
             )
-            // Live Weather Card
-            .child({
-                let weather_opt = if let Ok(g) = self.state.lock() {
-                    g.weather.clone()
-                } else {
-                    None
-                };
-
-                if let Some(w) = weather_opt {
-                    v_flex()
-                        .p_4()
-                        .rounded(px(14.))
-                        .bg(pal.surface)
-                        .border_1()
-                        .border_color(pal.border)
-                        .gap_3()
-                        .child(
+            // Weather
+            .child(match weather {
+                Some(w) => glass_card(pal)
+                    .child(
+                        card_header(pal, IconName::CloudSun, format!("{} · {}", w.city, w.condition)).child(
                             h_flex()
-                                .justify_between()
-                                .items_center()
+                                .gap_1()
                                 .child(
-                                    h_flex()
-                                        .gap_2()
-                                        .items_center()
-                                        .child(div().text_color(pal.accent).child(IconName::Sun))
-                                        .child(
-                                            div()
-                                                .text_sm()
-                                                .font_bold()
-                                                .text_color(pal.text)
-                                                .child("Live Weather"),
-                                        )
-                                        .child(
-                                            div()
-                                                .px_2()
-                                                .py_0p5()
-                                                .rounded(px(6.))
-                                                .bg(pal.primary.opacity(0.18))
-                                                .text_xs()
-                                                .font_medium()
-                                                .text_color(pal.accent)
-                                                .child(format!("{} · {}", w.city, w.condition)),
-                                        ),
-                                )
-                                .child(
-                                    h_flex()
-                                        .gap_2()
-                                        .child(
-                                            Button::new("ov-weather-unit-btn")
-                                                .small()
-                                                .secondary()
-                                                .label(if cfg.weather_unit == "f" { "Unit: °F" } else { "Unit: °C" })
-                                                .on_click(cx.listener(|this, _, _, cx| {
-                                                    this.mutate_config_and_sync(cx, |c| {
-                                                        c.weather_unit = if c.weather_unit == "f" { "c".into() } else { "f".into() };
-                                                    });
-                                                    if let Ok(mut g) = this.state.lock() {
-                                                        g.outbound_queue.push_back(OutboundAction::RefreshWeather);
-                                                    }
-                                                })),
-                                        )
-                                        .child(
-                                            Button::new("ov-weather-refresh-btn")
-                                                .small()
-                                                .secondary()
-                                                .icon(IconName::RefreshCw)
-                                                .label("Refresh")
-                                                .on_click(cx.listener(|this, _, _, cx| {
-                                                    if let Ok(mut g) = this.state.lock() {
-                                                        g.outbound_queue.push_back(OutboundAction::RefreshWeather);
-                                                    }
-                                                    this.status_banner = Some("Refreshing weather forecast...".into());
-                                                    cx.notify();
-                                                })),
-                                        ),
-                                ),
-                        )
-                        .child(
-                            h_flex()
-                                .gap_4()
-                                .items_center()
-                                .child(
-                                    v_flex()
-                                        .gap_1()
-                                        .child(
-                                            div()
-                                                .text_2xl()
-                                                .font_bold()
-                                                .text_color(pal.text)
-                                                .child(format!("{}°{}", w.temp, w.unit.to_uppercase())),
-                                        )
-                                        .child(
-                                            div()
-                                                .text_xs()
-                                                .text_color(pal.text_dim)
-                                                .child(format!(
-                                                    "Feels like {}° · H: {}° L: {}° · {}% hum · {} {}",
-                                                    w.feels_like,
-                                                    w.temp_max,
-                                                    w.temp_min,
-                                                    w.humidity,
-                                                    w.wind_speed,
-                                                    if w.unit == "f" { "mph" } else { "km/h" }
-                                                )),
-                                        ),
-                                )
-                                .child(
-                                    h_flex()
-                                        .gap_2()
-                                        .flex_1()
-                                        .justify_end()
-                                        .children(w.forecast.iter().map(|day| {
-                                            v_flex()
-                                                .p_2p5()
-                                                .rounded(px(10.))
-                                                .bg(pal.surface2)
-                                                .border_1()
-                                                .border_color(pal.border)
-                                                .items_center()
-                                                .gap_1()
-                                                .min_w(px(72.))
-                                                .child(
-                                                    div()
-                                                        .text_xs()
-                                                        .font_semibold()
-                                                        .text_color(pal.text)
-                                                        .child(day.day.clone()),
-                                                )
-                                                .child(
-                                                    div()
-                                                        .text_xs()
-                                                        .font_bold()
-                                                        .text_color(pal.accent)
-                                                        .child(format!("{}° / {}°", day.min, day.max)),
-                                                )
-                                        })),
-                                ),
-                        )
-                } else {
-                    v_flex()
-                        .p_4()
-                        .rounded(px(14.))
-                        .bg(pal.surface)
-                        .border_1()
-                        .border_color(pal.border)
-                        .child(
-                            h_flex()
-                                .justify_between()
-                                .items_center()
-                                .child(
-                                    h_flex()
-                                        .gap_2()
-                                        .items_center()
-                                        .child(div().text_color(pal.accent).child(IconName::Sun))
-                                        .child(
-                                            div()
-                                                .text_sm()
-                                                .font_bold()
-                                                .text_color(pal.text)
-                                                .child("Live Weather Forecast"),
-                                        )
-                                        .child(
-                                            div()
-                                                .text_xs()
-                                                .text_color(pal.text_dim)
-                                                .child("Waiting for Open-Meteo weather sync..."),
-                                        ),
-                                )
-                                .child(
-                                    Button::new("ov-weather-sync-btn")
+                                    Button::new("ov-weather-unit-btn")
                                         .small()
-                                        .primary()
+                                        .ghost()
+                                        .label(if cfg.weather_unit == "f" { "°F" } else { "°C" })
+                                        .tooltip("Toggle unit")
+                                        .on_click(cx.listener(|this, _, _, cx| {
+                                            this.mutate_config_and_sync(cx, |c| {
+                                                c.weather_unit = if c.weather_unit == "f" { "c".into() } else { "f".into() };
+                                            });
+                                            if let Ok(mut g) = this.state.lock() {
+                                                g.outbound_queue.push_back(OutboundAction::RefreshWeather);
+                                            }
+                                        })),
+                                )
+                                .child(
+                                    Button::new("ov-weather-refresh-btn")
+                                        .small()
+                                        .ghost()
                                         .icon(IconName::RefreshCw)
-                                        .label("Sync Weather")
+                                        .tooltip("Refresh")
                                         .on_click(cx.listener(|this, _, _, cx| {
                                             if let Ok(mut g) = this.state.lock() {
                                                 g.outbound_queue.push_back(OutboundAction::RefreshWeather);
                                             }
-                                            this.status_banner = Some("Fetching weather from Open-Meteo...".into());
+                                            this.status_banner = Some("Refreshing weather…".into());
                                             cx.notify();
                                         })),
                                 ),
-                        )
-                }
-            })
-            // Bottom Row: Quick Device Controls Summary
-            .child(
-                h_flex()
-                    .p_4()
-                    .rounded(px(14.))
-                    .bg(pal.surface)
-                    .border_1()
-                    .border_color(pal.border)
-                    .justify_between()
-                    .items_center()
-                    .child(
-                        v_flex()
-                            .gap_0p5()
-                            .child(
-                                div()
-                                    .text_sm()
-                                    .font_bold()
-                                    .text_color(pal.text)
-                                    .child("Quick Device Toggles"),
-                            )
-                            .child(
-                                div()
-                                    .text_xs()
-                                    .text_color(pal.text_dim)
-                                    .child(format!(
-                                        "Theme: {} · Brightness: {}% · AOD: {} ({}s) · Clock: {} · Popups: {}",
-                                        cfg.device_theme.to_uppercase(),
-                                        cfg.brightness,
-                                        if cfg.aod_enabled { "On" } else { "Off" },
-                                        cfg.aod_timeout_s,
-                                        if cfg.use_24h { "24h" } else { "12h AM/PM" },
-                                        if cfg.notify_popup { "On" } else { "Off" }
-                                    )),
-                            ),
+                        ),
                     )
                     .child(
                         h_flex()
-                            .gap_2()
+                            .flex_wrap()
+                            .gap_4()
+                            .items_center()
+                            .justify_between()
+                            .child(
+                                v_flex()
+                                    .min_w(px(180.))
+                                    .gap_0p5()
+                                    .child(div().text_3xl().font_bold().child(format!("{}°", w.temp)))
+                                    .child(
+                                        div()
+                                            .text_xs()
+                                            .text_color(pal.text_dim)
+                                            .child(format!(
+                                                "Feels {}° · {}% humidity · {} {}",
+                                                w.feels_like,
+                                                w.humidity,
+                                                w.wind_speed,
+                                                if w.unit == "f" { "mph" } else { "km/h" }
+                                            )),
+                                    ),
+                            )
+                            .child(
+                                h_flex()
+                                    .flex_wrap()
+                                    .gap_2()
+                                    .children(w.forecast.iter().map(|day| {
+                                        v_flex()
+                                            .min_w(px(64.))
+                                            .px_3()
+                                            .py_2()
+                                            .rounded(px(12.))
+                                            .bg(pal.well)
+                                            .items_center()
+                                            .gap_0p5()
+                                            .child(div().text_xs().text_color(pal.text_dim).child(day.day.clone()))
+                                            .child(div().text_sm().font_semibold().child(format!("{}°", day.max)))
+                                            .child(div().text_xs().text_color(pal.text_muted).child(format!("{}°", day.min)))
+                                    })),
+                            ),
+                    ),
+                None => glass_card(pal).child(
+                    card_header(pal, IconName::CloudSun, "Weather").child(
+                        Button::new("ov-weather-sync-btn")
+                            .small()
+                            .secondary()
+                            .icon(IconName::RefreshCw)
+                            .label("Fetch")
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                if let Ok(mut g) = this.state.lock() {
+                                    g.outbound_queue.push_back(OutboundAction::RefreshWeather);
+                                }
+                                this.status_banner = Some("Fetching weather…".into());
+                                cx.notify();
+                            })),
+                    ),
+                ),
+            })
+            // Quick toggles
+            .child(
+                glass_card(pal).child(
+                    card_header(pal, IconName::Zap, "Quick toggles").child(
+                        button_row()
                             .child(
                                 Button::new("quick-theme-dark")
                                     .small()
-                                    .with_variant(if cfg.device_theme == "dark" {
-                                        gpui_kit::component::button::ButtonVariant::Primary
-                                    } else {
-                                        gpui_kit::component::button::ButtonVariant::Secondary
-                                    })
+                                    .with_variant(choice(cfg.device_theme == "dark"))
                                     .icon(IconName::Moon)
                                     .label("Dark")
                                     .on_click(cx.listener(|this, _, _, cx| {
-                                        this.mutate_config_and_sync(cx, |c| {
-                                            c.device_theme = "dark".into();
-                                        });
+                                        this.mutate_config_and_sync(cx, |c| c.device_theme = "dark".into());
                                     })),
                             )
                             .child(
                                 Button::new("quick-theme-light")
                                     .small()
-                                    .with_variant(if cfg.device_theme == "light" {
-                                        gpui_kit::component::button::ButtonVariant::Primary
-                                    } else {
-                                        gpui_kit::component::button::ButtonVariant::Secondary
-                                    })
+                                    .with_variant(choice(cfg.device_theme == "light"))
                                     .icon(IconName::Sun)
                                     .label("Light")
                                     .on_click(cx.listener(|this, _, _, cx| {
-                                        this.mutate_config_and_sync(cx, |c| {
-                                            c.device_theme = "light".into();
-                                        });
+                                        this.mutate_config_and_sync(cx, |c| c.device_theme = "light".into());
                                     })),
                             )
                             .child(
@@ -1389,14 +574,157 @@ impl CompanionWindowView {
                                     .small()
                                     .secondary()
                                     .icon(IconName::Clock)
-                                    .label(if cfg.use_24h { "24-Hour" } else { "12-Hour" })
+                                    .label(if cfg.use_24h { "24h" } else { "12h" })
                                     .on_click(cx.listener(|this, _, _, cx| {
-                                        this.mutate_config_and_sync(cx, |c| {
-                                            c.use_24h = !c.use_24h;
-                                        });
+                                        this.mutate_config_and_sync(cx, |c| c.use_24h = !c.use_24h);
+                                    })),
+                            ),
+                    ),
+                ),
+            )
+    }
+
+    fn render_timer_card(
+        &mut self,
+        pal: HawaPalette,
+        tm_state: &str,
+        remaining_ms: u64,
+        frac: f32,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let running = tm_state == "running";
+        // Each field fits the -/+ buttons plus 3 digits. Fields wrap in pairs,
+        // so the layout is one row of four or a 2x2 grid, never 3 + 1.
+        let field = |label: &'static str, state: &Entity<InputState>| {
+            v_flex()
+                .flex_1()
+                .min_w(px(92.))
+                .gap_1()
+                .child(div().text_xs().text_color(pal.text_dim).child(label))
+                .child(NumberInput::new(state).small().w_full())
+        };
+        let pair = |a: Div, b: Div| h_flex().flex_1().min_w(px(192.)).gap_2().child(a).child(b);
+        let preset = |id: &'static str, label: &'static str, secs: u32, cx: &mut Context<Self>| {
+            Button::new(id)
+                .small()
+                .ghost()
+                .label(label)
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    if let Ok(mut g) = this.state.lock() {
+                        g.start_timer(secs);
+                    }
+                    cx.notify();
+                }))
+        };
+
+        row_card(pal, CARD_TOOL_MIN_W)
+            .child(card_header(pal, IconName::Hourglass, "Timer").child(state_pill(pal, tm_state)))
+            .child(
+                v_flex()
+                    .gap_2()
+                    .items_center()
+                    .py_1()
+                    .child(time_readout(pal, remaining_ms))
+                    .child(progress_bar(pal, frac, pal.accent, 4.)),
+            )
+            .child(
+                v_flex()
+                    .gap_3()
+                    .p_3()
+                    .rounded(px(12.))
+                    .bg(pal.well)
+                    .child(
+                        h_flex()
+                            .w_full()
+                            .flex_wrap()
+                            .gap_2()
+                            .child(pair(
+                                field("Hours", &self.timer_h_input),
+                                field("Minutes", &self.timer_m_input),
+                            ))
+                            .child(pair(
+                                field("Seconds", &self.timer_s_input),
+                                field("Millis", &self.timer_ms_input),
+                            )),
+                    )
+                    .child(
+                        h_flex()
+                            .flex_wrap()
+                            .gap_1()
+                            .items_center()
+                            .justify_between()
+                            .child(
+                                h_flex()
+                                    .flex_wrap()
+                                    .gap_0p5()
+                                    .child(preset("tm-pre-1m", "1m", 60, cx))
+                                    .child(preset("tm-pre-5m", "5m", 300, cx))
+                                    .child(preset("tm-pre-10m", "10m", 600, cx))
+                                    .child(preset("tm-pre-25m", "25m", 1500, cx)),
+                            )
+                            .child(
+                                Button::new("set-timer-val-btn")
+                                    .small()
+                                    .primary()
+                                    .icon(IconName::Check)
+                                    .label("Set")
+                                    .on_click(cx.listener(|this, _, _, cx| {
+                                        // Parse as f64 so a typed "5.0" doesn't silently become 0.
+                                        let read = |state: &Entity<InputState>, max: u32, cx: &App| {
+                                            (state.read(cx).value().trim().parse::<f64>().unwrap_or(0.).max(0.) as u32).min(max)
+                                        };
+                                        let h = read(&this.timer_h_input, 59, cx);
+                                        let m = read(&this.timer_m_input, 99, cx);
+                                        let s = read(&this.timer_s_input, 99, cx);
+                                        let ms = read(&this.timer_ms_input, 999, cx);
+                                        let total_ms = (h * 3600 + m * 60 + s) * 1000 + ms;
+                                        if total_ms > 0 {
+                                            if let Ok(mut g) = this.state.lock() {
+                                                g.start_timer_ms(total_ms);
+                                            }
+                                            this.status_banner =
+                                                Some(format!("Timer set to {:02}:{:02}:{:02}.{:03}", h, m, s, ms));
+                                            cx.notify();
+                                        }
                                     })),
                             ),
                     ),
             )
+            .child(
+                button_row()
+                    .justify_center()
+                    .child(
+                        Button::new("tm-toggle-btn")
+                            .with_variant(choice(!running))
+                            .icon(if running { IconName::Pause } else { IconName::Play })
+                            .label(if running {
+                                "Pause"
+                            } else if tm_state == "paused" {
+                                "Resume"
+                            } else {
+                                "Start"
+                            })
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                if let Ok(mut g) = this.state.lock() {
+                                    g.toggle_timer();
+                                }
+                                cx.notify();
+                            })),
+                    )
+                    .child(
+                        Button::new("tm-reset-btn")
+                            .secondary()
+                            .icon(IconName::RotateCcw)
+                            .label("Reset")
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                if let Ok(mut g) = this.state.lock() {
+                                    g.reset_timer();
+                                }
+                                cx.notify();
+                            })),
+                    ),
+            )
     }
 }
+
+const CARD_TOOL_MIN_W: f32 = 320.;
