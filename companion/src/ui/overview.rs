@@ -10,7 +10,7 @@ use gpui_kit::component::{h_flex, v_flex, Sizable, StyledExt};
 use crate::config::save_config;
 use crate::models::{CompanionConfig, OutboundAction};
 use crate::ui::components::{
-    button_row, card_header, card_row, choice, glass_card, page_header, parse_hex, pill,
+    button_row, card_header, card_row, choice, glass_card, page_header, parse_hex, pill, NO_ART_TINT,
     progress_bar, row_card, state_pill, time_readout,
 };
 use crate::ui::theme::HawaPalette;
@@ -124,7 +124,13 @@ impl CompanionWindowView {
         let has_track = !media.title.is_empty();
         let is_playing = media.state == "playing";
         // Album tint washes the Now Playing card, like the device's media screen.
-        let tint = if has_track { parse_hex(&media.bg_top) } else { None };
+        // Tracks without artwork carry the fixed cyan default; skip that so the
+        // card follows the accent instead.
+        let tint = if has_track && !media.bg_top.eq_ignore_ascii_case(NO_ART_TINT) {
+            parse_hex(&media.bg_top)
+        } else {
+            None
+        };
 
         v_flex()
             .w_full()
@@ -420,7 +426,7 @@ impl CompanionWindowView {
                                     .justify_center()
                                     .child(
                                         Button::new("sw-toggle-btn")
-                                            .with_variant(choice(sw_state != "running"))
+                                            .with_variant(choice(pal, sw_state != "running", cx))
                                             .icon(if sw_state == "running" { IconName::Pause } else { IconName::Play })
                                             .label(if sw_state == "running" { "Pause" } else { "Start" })
                                             .on_click(cx.listener(|this, _, _, cx| {
@@ -552,7 +558,7 @@ impl CompanionWindowView {
                             .child(
                                 Button::new("quick-theme-dark")
                                     .small()
-                                    .with_variant(choice(cfg.device_theme == "dark"))
+                                    .with_variant(choice(pal, cfg.device_theme == "dark", cx))
                                     .icon(IconName::Moon)
                                     .label("Dark")
                                     .on_click(cx.listener(|this, _, _, cx| {
@@ -562,7 +568,7 @@ impl CompanionWindowView {
                             .child(
                                 Button::new("quick-theme-light")
                                     .small()
-                                    .with_variant(choice(cfg.device_theme == "light"))
+                                    .with_variant(choice(pal, cfg.device_theme == "light", cx))
                                     .icon(IconName::Sun)
                                     .label("Light")
                                     .on_click(cx.listener(|this, _, _, cx| {
@@ -695,7 +701,7 @@ impl CompanionWindowView {
                     .justify_center()
                     .child(
                         Button::new("tm-toggle-btn")
-                            .with_variant(choice(!running))
+                            .with_variant(choice(pal, !running, cx))
                             .icon(if running { IconName::Pause } else { IconName::Play })
                             .label(if running {
                                 "Pause"

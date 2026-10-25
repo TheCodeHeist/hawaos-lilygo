@@ -423,11 +423,13 @@ void refreshAodContent() {
   const bool clockToolsActive = (timerActive || stopwatchActive);
 
   // Dynamic background gradient tween: keep tinted gradient if media is active
-  const uint32_t targetTop = showMedia ? d.mediaBgTop : 0x000000;
+  const uint32_t targetTop =
+      showMedia ? Theme::resolveMediaTint(d.mediaBgTop) : 0x000000;
   const uint32_t targetBot = showMedia ? d.mediaBgBottom : 0x000000;
   startAodTintTween(targetTop, targetBot, Config::ANIM_AOD_ENTER_MS);
 
-  const uint32_t aodBgTop = (showMedia && d.mediaBgTop != 0) ? d.mediaBgTop : 0x071115;
+  const uint32_t aodBgTop =
+      showMedia ? Theme::resolveMediaTint(d.mediaBgTop) : 0x071115;
   const bool aodLightBg = Theme::isColorLight(aodBgTop) || (!d.mediaInkLight && showMedia);
   const uint32_t clockColor = aodLightBg ? 0x0A1014 : 0xFFFFFF;
   const uint32_t dateColor = aodLightBg ? 0x2D3E45 : 0xA0B4BA;
@@ -732,15 +734,20 @@ void refreshAodContent() {
   }
 }
 
-void buildAodScreen(lv_obj_t *root) {
+// `keepBackdrop`: rebuilding an AOD screen that is already showing (theme or
+// accent change) keeps the current tint, so it eases to the new target instead
+// of snapping back to `bg` and fading in again.
+void buildAodScreen(lv_obj_t *root, bool keepBackdrop = false) {
   StatusBar::setVisible(false);
   s_aodScreen = root;
 
   const ThemeTokens::Palette &p = Theme::dark();
   const DataSnapshot d = DataStore::getSnapshot();
 
-  s_aodCurTop = Theme::active().bg;
-  s_aodCurBot = Theme::active().bg;
+  if (!keepBackdrop) {
+    s_aodCurTop = Theme::active().bg;
+    s_aodCurBot = Theme::active().bg;
+  }
   s_aodFromTop = s_aodCurTop;
   s_aodFromBot = s_aodCurBot;
   s_aodToTop = s_aodCurTop;
@@ -1185,7 +1192,13 @@ void applyActiveTheme() {
     switchTo(static_cast<size_t>(s_activeAppIdx >= 0 ? s_activeAppIdx : 0));
   } else if (s_viewState == ViewState::Aod) {
     if (s_aodScreen != nullptr) {
-      buildAodScreen(s_aodScreen);
+      // buildAodScreen() creates every widget, so drop the old ones first;
+      // otherwise both sets stay on screen, overlapping.
+      lv_obj_t *scr = s_aodScreen;
+      lv_anim_del(scr, nullptr);
+      lv_obj_clean(scr);
+      clearViewPointers(); // also nulls s_aodScreen; rebuilt below
+      buildAodScreen(scr, true);
     }
   }
 }

@@ -1,3 +1,4 @@
+pub mod accents;
 pub mod components;
 pub mod daemon_settings;
 pub mod device_settings;
@@ -181,15 +182,19 @@ impl CompanionWindowView {
 
 impl Render for CompanionWindowView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let (dark_mode, translucent) = if let Ok(g) = self.state.lock() {
+        let (dark_mode, translucent, accent) = if let Ok(g) = self.state.lock() {
             (
                 g.config.companion_dark_mode,
                 use_translucent_window(&g.config.window_transparency),
+                g.config.accent.clone(),
             )
         } else {
-            (true, false)
+            (true, false, accents::DEFAULT_ACCENT.to_string())
         };
-        let pal = HawaPalette::new(dark_mode, translucent);
+        // Same frame as the palette below, so gpui-kit widgets and our own
+        // elements always switch accent together (no-op when unchanged).
+        apply_hawaos_gpui_theme(dark_mode, &accent, cx);
+        let pal = HawaPalette::new(dark_mode, translucent, &accent);
         let compact = window.viewport_size().width < px(COMPACT_SIDEBAR_BELOW);
 
         let content = match self.active_section {

@@ -87,6 +87,7 @@ pub fn spawn_daemon_worker(state: SharedState, art_cache: SharedArtCache) {
                             "type": "config",
                             "v": cfg.config_version,
                             "theme": cfg.device_theme,
+                            "accent": cfg.accent,
                             "brightness": cfg.brightness,
                             "aod": cfg.aod_enabled,
                             "aod_timeout_s": cfg.aod_timeout_s,

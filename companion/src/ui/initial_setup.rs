@@ -111,7 +111,7 @@ impl CompanionWindowView {
                                 let p_clone = port_str.clone();
                                 Button::new(("usb-port-select", idx))
                                     .small()
-                                    .with_variant(choice(selected))
+                                    .with_variant(choice(pal, selected, cx))
                                     .label(port_str)
                                     .on_click(cx.listener(move |this, _, _, cx| {
                                         if let Ok(mut g) = this.state.lock() {
@@ -172,7 +172,7 @@ impl CompanionWindowView {
                             let ssid_str = item.ssid.clone();
                             Button::new(("wifi-chip", idx))
                                 .small()
-                                .with_variant(choice(item.in_use))
+                                .with_variant(choice(pal, item.in_use, cx))
                                 .icon(IconName::Wifi)
                                 .label(format!("{} · {}%", item.ssid, item.signal))
                                 .on_click(cx.listener(move |this, _, window, cx| {

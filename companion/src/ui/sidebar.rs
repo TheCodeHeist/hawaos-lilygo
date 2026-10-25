@@ -88,14 +88,16 @@ impl CompanionWindowView {
             .icon(if dark_ui { IconName::Moon } else { IconName::Sun })
             .tooltip(if dark_ui { "Switch to light" } else { "Switch to dark" })
             .on_click(cx.listener(|this, _, _, cx| {
-                let next_dark = if let Ok(mut g) = this.state.lock() {
+                let next = if let Ok(mut g) = this.state.lock() {
                     g.config.companion_dark_mode = !g.config.companion_dark_mode;
                     save_config(&g.config);
-                    g.config.companion_dark_mode
+                    Some((g.config.companion_dark_mode, g.config.accent.clone()))
                 } else {
-                    true
+                    None
                 };
-                apply_hawaos_gpui_theme(next_dark, cx);
+                if let Some((dark, accent)) = next {
+                    apply_hawaos_gpui_theme(dark, &accent, cx);
+                }
                 cx.notify();
             }));
 

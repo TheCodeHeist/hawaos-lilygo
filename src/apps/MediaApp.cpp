@@ -12,7 +12,6 @@
 
 namespace {
 
-constexpr uint32_t kDefaultBgTop = 0x008DA6;
 constexpr uint32_t kDefaultBgBot = 0x071115;
 constexpr uint32_t kTextWhite = 0xFFFFFF;
 constexpr uint32_t kTextSilver = 0xD0DCE0;
@@ -239,7 +238,7 @@ void MediaApp::refreshMedia(const DataSnapshot &d) {
   const bool hasTrack = (d.mediaTitle[0] != '\0');
 
   // Background gradient: Uses bg_top and bg_bottom parsed from CompanionLink
-  const uint32_t bgTop = (d.mediaBgTop != 0) ? d.mediaBgTop : kDefaultBgTop;
+  const uint32_t bgTop = Theme::resolveMediaTint(d.mediaBgTop);
   const uint32_t bgBot =
       (d.mediaBgBottom != 0) ? d.mediaBgBottom : kDefaultBgBot;
 

@@ -127,7 +127,7 @@ impl CompanionWindowView {
                             |(value, label)| {
                                 Button::new(SharedString::from(format!("transparency-{value}")))
                                     .small()
-                                    .with_variant(choice(cfg.window_transparency == value))
+                                    .with_variant(choice(pal, cfg.window_transparency == value, cx))
                                     .label(label)
                                     .on_click(cx.listener(move |this, _, window, cx| {
                                         if let Ok(mut g) = this.state.lock() {

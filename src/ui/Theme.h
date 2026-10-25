@@ -15,6 +15,13 @@ const ThemeTokens::Palette &dark();
 
 bool isDark();
 
+// Companion media tint sent when a track has no artwork (cyan, pre-accents).
+constexpr uint32_t kLegacyMediaTint = 0x008DA6;
+
+// Media background top color: an untinted value (0 or the legacy default)
+// becomes the active accent's deep shade.
+uint32_t resolveMediaTint(uint32_t bgTop);
+
 // Apply theme to root screen (solid `bg` or vertical gradient wallpaper if
 // `withWallpaper` is true)
 void styleScreen(lv_obj_t *scr, bool withWallpaper = false,

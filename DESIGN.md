@@ -9,7 +9,7 @@ Target: LilyGo T-Display S3, 320x170 landscape ST7789 (8-bit parallel), LVGL, tw
 1. **Calm and sparse.** One idea per screen, 1 to 3 elements, one big number or title that matters.
 2. **Solid, not glass.** No translucency or blur. Cards are solid fills. Alpha blending is avoided everywhere except small, rare cases.
 3. **Subtle and snappy motion.** Animations are short, small, and optional. FPS beats flourish (see section 7).
-4. **Modern and consistent.** One accent hue (cyan), tinted neutrals, one icon family (Lucide), one type family.
+4. **Modern and consistent.** One accent hue (cyan by default, user-selectable, see 3.4), tinted neutrals, one icon family (Lucide), one type family.
 5. **Two-button first.** Every screen is fully usable with Next and Select. Rich configuration lives in the Rust desktop companion, not on the device.
 6. **Tokens, not hardcoded values.** No raw colors, sizes, or fonts in app code. Everything comes from the theme.
 
@@ -70,6 +70,16 @@ Rules:
 - Themes: **dark**, **light**, optional **auto** (by time of day via NTP, set from the companion).
 - Switch by swapping the active palette and re-applying styles (`lv_obj_report_style_change` or equivalent). Default behavior is an **instant recolor** (no crossfade). Persist in `Preferences`; read it at boot before drawing anything.
 - **Media screen and AOD are always dark** regardless of theme (see sections 9.6 and 10).
+
+### 3.4 Accent themes
+
+- The user picks the accent from the **17 vibrant Tailwind v4 scales** (red, orange, amber, yellow, lime, green, emerald, teal, **cyan** (default, brand), sky, blue, indigo, violet, purple, fuchsia, pink, rose). Tailwind's neutrals are not offered.
+- The accent swaps only `primary`, `accent`, `pressed` and `onPrimary`, using the same steps as cyan (3.1). Neutrals, text and status colors stay the same for every accent.
+- `onPrimary` is a hue-tinted near-black or white, whichever contrasts more in dark mode. Light mode keeps white unless it drops under 3:1 (yellow, amber, lime fills).
+- `tools/gen_theme.py` is the single source. It emits every accent's palettes into `include/theme_tokens.h` (`kPalettes[accent][dark/light]`, in flash) and the same table into `companion/src/ui/accents.rs`. Switching accents only changes an index; nothing is mutated mid-frame.
+- One setting drives both UIs. The companion picks it with gradient swatches (500 into 700, top-left to bottom-right) or from the tray. The device can cycle it in Settings. Changes sync both ways through `config` / `config_ack`, persisted by id (`accent` in `Preferences`).
+- **Companion only:** fills (`primary`/`pressed`) use 70% of the Tailwind chroma at the same lightness to cut glare on large glass fills; `accent` and the swatches stay full strength. Button ink takes whichever contrasts more. The window backdrop is tinted with the accent hue (dark `oklch(26% 0.05 h)` → `oklch(13% 0.015 h)`, light `oklch(98% 0.012 h)` → `oklch(92% 0.03 h)`, same glass alphas). Selected options in button groups are tinted chips, not solid fills. The device keeps its neutral backgrounds and full-strength accents.
+- Media and AOD backgrounds still follow album art. A track without artwork uses the accent's 600 shade instead of the old fixed cyan.
 
 ## 4. Typography
 
@@ -246,10 +256,10 @@ The transport is an open decision (see section 14). Design a `Transport` abstrac
 Device to companion: `{"type":"cmd","cmd":"play_pause|next|prev|seek","pos_ms":0}`.
 Companion to device (persisted in `Preferences`, acknowledged with `config_ack`):
 ```json
-{"type":"config","v":3,"theme":"dark|light|auto","brightness":60,
+{"type":"config","v":3,"theme":"dark|light|auto","accent":"cyan","brightness":60,
  "aod":true,"aod_timeout_s":60,"reduce_motion":false,"wallpaper":"gradient"}
 ```
-`v` is a version counter; the device applies and stores the highest version it has seen.
+`v` is a version counter; the device applies and stores the highest version it has seen. `accent` is a Tailwind color id (3.4); unknown ids are ignored. The companion keeps `v` in step with acks and ignores the accent in an ack older than its latest push, so quick changes never flash an old color back.
 
 ## 12. Boot logo
 

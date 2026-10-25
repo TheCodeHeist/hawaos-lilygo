@@ -33,6 +33,7 @@ pub struct CompanionConfig {
     // Device configuration fields (DESIGN.md Section 11.3)
     pub config_version: u32,
     pub device_theme: String, // "dark" | "light" | "auto"
+    pub accent: String,       // Tailwind color id (see ui/accents.rs); shared by device + companion
     pub brightness: u8,       // 20 | 40 | 60 | 80 | 100
     pub aod_enabled: bool,    // true | false
     pub aod_timeout_s: u16,   // 15 | 30 | 60 | 120 | 300
@@ -62,6 +63,7 @@ impl Default for CompanionConfig {
             window_transparency: "auto".to_string(),
             config_version: 1,
             device_theme: "dark".to_string(),
+            accent: crate::ui::accents::DEFAULT_ACCENT.to_string(),
             brightness: 80,
             aod_enabled: true,
             aod_timeout_s: 30,

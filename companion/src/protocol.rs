@@ -110,6 +110,26 @@ pub fn handle_incoming_json_line(line: &str, state: &SharedState) {
                 if let Some(th) = pkt.theme {
                     g.config.device_theme = th;
                 }
+                // The device answers a push with `v` >= the pushed version, so an
+                // ACK below our version predates our latest push. Taking its
+                // accent would flash the previous color back after quick clicks.
+                let ack_v = pkt.v.unwrap_or(0);
+                let stale = ack_v < g.config.config_version;
+                if ack_v > g.config.config_version {
+                    g.config.config_version = ack_v;
+                    save_config(&g.config);
+                }
+                // Accent can also be cycled on the device; adopt it so both UIs
+                // match. The main loop re-themes the window when it changes.
+                if let Some(acc) = pkt.accent {
+                    if !stale
+                        && acc != g.config.accent
+                        && crate::ui::accents::ACCENTS.iter().any(|a| a.id == acc)
+                    {
+                        g.config.accent = acc;
+                        save_config(&g.config);
+                    }
+                }
                 if let Some(br) = pkt.brightness {
                     g.config.brightness = br;
                 }
@@ -139,10 +159,11 @@ pub fn handle_incoming_json_line(line: &str, state: &SharedState) {
                     .clone()
                     .unwrap_or_else(|| g.config.target_ip.clone());
                 let log_msg = format!(
-                    "Device ACK v={} (IP: {}, theme: {}, brightness: {}%)",
+                    "Device ACK v={} (IP: {}, theme: {}, accent: {}, brightness: {}%)",
                     pkt.v.unwrap_or(0),
                     ack_ip,
                     g.config.device_theme,
+                    g.config.accent,
                     g.config.brightness
                 );
                 g.push_log(log_msg);
@@ -185,5 +206,46 @@ pub fn send_usb_line(port_name: &str, json_line: &str, state: &SharedState) -> b
             }
             false
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::handle_incoming_json_line;
+    use crate::models::{CompanionConfig, SharedDaemonState, SharedState};
+    use std::sync::{Arc, Mutex};
+
+    fn ack(v: u32, accent: &str) -> String {
+        format!(r#"{{"type":"config_ack","v":{v},"accent":"{accent}"}}"#)
+    }
+
+    #[test]
+    fn stale_ack_does_not_revert_accent() {
+        // ACK handling saves the config; keep it away from the real one.
+        let home = std::env::temp_dir().join(format!("hawaos-test-{}", std::process::id()));
+        unsafe { std::env::set_var("HOME", &home) };
+
+        let cfg = CompanionConfig {
+            accent: "blue".into(),
+            config_version: 10,
+            ..Default::default()
+        };
+        let state: SharedState = Arc::new(Mutex::new(SharedDaemonState::new(cfg)));
+        let accent = |s: &SharedState| s.lock().unwrap().config.accent.clone();
+
+        // ACK for an older push (user clicked again since): ignored.
+        handle_incoming_json_line(&ack(9, "red"), &state);
+        assert_eq!(accent(&state), "blue");
+
+        // Change made on the device itself (newer version): adopted.
+        handle_incoming_json_line(&ack(11, "green"), &state);
+        assert_eq!(accent(&state), "green");
+        assert_eq!(state.lock().unwrap().config.config_version, 11);
+
+        // Unknown ids are never adopted.
+        handle_incoming_json_line(&ack(12, "chartreuse"), &state);
+        assert_eq!(accent(&state), "green");
+
+        let _ = std::fs::remove_dir_all(home);
     }
 }

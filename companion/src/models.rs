@@ -99,6 +99,7 @@ pub struct IncomingPacket {
     pub wifi: Option<bool>,
     pub ssid: Option<String>,
     pub theme: Option<String>,
+    pub accent: Option<String>,
     pub brightness: Option<u8>,
     pub aod: Option<bool>,
     pub aod_timeout_s: Option<u16>,

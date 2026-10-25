@@ -69,16 +69,20 @@ bool SettingsApp::onButton(Button b, Press p) {
       Settings::toggleDarkLightTheme();
       AppManager::applyActiveTheme();
       break;
-    case 3: // Orientation (Normal / Inverted)
+    case 3: // Accent (cycles the Tailwind accent colors)
+      Settings::cycleAccent();
+      AppManager::applyActiveTheme();
+      break;
+    case 4: // Orientation (Normal / Inverted)
       Settings::setOrientationInverted(!Settings::getOrientationInverted());
       refreshRows();
       break;
-    case 4: // Notification Popup (On / Off)
+    case 5: // Notification Popup (On / Off)
       Settings::setNotifyPopupEnabled(!Settings::getNotifyPopupEnabled());
       Settings::bumpLocalConfigVersion();
       refreshRows();
       break;
-    case 5: { // AOD Timeout (30s / 60s / 120s / 300s / Off)
+    case 6: { // AOD Timeout (30s / 60s / 120s / 300s / Off)
       if (!Settings::getAodEnabled()) {
         Settings::setAodEnabled(true);
         Settings::setAodTimeoutSec(30);
@@ -97,16 +101,16 @@ bool SettingsApp::onButton(Button b, Press p) {
       refreshRows();
       break;
     }
-    case 6: // Clock Format (12h / 24h)
+    case 7: // Clock Format (12h / 24h)
       Settings::setUse24Hour(!Settings::getUse24Hour());
       Settings::bumpLocalConfigVersion();
       refreshRows();
       break;
-    case 7: // Forget WiFi (clears NVS credentials for Companion setup)
+    case 8: // Forget WiFi (clears NVS credentials for Companion setup)
       WifiService::forgetWifi();
       refreshRows();
       break;
-    case 8: // Reboot
+    case 9: // Reboot
       ESP.restart();
       break;
     }
@@ -156,17 +160,22 @@ void SettingsApp::refreshRows() {
                Theme::isDark() ? "Dark" : "Light");
       break;
     case 3:
+      name = "Accent";
+      snprintf(valBuf, sizeof(valBuf), "%s",
+               ThemeTokens::kAccentLabels[Settings::getAccent()]);
+      break;
+    case 4:
       name = "Orientation";
       snprintf(valBuf, sizeof(valBuf), "%s",
                Settings::getOrientationInverted() ? "Inverted (USB-R)"
                                                   : "Normal (USB-L)");
       break;
-    case 4:
+    case 5:
       name = "Notify Popup";
       snprintf(valBuf, sizeof(valBuf), "%s",
                Settings::getNotifyPopupEnabled() ? "Enabled" : "Off");
       break;
-    case 5:
+    case 6:
       name = "AOD Timeout";
       if (!Settings::getAodEnabled()) {
         snprintf(valBuf, sizeof(valBuf), "Off");
@@ -175,16 +184,16 @@ void SettingsApp::refreshRows() {
                  static_cast<unsigned>(Settings::getAodTimeoutSec()));
       }
       break;
-    case 6:
+    case 7:
       name = "Clock Format";
       snprintf(valBuf, sizeof(valBuf), "%s",
                Settings::getUse24Hour() ? "24-hour" : "12-hour");
       break;
-    case 7:
+    case 8:
       name = "Forget WiFi";
       snprintf(valBuf, sizeof(valBuf), d.wifiSsid[0] ? "Clear NVS" : "Cleared");
       break;
-    case 8:
+    case 9:
       name = "HawaOS v0.4.0";
       snprintf(valBuf, sizeof(valBuf), "Reboot");
       break;

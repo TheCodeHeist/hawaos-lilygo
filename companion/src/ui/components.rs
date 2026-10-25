@@ -8,11 +8,13 @@
 //! - Controls (`setting_row`) never shrink; their label column does.
 
 use gpui_kit::assets::IconName;
-use gpui_kit::component::button::ButtonVariant;
+use gpui_kit::component::button::{ButtonCustomVariant, ButtonVariant};
+use gpui_kit::component::tooltip::Tooltip;
 use gpui_kit::component::{h_flex, v_flex, StyledExt};
 use gpui_kit::gpui::prelude::*;
 use gpui_kit::gpui::*;
 
+use crate::ui::accents::Accent;
 use crate::ui::theme::HawaPalette;
 
 pub const CARD_RADIUS: f32 = 16.;
@@ -207,19 +209,77 @@ pub fn time_readout(pal: HawaPalette, ms_total: u64) -> Div {
         )
 }
 
-/// Variant for one option of a mutually exclusive button group.
-pub fn choice(selected: bool) -> ButtonVariant {
+/// Variant for one option of a mutually exclusive button group. The selected
+/// option is a tinted chip (like the sidebar's active item) rather than a solid
+/// primary fill, so solid fills stay reserved for real actions such as Apply.
+pub fn choice(pal: HawaPalette, selected: bool, cx: &App) -> ButtonVariant {
     if selected {
-        ButtonVariant::Primary
+        ButtonVariant::Custom(
+            ButtonCustomVariant::new(cx)
+                .color(pal.primary.opacity(0.18).into())
+                .foreground(pal.accent.into())
+                .hover(pal.primary.opacity(0.26).into())
+                .active(pal.primary.opacity(0.32).into()),
+        )
     } else {
         ButtonVariant::Secondary
     }
+}
+
+pub const SWATCH_SIZE: f32 = 36.;
+
+/// Round accent swatch: the accent's 500 shade sweeping into its deeper 700
+/// shade from top-left to bottom-right. The selected one gets a ring in its own
+/// color (with a gap, so it reads on any backdrop) and a check mark.
+pub fn accent_swatch(pal: HawaPalette, accent: &'static Accent, selected: bool) -> Stateful<Div> {
+    let (from, to) = accent.swatch;
+    div()
+        .id(accent.id)
+        .flex_shrink_0()
+        .size(px(SWATCH_SIZE))
+        .p(px(3.))
+        .rounded_full()
+        .border_2()
+        .border_color(if selected { rgb(from) } else { rgba(0x00000000) })
+        .cursor_pointer()
+        .when(!selected, |this| this.hover(|s| s.border_color(pal.glass_border)))
+        .tooltip(move |window, cx| Tooltip::new(accent.label).build(window, cx))
+        .child(
+            div()
+                .size_full()
+                .rounded_full()
+                .bg(linear_gradient(
+                    135.,
+                    linear_color_stop(rgb(from), 0.),
+                    linear_color_stop(rgb(to), 1.),
+                ))
+                // Soft light rim gives the disc a little depth on dark glass.
+                .border_1()
+                .border_color(rgba(0xffffff2e))
+                .shadow_sm()
+                .flex()
+                .items_center()
+                .justify_center()
+                .when(selected, |this| {
+                    // Light-mode ink is picked against the 600 shade, i.e. the
+                    // middle of this gradient, so the check always reads.
+                    this.child(
+                        div()
+                            .text_sm()
+                            .text_color(rgb(accent.light.on_primary))
+                            .child(IconName::Check),
+                    )
+                }),
+        )
 }
 
 /// Wrapping row for a group of buttons.
 pub fn button_row() -> Div {
     h_flex().flex_wrap().gap_2().items_center()
 }
+
+/// Media tint sent for tracks without artwork (see `MediaMsg::default`).
+pub const NO_ART_TINT: &str = "#008DA6";
 
 /// Parse `#RRGGBB` (as sent in media tints) into a color.
 pub fn parse_hex(hex: &str) -> Option<Rgba> {

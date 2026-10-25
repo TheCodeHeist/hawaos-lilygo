@@ -3,6 +3,7 @@
 #include "services/CompanionLink.h"
 #include "drivers/Buttons.h"
 #include "drivers/Display.h"
+#include "theme_tokens.h"
 
 #include <Arduino.h>
 #include <Preferences.h>
@@ -20,6 +21,8 @@ char s_wifiSsid[33] = {0};
 char s_wifiPass[65] = {0};
 uint8_t s_brightnessPct = Config::DEFAULT_BRIGHTNESS_PCT;
 ThemeMode s_themeMode = ThemeMode::Dark;
+// Read by the UI task while CompanionLink may write it; a byte store is atomic.
+volatile uint8_t s_accent = ThemeTokens::kDefaultAccent;
 bool s_aodEnabled = true;
 uint16_t s_aodTimeoutSec = Config::DEFAULT_AOD_TIMEOUT_S;
 bool s_reduceMotion = false;
@@ -29,6 +32,16 @@ uint32_t s_configVersion = 0;
 int32_t s_gmtOffsetSec = Config::DEFAULT_GMT_OFFSET_SEC;
 bool s_use24Hour = false;
 bool s_orientationInverted = false;
+
+int8_t accentIndexOf(const char *id) {
+  if (id == nullptr)
+    return -1;
+  for (uint8_t i = 0; i < ThemeTokens::kAccentCount; ++i) {
+    if (strcmp(id, ThemeTokens::kAccentIds[i]) == 0)
+      return static_cast<int8_t>(i);
+  }
+  return -1;
+}
 
 uint8_t snapBrightnessPct(uint8_t pct) {
   if (pct <= 25)
@@ -72,6 +85,14 @@ void begin() {
       s_prefs.getUChar("theme", static_cast<uint8_t>(ThemeMode::Dark));
   s_themeMode =
       (rawTheme <= 2) ? static_cast<ThemeMode>(rawTheme) : ThemeMode::Dark;
+  // isKey() first: getString() on a missing key logs an NVS error.
+  const String storedAccent =
+      s_prefs.isKey("accent")
+          ? s_prefs.getString("accent", "")
+          : String(ThemeTokens::kAccentIds[ThemeTokens::kDefaultAccent]);
+  const int8_t accentIdx = accentIndexOf(storedAccent.c_str());
+  s_accent = (accentIdx >= 0) ? static_cast<uint8_t>(accentIdx)
+                              : ThemeTokens::kDefaultAccent;
   s_aodEnabled = s_prefs.getBool("aod_en", true);
   s_aodTimeoutSec = s_prefs.getUShort("aod_sec", Config::DEFAULT_AOD_TIMEOUT_S);
   if (s_aodTimeoutSec < 10) {
@@ -87,9 +108,10 @@ void begin() {
   s_orientationInverted = s_prefs.getBool("orient_inv", false);
 
   Serial.printf("[Settings] Loaded: SSID='%s', bright=%u%%, theme=%u, "
-                "aod=%d(%us), redMotion=%d, notifyPopup=%d, v=%lu\n",
+                "accent=%s, aod=%d(%us), redMotion=%d, notifyPopup=%d, v=%lu\n",
                 s_wifiSsid, static_cast<unsigned>(s_brightnessPct),
-                static_cast<unsigned>(s_themeMode), s_aodEnabled ? 1 : 0,
+                static_cast<unsigned>(s_themeMode), getAccentId(),
+                s_aodEnabled ? 1 : 0,
                 static_cast<unsigned>(s_aodTimeoutSec), s_reduceMotion ? 1 : 0,
                 s_notifyPopupEnabled ? 1 : 0,
                 static_cast<unsigned long>(s_configVersion));
@@ -199,6 +221,32 @@ void setThemeMode(ThemeMode mode) {
 void toggleDarkLightTheme() {
   const bool currentlyDark = isDarkThemeEffective();
   setThemeMode(currentlyDark ? ThemeMode::Light : ThemeMode::Dark);
+  bumpLocalConfigVersion();
+}
+
+uint8_t getAccent() { return s_accent; }
+
+void setAccent(uint8_t idx) {
+  if (idx >= ThemeTokens::kAccentCount)
+    idx = ThemeTokens::kDefaultAccent;
+  if (idx == s_accent)
+    return;
+  s_accent = idx;
+  s_prefs.putString("accent", ThemeTokens::kAccentIds[idx]);
+}
+
+bool setAccentById(const char *id) {
+  const int8_t idx = accentIndexOf(id);
+  if (idx < 0)
+    return false;
+  setAccent(static_cast<uint8_t>(idx));
+  return true;
+}
+
+const char *getAccentId() { return ThemeTokens::kAccentIds[s_accent]; }
+
+void cycleAccent() {
+  setAccent(static_cast<uint8_t>((s_accent + 1) % ThemeTokens::kAccentCount));
   bumpLocalConfigVersion();
 }
 

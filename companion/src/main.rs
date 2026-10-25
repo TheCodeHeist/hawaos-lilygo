@@ -46,7 +46,7 @@ fn main() {
         .run(move |cx: &mut App| {
             gpui_kit::init(cx);
             cx.set_quit_mode(QuitMode::Explicit);
-            apply_hawaos_gpui_theme(cfg.companion_dark_mode, cx);
+            apply_hawaos_gpui_theme(cfg.companion_dark_mode, &cfg.accent, cx);
 
             if !start_minimized {
                 open_companion_window(cx, Arc::clone(&state));
@@ -55,25 +55,36 @@ fn main() {
             let poll_state = Arc::clone(&state);
             cx.spawn(async move |cx: &mut AsyncApp| {
                 let mut tick_count: u32 = 0;
+                // Accent / mode last seen, to re-theme right away when the tray
+                // or a device ACK changes it (not just on the 1 s refresh).
+                let mut last_look: Option<(bool, String)> = None;
                 loop {
                     cx.background_executor()
                         .timer(Duration::from_millis(200))
                         .await;
                     tick_count = tick_count.wrapping_add(1);
 
-                    let (want_open, want_quit) = if let Ok(mut g) = poll_state.lock() {
+                    let (want_open, want_quit, look) = if let Ok(mut g) = poll_state.lock() {
                         let open = g.open_window_requested;
                         g.open_window_requested = false;
-                        (open, g.quit_requested)
+                        let look = (g.config.companion_dark_mode, g.config.accent.clone());
+                        (open, g.quit_requested, Some(look))
                     } else {
-                        (false, false)
+                        (false, false, None)
                     };
+                    let look_changed = look.is_some() && look != last_look;
+                    if look_changed {
+                        last_look = look.clone();
+                    }
 
                     let state_for_ui = Arc::clone(&poll_state);
                     let _ = cx.update(|cx: &mut App| {
                         if want_quit {
                             cx.quit();
                             return;
+                        }
+                        if let (true, Some((dark, accent))) = (look_changed, look.as_ref()) {
+                            apply_hawaos_gpui_theme(*dark, accent, cx);
                         }
                         if want_open {
                             if let Some(handle) = cx.windows().first() {

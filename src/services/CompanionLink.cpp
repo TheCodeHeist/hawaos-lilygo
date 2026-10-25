@@ -4,6 +4,7 @@
 #include "core/EventBus.h"
 #include "core/Settings.h"
 #include "services/WifiService.h"
+#include "ui/Theme.h"
 
 #include <Arduino.h>
 #include <ArduinoJson.h>
@@ -179,7 +180,7 @@ void handleJsonMessage(const char *payload, size_t len, bool viaUsb) {
     const char *bgBotStr = doc["bg_bottom"].is<const char *>()
                                ? doc["bg_bottom"].as<const char *>()
                                : nullptr;
-    const uint32_t bgTop = parseHexColor(bgTopStr, 0x008DA6);
+    const uint32_t bgTop = parseHexColor(bgTopStr, Theme::kLegacyMediaTint);
     const uint32_t bgBot = parseHexColor(bgBotStr, 0x071115);
 
     Serial.printf(
@@ -323,6 +324,13 @@ void handleJsonMessage(const char *payload, size_t len, bool viaUsb) {
         Settings::setThemeMode(ThemeMode::Auto);
       } else {
         Settings::setThemeMode(ThemeMode::Dark);
+      }
+    }
+
+    if (doc["accent"].is<const char *>()) {
+      if (!Settings::setAccentById(doc["accent"].as<const char *>())) {
+        Serial.printf("[CompanionLink] Unknown accent '%s', keeping '%s'\n",
+                      doc["accent"].as<const char *>(), Settings::getAccentId());
       }
     }
 
@@ -512,14 +520,16 @@ void flushPendingOutbound() {
     const char *orientStr =
         Settings::getOrientationInverted() ? "inverted" : "normal";
 
-    char buf[384];
+    char buf[448];
     snprintf(buf, sizeof(buf),
              "{\"type\":\"config_ack\",\"v\":%lu,\"ip\":\"%s\",\"wifi\":%s,"
-             "\"ssid\":\"%s\",\"theme\":\"%s\",\"brightness\":%u,\"aod\":%s,"
+             "\"ssid\":\"%s\",\"theme\":\"%s\",\"accent\":\"%s\","
+             "\"brightness\":%u,\"aod\":%s,"
              "\"aod_timeout_s\":%u,\"reduce_motion\":%s,\"wallpaper\":\"%s\","
              "\"use_24h\":%s,\"notify_popup\":%s,\"orientation\":\"%s\"}",
              static_cast<unsigned long>(ackVer), ipStr.c_str(),
              WifiService::isConnected() ? "true" : "false", ssidBuf, themeStr,
+             Settings::getAccentId(),
              static_cast<unsigned>(Settings::getBrightnessPct()),
              Settings::getAodEnabled() ? "true" : "false",
              static_cast<unsigned>(Settings::getAodTimeoutSec()),

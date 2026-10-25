@@ -1,8 +1,13 @@
 use crate::media::handle_device_command;
 use ksni::blocking::TrayMethods;
+use std::sync::Arc;
+use std::thread;
+use std::time::Duration;
 
 use crate::config::{save_config, set_autostart_installed, DEFAULT_DEVICE_IP, LOGO_PNG_BYTES};
 use crate::models::{OutboundAction, SharedState};
+use crate::ui::accents::ACCENTS;
+use crate::ui::theme::accent_by_id;
 
 struct HawaTray {
     state: SharedState,
@@ -79,7 +84,7 @@ impl ksni::Tray for HawaTray {
 
     fn menu(&self) -> Vec<ksni::MenuItem<Self>> {
         use ksni::menu::*;
-        let (autostart, device_theme, track_summary, active_player) =
+        let (autostart, device_theme, accent, track_summary, active_player) =
             if let Ok(g) = self.state.lock() {
                 let summary = if g.media.title.is_empty() {
                     "Media: No active track".to_string()
@@ -89,11 +94,12 @@ impl ksni::Tray for HawaTray {
                 (
                     g.config.autostart_enabled,
                     g.config.device_theme.clone(),
+                    g.config.accent.clone(),
                     summary,
                     g.active_player.clone(),
                 )
             } else {
-                (false, "dark".to_string(), "Media: Idle".to_string(), None)
+                (false, "dark".to_string(), String::new(), "Media: Idle".to_string(), None)
             };
 
         let play_target = active_player.clone();
@@ -159,6 +165,36 @@ impl ksni::Tray for HawaTray {
                 ..Default::default()
             }
             .into(),
+            SubMenu {
+                label: "Accent Color".into(),
+                submenu: vec![RadioGroup {
+                    selected: ACCENTS.iter().position(|a| a.id == accent_by_id(&accent).id).unwrap_or(0),
+                    select: Box::new(|this: &mut Self, idx| {
+                        let Some(picked) = ACCENTS.get(idx) else { return };
+                        if let Ok(mut g) = this.state.lock() {
+                            g.config.accent = picked.id.to_string();
+                            g.config.config_version += 1;
+                            save_config(&g.config);
+                            g.outbound_queue.push_back(OutboundAction::PushConfig {
+                                wifi_ssid: None,
+                                wifi_pass: None,
+                                forget_wifi: false,
+                                force_usb: false,
+                            });
+                        }
+                    }),
+                    options: ACCENTS
+                        .iter()
+                        .map(|a| RadioItem {
+                            label: a.label.into(),
+                            ..Default::default()
+                        })
+                        .collect(),
+                }
+                .into()],
+                ..Default::default()
+            }
+            .into(),
             CheckmarkItem {
                 label: "Start Companion with System".into(),
                 checked: autostart,
@@ -191,9 +227,34 @@ impl ksni::Tray for HawaTray {
 
 pub fn spawn_system_tray(state: SharedState) {
     let tray = HawaTray {
-        state,
+        state: Arc::clone(&state),
         icon_pixmap: build_tray_icons(),
     };
-    let _ = tray.assume_sni_available(true).spawn();
+    let Ok(handle) = tray.assume_sni_available(true).spawn() else {
+        return;
+    };
+    // ksni only rebuilds the menu on `update()`. Settings also change from the
+    // window and from device ACKs, so re-publish whenever what the menu shows
+    // (theme, accent, track) differs from the last published menu.
+    thread::spawn(move || {
+        let mut shown: Option<(String, String, String)> = None;
+        loop {
+            thread::sleep(Duration::from_millis(500));
+            let now = match state.lock() {
+                Ok(g) => (
+                    g.config.device_theme.clone(),
+                    g.config.accent.clone(),
+                    g.media.title.clone(),
+                ),
+                Err(_) => continue,
+            };
+            if shown.as_ref() != Some(&now) {
+                shown = Some(now);
+                if handle.update(|_| {}).is_none() {
+                    break; // tray service shut down
+                }
+            }
+        }
+    });
 }
 

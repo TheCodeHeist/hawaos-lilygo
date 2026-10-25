@@ -9,17 +9,17 @@
 namespace ThemeTokens {
 
 // --- Brand Cyan Scale (RGB888 & RGB565) ---
-constexpr uint32_t CYAN_300_RGB888 = 0x53EAFD; // oklch(86.5% 0.127 207.0)
+constexpr uint32_t CYAN_300_RGB888 = 0x53EAFD; // oklch(86.5% 0.127 207.078)
 constexpr uint16_t CYAN_300_RGB565 = 0x575F;
-constexpr uint32_t CYAN_400_RGB888 = 0x00D1EC; // oklch(78.9% 0.154 211.5)
+constexpr uint32_t CYAN_400_RGB888 = 0x00D1EC; // oklch(78.9% 0.154 211.53)
 constexpr uint16_t CYAN_400_RGB565 = 0x069D;
 constexpr uint32_t CYAN_500_RGB888 = 0x00B6D4; // oklch(71.5% 0.143 215.221)
 constexpr uint16_t CYAN_500_RGB565 = 0x05BA;
-constexpr uint32_t CYAN_600_RGB888 = 0x0091B3; // oklch(60.9% 0.126 221.7)
+constexpr uint32_t CYAN_600_RGB888 = 0x0091B3; // oklch(60.9% 0.126 221.723)
 constexpr uint16_t CYAN_600_RGB565 = 0x0496;
-constexpr uint32_t CYAN_700_RGB888 = 0x007491; // oklch(52.0% 0.105 223.0)
+constexpr uint32_t CYAN_700_RGB888 = 0x007491; // oklch(52.0% 0.105 223.128)
 constexpr uint16_t CYAN_700_RGB565 = 0x03B2;
-constexpr uint32_t CYAN_800_RGB888 = 0x005F78; // oklch(45.0% 0.085 224.0)
+constexpr uint32_t CYAN_800_RGB888 = 0x005F78; // oklch(45.0% 0.085 224.283)
 constexpr uint16_t CYAN_800_RGB565 = 0x02EF;
 
 struct Palette {
@@ -53,66 +53,1077 @@ struct Palette {
     uint16_t err565;
 };
 
-constexpr Palette kDarkPalette = {
-    /* .bg = */ 0x071115, // oklch(17.0% 0.018 225.0)
-    /* .bgGradEnd = */ 0x071A20, // oklch(20.5% 0.028 220.0)
-    /* .surface = */ 0x101D22, // oklch(22.0% 0.02 225.0)
-    /* .surface2 = */ 0x1B292F, // oklch(27.0% 0.022 225.0)
-    /* .border = */ 0x28353B, // oklch(32.0% 0.02 225.0)
-    /* .text = */ 0xEBF4F6, // oklch(96.0% 0.01 215.0)
-    /* .textDim = */ 0x98A8AD, // oklch(72.0% 0.02 220.0)
-    /* .primary = */ 0x00B6D4, // oklch(71.5% 0.143 215.221)
-    /* .accent = */ 0x00D1EC, // oklch(78.9% 0.154 211.5)
-    /* .pressed = */ 0x0091B3, // oklch(60.9% 0.126 221.7)
-    /* .onPrimary = */ 0x051920, // oklch(20.0% 0.03 225.0)
-    /* .ok = */ 0x22C373, // oklch(72.0% 0.17 155.0)
-    /* .warn = */ 0xF0B135, // oklch(80.0% 0.15 80.0)
-    /* .err = */ 0xF4514F, // oklch(66.0% 0.2 25.0)
-    /* .bg565 = */ 0x0082,
-    /* .bgGradEnd565 = */ 0x00C4,
-    /* .surface565 = */ 0x10E4,
-    /* .surface2565 = */ 0x1945,
-    /* .border565 = */ 0x29A7,
-    /* .text565 = */ 0xEFBE,
-    /* .textDim565 = */ 0x9D55,
-    /* .primary565 = */ 0x05BA,
-    /* .accent565 = */ 0x069D,
-    /* .pressed565 = */ 0x0496,
-    /* .onPrimary565 = */ 0x00C4,
-    /* .ok565 = */ 0x260E,
-    /* .warn565 = */ 0xF586,
-    /* .err565 = */ 0xF289,
+// --- Accent themes (Tailwind v4 vibrant scales) ---
+// Ids are the wire/NVS names; only the accent roles differ per entry.
+constexpr uint8_t kAccentCount = 17;
+constexpr uint8_t kDefaultAccent = 8; // cyan
+constexpr const char *kAccentIds[kAccentCount] = {
+    "red", "orange", "amber", "yellow", "lime", "green", "emerald", "teal", "cyan", "sky", "blue", "indigo", "violet", "purple", "fuchsia", "pink", "rose",
+};
+constexpr const char *kAccentLabels[kAccentCount] = {
+    "Red", "Orange", "Amber", "Yellow", "Lime", "Green", "Emerald", "Teal", "Cyan", "Sky", "Blue", "Indigo", "Violet", "Purple", "Fuchsia", "Pink", "Rose",
 };
 
-constexpr Palette kLightPalette = {
-    /* .bg = */ 0xC9E6EC, // oklch(90.5% 0.032 212.0)
-    /* .bgGradEnd = */ 0xA9D5DE, // oklch(84.5% 0.048 212.0)
-    /* .surface = */ 0xFCFEFE, // oklch(99.5% 0.002 215.0)
-    /* .surface2 = */ 0xACCED6, // oklch(83.0% 0.038 214.0)
-    /* .border = */ 0x71A1AE, // oklch(68.0% 0.055 216.0)
-    /* .text = */ 0x00141E, // oklch(18.0% 0.035 228.0)
-    /* .textDim = */ 0x2D4D58, // oklch(40.0% 0.042 222.0)
-    /* .primary = */ 0x0091B3, // oklch(60.9% 0.126 221.7)
-    /* .accent = */ 0x007491, // oklch(52.0% 0.105 223.0)
-    /* .pressed = */ 0x005F78, // oklch(45.0% 0.085 224.0)
-    /* .onPrimary = */ 0xFAFCFD, // oklch(99.0% 0.003 215.0)
-    /* .ok = */ 0x00884D, // oklch(55.0% 0.155 155.0)
-    /* .warn = */ 0xA96B00, // oklch(58.0% 0.155 70.0)
-    /* .err = */ 0xC21725, // oklch(52.0% 0.2 25.0)
-    /* .bg565 = */ 0xCF3D,
-    /* .bgGradEnd565 = */ 0xAEBB,
-    /* .surface565 = */ 0xFFFF,
-    /* .surface2565 = */ 0xAE7A,
-    /* .border565 = */ 0x7515,
-    /* .text565 = */ 0x00A3,
-    /* .textDim565 = */ 0x2A6B,
-    /* .primary565 = */ 0x0496,
-    /* .accent565 = */ 0x03B2,
-    /* .pressed565 = */ 0x02EF,
-    /* .onPrimary565 = */ 0xFFFF,
-    /* .ok565 = */ 0x0449,
-    /* .warn565 = */ 0xAB40,
-    /* .err565 = */ 0xC0A4,
+// kPalettes[accent][0] = dark, kPalettes[accent][1] = light
+constexpr Palette kPalettes[kAccentCount][2] = {
+    { // red
+        { // dark
+            /* .bg = */ 0x071115, // oklch(17.0% 0.018 225.0)
+            /* .bgGradEnd = */ 0x071A20, // oklch(20.5% 0.028 220.0)
+            /* .surface = */ 0x101D22, // oklch(22.0% 0.02 225.0)
+            /* .surface2 = */ 0x1B292F, // oklch(27.0% 0.022 225.0)
+            /* .border = */ 0x28353B, // oklch(32.0% 0.02 225.0)
+            /* .text = */ 0xEBF4F6, // oklch(96.0% 0.01 215.0)
+            /* .textDim = */ 0x98A8AD, // oklch(72.0% 0.02 220.0)
+            /* .primary = */ 0xFB2C36, // oklch(63.7% 0.237 25.331)
+            /* .accent = */ 0xFF6568, // oklch(70.4% 0.191 22.216)
+            /* .pressed = */ 0xE40016, // oklch(57.7% 0.245 27.325)
+            /* .onPrimary = */ 0x22110D, // oklch(20.0% 0.03 35.331)
+            /* .ok = */ 0x22C373, // oklch(72.0% 0.17 155.0)
+            /* .warn = */ 0xF0B135, // oklch(80.0% 0.15 80.0)
+            /* .err = */ 0xF4514F, // oklch(66.0% 0.2 25.0)
+            /* .bg565 = */ 0x0082,
+            /* .bgGradEnd565 = */ 0x00C4,
+            /* .surface565 = */ 0x10E4,
+            /* .surface2565 = */ 0x1945,
+            /* .border565 = */ 0x29A7,
+            /* .text565 = */ 0xEFBE,
+            /* .textDim565 = */ 0x9D55,
+            /* .primary565 = */ 0xF966,
+            /* .accent565 = */ 0xFB2D,
+            /* .pressed565 = */ 0xE002,
+            /* .onPrimary565 = */ 0x2081,
+            /* .ok565 = */ 0x260E,
+            /* .warn565 = */ 0xF586,
+            /* .err565 = */ 0xF289,
+        },
+        { // light
+            /* .bg = */ 0xC9E6EC, // oklch(90.5% 0.032 212.0)
+            /* .bgGradEnd = */ 0xA9D5DE, // oklch(84.5% 0.048 212.0)
+            /* .surface = */ 0xFCFEFE, // oklch(99.5% 0.002 215.0)
+            /* .surface2 = */ 0xACCED6, // oklch(83.0% 0.038 214.0)
+            /* .border = */ 0x71A1AE, // oklch(68.0% 0.055 216.0)
+            /* .text = */ 0x00141E, // oklch(18.0% 0.035 228.0)
+            /* .textDim = */ 0x2D4D58, // oklch(40.0% 0.042 222.0)
+            /* .primary = */ 0xE40016, // oklch(57.7% 0.245 27.325)
+            /* .accent = */ 0xBF000F, // oklch(50.5% 0.213 27.518)
+            /* .pressed = */ 0x9F0712, // oklch(44.4% 0.177 26.899)
+            /* .onPrimary = */ 0xFEFBFB, // oklch(99.0% 0.003 25.331)
+            /* .ok = */ 0x00884D, // oklch(55.0% 0.155 155.0)
+            /* .warn = */ 0xA96B00, // oklch(58.0% 0.155 70.0)
+            /* .err = */ 0xC21725, // oklch(52.0% 0.2 25.0)
+            /* .bg565 = */ 0xCF3D,
+            /* .bgGradEnd565 = */ 0xAEBB,
+            /* .surface565 = */ 0xFFFF,
+            /* .surface2565 = */ 0xAE7A,
+            /* .border565 = */ 0x7515,
+            /* .text565 = */ 0x00A3,
+            /* .textDim565 = */ 0x2A6B,
+            /* .primary565 = */ 0xE002,
+            /* .accent565 = */ 0xB801,
+            /* .pressed565 = */ 0x9822,
+            /* .onPrimary565 = */ 0xFFDF,
+            /* .ok565 = */ 0x0449,
+            /* .warn565 = */ 0xAB40,
+            /* .err565 = */ 0xC0A4,
+        },
+    },
+    { // orange
+        { // dark
+            /* .bg = */ 0x071115, // oklch(17.0% 0.018 225.0)
+            /* .bgGradEnd = */ 0x071A20, // oklch(20.5% 0.028 220.0)
+            /* .surface = */ 0x101D22, // oklch(22.0% 0.02 225.0)
+            /* .surface2 = */ 0x1B292F, // oklch(27.0% 0.022 225.0)
+            /* .border = */ 0x28353B, // oklch(32.0% 0.02 225.0)
+            /* .text = */ 0xEBF4F6, // oklch(96.0% 0.01 215.0)
+            /* .textDim = */ 0x98A8AD, // oklch(72.0% 0.02 220.0)
+            /* .primary = */ 0xFC7100, // oklch(70.5% 0.213 47.604)
+            /* .accent = */ 0xFF8B1F, // oklch(75.0% 0.183 55.934)
+            /* .pressed = */ 0xEC5600, // oklch(64.6% 0.222 41.116)
+            /* .onPrimary = */ 0x201208, // oklch(20.0% 0.03 57.604)
+            /* .ok = */ 0x22C373, // oklch(72.0% 0.17 155.0)
+            /* .warn = */ 0xF0B135, // oklch(80.0% 0.15 80.0)
+            /* .err = */ 0xF4514F, // oklch(66.0% 0.2 25.0)
+            /* .bg565 = */ 0x0082,
+            /* .bgGradEnd565 = */ 0x00C4,
+            /* .surface565 = */ 0x10E4,
+            /* .surface2565 = */ 0x1945,
+            /* .border565 = */ 0x29A7,
+            /* .text565 = */ 0xEFBE,
+            /* .textDim565 = */ 0x9D55,
+            /* .primary565 = */ 0xFB80,
+            /* .accent565 = */ 0xFC43,
+            /* .pressed565 = */ 0xEAA0,
+            /* .onPrimary565 = */ 0x2081,
+            /* .ok565 = */ 0x260E,
+            /* .warn565 = */ 0xF586,
+            /* .err565 = */ 0xF289,
+        },
+        { // light
+            /* .bg = */ 0xC9E6EC, // oklch(90.5% 0.032 212.0)
+            /* .bgGradEnd = */ 0xA9D5DE, // oklch(84.5% 0.048 212.0)
+            /* .surface = */ 0xFCFEFE, // oklch(99.5% 0.002 215.0)
+            /* .surface2 = */ 0xACCED6, // oklch(83.0% 0.038 214.0)
+            /* .border = */ 0x71A1AE, // oklch(68.0% 0.055 216.0)
+            /* .text = */ 0x00141E, // oklch(18.0% 0.035 228.0)
+            /* .textDim = */ 0x2D4D58, // oklch(40.0% 0.042 222.0)
+            /* .primary = */ 0xEC5600, // oklch(64.6% 0.222 41.116)
+            /* .accent = */ 0xC43E00, // oklch(55.3% 0.195 38.402)
+            /* .pressed = */ 0x9F2D00, // oklch(47.0% 0.157 37.304)
+            /* .onPrimary = */ 0xFEFBFA, // oklch(99.0% 0.003 47.604)
+            /* .ok = */ 0x00884D, // oklch(55.0% 0.155 155.0)
+            /* .warn = */ 0xA96B00, // oklch(58.0% 0.155 70.0)
+            /* .err = */ 0xC21725, // oklch(52.0% 0.2 25.0)
+            /* .bg565 = */ 0xCF3D,
+            /* .bgGradEnd565 = */ 0xAEBB,
+            /* .surface565 = */ 0xFFFF,
+            /* .surface2565 = */ 0xAE7A,
+            /* .border565 = */ 0x7515,
+            /* .text565 = */ 0x00A3,
+            /* .textDim565 = */ 0x2A6B,
+            /* .primary565 = */ 0xEAA0,
+            /* .accent565 = */ 0xC1E0,
+            /* .pressed565 = */ 0x9960,
+            /* .onPrimary565 = */ 0xFFDF,
+            /* .ok565 = */ 0x0449,
+            /* .warn565 = */ 0xAB40,
+            /* .err565 = */ 0xC0A4,
+        },
+    },
+    { // amber
+        { // dark
+            /* .bg = */ 0x071115, // oklch(17.0% 0.018 225.0)
+            /* .bgGradEnd = */ 0x071A20, // oklch(20.5% 0.028 220.0)
+            /* .surface = */ 0x101D22, // oklch(22.0% 0.02 225.0)
+            /* .surface2 = */ 0x1B292F, // oklch(27.0% 0.022 225.0)
+            /* .border = */ 0x28353B, // oklch(32.0% 0.02 225.0)
+            /* .text = */ 0xEBF4F6, // oklch(96.0% 0.01 215.0)
+            /* .textDim = */ 0x98A8AD, // oklch(72.0% 0.02 220.0)
+            /* .primary = */ 0xF69E00, // oklch(76.9% 0.188 70.08)
+            /* .accent = */ 0xFABC00, // oklch(82.8% 0.189 84.429)
+            /* .pressed = */ 0xDA7700, // oklch(66.6% 0.179 58.318)
+            /* .onPrimary = */ 0x1D1406, // oklch(20.0% 0.03 80.08)
+            /* .ok = */ 0x22C373, // oklch(72.0% 0.17 155.0)
+            /* .warn = */ 0xF0B135, // oklch(80.0% 0.15 80.0)
+            /* .err = */ 0xF4514F, // oklch(66.0% 0.2 25.0)
+            /* .bg565 = */ 0x0082,
+            /* .bgGradEnd565 = */ 0x00C4,
+            /* .surface565 = */ 0x10E4,
+            /* .surface2565 = */ 0x1945,
+            /* .border565 = */ 0x29A7,
+            /* .text565 = */ 0xEFBE,
+            /* .textDim565 = */ 0x9D55,
+            /* .primary565 = */ 0xF4E0,
+            /* .accent565 = */ 0xFDE0,
+            /* .pressed565 = */ 0xDBA0,
+            /* .onPrimary565 = */ 0x18A0,
+            /* .ok565 = */ 0x260E,
+            /* .warn565 = */ 0xF586,
+            /* .err565 = */ 0xF289,
+        },
+        { // light
+            /* .bg = */ 0xC9E6EC, // oklch(90.5% 0.032 212.0)
+            /* .bgGradEnd = */ 0xA9D5DE, // oklch(84.5% 0.048 212.0)
+            /* .surface = */ 0xFCFEFE, // oklch(99.5% 0.002 215.0)
+            /* .surface2 = */ 0xACCED6, // oklch(83.0% 0.038 214.0)
+            /* .border = */ 0x71A1AE, // oklch(68.0% 0.055 216.0)
+            /* .text = */ 0x00141E, // oklch(18.0% 0.035 228.0)
+            /* .textDim = */ 0x2D4D58, // oklch(40.0% 0.042 222.0)
+            /* .primary = */ 0xDA7700, // oklch(66.6% 0.179 58.318)
+            /* .accent = */ 0xB55200, // oklch(55.5% 0.163 48.998)
+            /* .pressed = */ 0x953D00, // oklch(47.3% 0.137 46.201)
+            /* .onPrimary = */ 0xFDFBFA, // oklch(99.0% 0.003 70.08)
+            /* .ok = */ 0x00884D, // oklch(55.0% 0.155 155.0)
+            /* .warn = */ 0xA96B00, // oklch(58.0% 0.155 70.0)
+            /* .err = */ 0xC21725, // oklch(52.0% 0.2 25.0)
+            /* .bg565 = */ 0xCF3D,
+            /* .bgGradEnd565 = */ 0xAEBB,
+            /* .surface565 = */ 0xFFFF,
+            /* .surface2565 = */ 0xAE7A,
+            /* .border565 = */ 0x7515,
+            /* .text565 = */ 0x00A3,
+            /* .textDim565 = */ 0x2A6B,
+            /* .primary565 = */ 0xDBA0,
+            /* .accent565 = */ 0xB280,
+            /* .pressed565 = */ 0x91E0,
+            /* .onPrimary565 = */ 0xFFDF,
+            /* .ok565 = */ 0x0449,
+            /* .warn565 = */ 0xAB40,
+            /* .err565 = */ 0xC0A4,
+        },
+    },
+    { // yellow
+        { // dark
+            /* .bg = */ 0x071115, // oklch(17.0% 0.018 225.0)
+            /* .bgGradEnd = */ 0x071A20, // oklch(20.5% 0.028 220.0)
+            /* .surface = */ 0x101D22, // oklch(22.0% 0.02 225.0)
+            /* .surface2 = */ 0x1B292F, // oklch(27.0% 0.022 225.0)
+            /* .border = */ 0x28353B, // oklch(32.0% 0.02 225.0)
+            /* .text = */ 0xEBF4F6, // oklch(96.0% 0.01 215.0)
+            /* .textDim = */ 0x98A8AD, // oklch(72.0% 0.02 220.0)
+            /* .primary = */ 0xEAB300, // oklch(79.5% 0.184 86.047)
+            /* .accent = */ 0xF7C900, // oklch(85.2% 0.199 91.936)
+            /* .pressed = */ 0xCA8A00, // oklch(68.1% 0.162 75.834)
+            /* .onPrimary = */ 0x1A1606, // oklch(20.0% 0.03 96.047)
+            /* .ok = */ 0x22C373, // oklch(72.0% 0.17 155.0)
+            /* .warn = */ 0xF0B135, // oklch(80.0% 0.15 80.0)
+            /* .err = */ 0xF4514F, // oklch(66.0% 0.2 25.0)
+            /* .bg565 = */ 0x0082,
+            /* .bgGradEnd565 = */ 0x00C4,
+            /* .surface565 = */ 0x10E4,
+            /* .surface2565 = */ 0x1945,
+            /* .border565 = */ 0x29A7,
+            /* .text565 = */ 0xEFBE,
+            /* .textDim565 = */ 0x9D55,
+            /* .primary565 = */ 0xED80,
+            /* .accent565 = */ 0xF640,
+            /* .pressed565 = */ 0xCC40,
+            /* .onPrimary565 = */ 0x18A0,
+            /* .ok565 = */ 0x260E,
+            /* .warn565 = */ 0xF586,
+            /* .err565 = */ 0xF289,
+        },
+        { // light
+            /* .bg = */ 0xC9E6EC, // oklch(90.5% 0.032 212.0)
+            /* .bgGradEnd = */ 0xA9D5DE, // oklch(84.5% 0.048 212.0)
+            /* .surface = */ 0xFCFEFE, // oklch(99.5% 0.002 215.0)
+            /* .surface2 = */ 0xACCED6, // oklch(83.0% 0.038 214.0)
+            /* .border = */ 0x71A1AE, // oklch(68.0% 0.055 216.0)
+            /* .text = */ 0x00141E, // oklch(18.0% 0.035 228.0)
+            /* .textDim = */ 0x2D4D58, // oklch(40.0% 0.042 222.0)
+            /* .primary = */ 0xCA8A00, // oklch(68.1% 0.162 75.834)
+            /* .accent = */ 0xA26200, // oklch(55.4% 0.135 66.442)
+            /* .pressed = */ 0x874C00, // oklch(47.6% 0.114 61.907)
+            /* .onPrimary = */ 0x1A1606, // oklch(20.0% 0.03 96.047)
+            /* .ok = */ 0x00884D, // oklch(55.0% 0.155 155.0)
+            /* .warn = */ 0xA96B00, // oklch(58.0% 0.155 70.0)
+            /* .err = */ 0xC21725, // oklch(52.0% 0.2 25.0)
+            /* .bg565 = */ 0xCF3D,
+            /* .bgGradEnd565 = */ 0xAEBB,
+            /* .surface565 = */ 0xFFFF,
+            /* .surface2565 = */ 0xAE7A,
+            /* .border565 = */ 0x7515,
+            /* .text565 = */ 0x00A3,
+            /* .textDim565 = */ 0x2A6B,
+            /* .primary565 = */ 0xCC40,
+            /* .accent565 = */ 0xA300,
+            /* .pressed565 = */ 0x8260,
+            /* .onPrimary565 = */ 0x18A0,
+            /* .ok565 = */ 0x0449,
+            /* .warn565 = */ 0xAB40,
+            /* .err565 = */ 0xC0A4,
+        },
+    },
+    { // lime
+        { // dark
+            /* .bg = */ 0x071115, // oklch(17.0% 0.018 225.0)
+            /* .bgGradEnd = */ 0x071A20, // oklch(20.5% 0.028 220.0)
+            /* .surface = */ 0x101D22, // oklch(22.0% 0.02 225.0)
+            /* .surface2 = */ 0x1B292F, // oklch(27.0% 0.022 225.0)
+            /* .border = */ 0x28353B, // oklch(32.0% 0.02 225.0)
+            /* .text = */ 0xEBF4F6, // oklch(96.0% 0.01 215.0)
+            /* .textDim = */ 0x98A8AD, // oklch(72.0% 0.02 220.0)
+            /* .primary = */ 0x83CC00, // oklch(76.8% 0.233 130.85)
+            /* .accent = */ 0x9DE500, // oklch(84.1% 0.238 128.85)
+            /* .pressed = */ 0x64A300, // oklch(64.8% 0.2 131.684)
+            /* .onPrimary = */ 0x0E190C, // oklch(20.0% 0.03 140.85)
+            /* .ok = */ 0x22C373, // oklch(72.0% 0.17 155.0)
+            /* .warn = */ 0xF0B135, // oklch(80.0% 0.15 80.0)
+            /* .err = */ 0xF4514F, // oklch(66.0% 0.2 25.0)
+            /* .bg565 = */ 0x0082,
+            /* .bgGradEnd565 = */ 0x00C4,
+            /* .surface565 = */ 0x10E4,
+            /* .surface2565 = */ 0x1945,
+            /* .border565 = */ 0x29A7,
+            /* .text565 = */ 0xEFBE,
+            /* .textDim565 = */ 0x9D55,
+            /* .primary565 = */ 0x8660,
+            /* .accent565 = */ 0x9F20,
+            /* .pressed565 = */ 0x6500,
+            /* .onPrimary565 = */ 0x08C1,
+            /* .ok565 = */ 0x260E,
+            /* .warn565 = */ 0xF586,
+            /* .err565 = */ 0xF289,
+        },
+        { // light
+            /* .bg = */ 0xC9E6EC, // oklch(90.5% 0.032 212.0)
+            /* .bgGradEnd = */ 0xA9D5DE, // oklch(84.5% 0.048 212.0)
+            /* .surface = */ 0xFCFEFE, // oklch(99.5% 0.002 215.0)
+            /* .surface2 = */ 0xACCED6, // oklch(83.0% 0.038 214.0)
+            /* .border = */ 0x71A1AE, // oklch(68.0% 0.055 216.0)
+            /* .text = */ 0x00141E, // oklch(18.0% 0.035 228.0)
+            /* .textDim = */ 0x2D4D58, // oklch(40.0% 0.042 222.0)
+            /* .primary = */ 0x64A300, // oklch(64.8% 0.2 131.684)
+            /* .accent = */ 0x4B7C00, // oklch(53.2% 0.157 131.589)
+            /* .pressed = */ 0x3D6300, // oklch(45.3% 0.124 130.933)
+            /* .onPrimary = */ 0xFBFCFA, // oklch(99.0% 0.003 130.85)
+            /* .ok = */ 0x00884D, // oklch(55.0% 0.155 155.0)
+            /* .warn = */ 0xA96B00, // oklch(58.0% 0.155 70.0)
+            /* .err = */ 0xC21725, // oklch(52.0% 0.2 25.0)
+            /* .bg565 = */ 0xCF3D,
+            /* .bgGradEnd565 = */ 0xAEBB,
+            /* .surface565 = */ 0xFFFF,
+            /* .surface2565 = */ 0xAE7A,
+            /* .border565 = */ 0x7515,
+            /* .text565 = */ 0x00A3,
+            /* .textDim565 = */ 0x2A6B,
+            /* .primary565 = */ 0x6500,
+            /* .accent565 = */ 0x4BE0,
+            /* .pressed565 = */ 0x3B00,
+            /* .onPrimary565 = */ 0xFFFF,
+            /* .ok565 = */ 0x0449,
+            /* .warn565 = */ 0xAB40,
+            /* .err565 = */ 0xC0A4,
+        },
+    },
+    { // green
+        { // dark
+            /* .bg = */ 0x071115, // oklch(17.0% 0.018 225.0)
+            /* .bgGradEnd = */ 0x071A20, // oklch(20.5% 0.028 220.0)
+            /* .surface = */ 0x101D22, // oklch(22.0% 0.02 225.0)
+            /* .surface2 = */ 0x1B292F, // oklch(27.0% 0.022 225.0)
+            /* .border = */ 0x28353B, // oklch(32.0% 0.02 225.0)
+            /* .text = */ 0xEBF4F6, // oklch(96.0% 0.01 215.0)
+            /* .textDim = */ 0x98A8AD, // oklch(72.0% 0.02 220.0)
+            /* .primary = */ 0x00C65A, // oklch(72.3% 0.219 149.579)
+            /* .accent = */ 0x05DF72, // oklch(79.2% 0.209 151.711)
+            /* .pressed = */ 0x00A447, // oklch(62.7% 0.194 149.214)
+            /* .onPrimary = */ 0x091A11, // oklch(20.0% 0.03 159.579)
+            /* .ok = */ 0x22C373, // oklch(72.0% 0.17 155.0)
+            /* .warn = */ 0xF0B135, // oklch(80.0% 0.15 80.0)
+            /* .err = */ 0xF4514F, // oklch(66.0% 0.2 25.0)
+            /* .bg565 = */ 0x0082,
+            /* .bgGradEnd565 = */ 0x00C4,
+            /* .surface565 = */ 0x10E4,
+            /* .surface2565 = */ 0x1945,
+            /* .border565 = */ 0x29A7,
+            /* .text565 = */ 0xEFBE,
+            /* .textDim565 = */ 0x9D55,
+            /* .primary565 = */ 0x062B,
+            /* .accent565 = */ 0x06EE,
+            /* .pressed565 = */ 0x0528,
+            /* .onPrimary565 = */ 0x08C2,
+            /* .ok565 = */ 0x260E,
+            /* .warn565 = */ 0xF586,
+            /* .err565 = */ 0xF289,
+        },
+        { // light
+            /* .bg = */ 0xC9E6EC, // oklch(90.5% 0.032 212.0)
+            /* .bgGradEnd = */ 0xA9D5DE, // oklch(84.5% 0.048 212.0)
+            /* .surface = */ 0xFCFEFE, // oklch(99.5% 0.002 215.0)
+            /* .surface2 = */ 0xACCED6, // oklch(83.0% 0.038 214.0)
+            /* .border = */ 0x71A1AE, // oklch(68.0% 0.055 216.0)
+            /* .text = */ 0x00141E, // oklch(18.0% 0.035 228.0)
+            /* .textDim = */ 0x2D4D58, // oklch(40.0% 0.042 222.0)
+            /* .primary = */ 0x00A447, // oklch(62.7% 0.194 149.214)
+            /* .accent = */ 0x00813A, // oklch(52.7% 0.154 150.069)
+            /* .pressed = */ 0x016630, // oklch(44.8% 0.119 151.328)
+            /* .onPrimary = */ 0xFAFCFB, // oklch(99.0% 0.003 149.579)
+            /* .ok = */ 0x00884D, // oklch(55.0% 0.155 155.0)
+            /* .warn = */ 0xA96B00, // oklch(58.0% 0.155 70.0)
+            /* .err = */ 0xC21725, // oklch(52.0% 0.2 25.0)
+            /* .bg565 = */ 0xCF3D,
+            /* .bgGradEnd565 = */ 0xAEBB,
+            /* .surface565 = */ 0xFFFF,
+            /* .surface2565 = */ 0xAE7A,
+            /* .border565 = */ 0x7515,
+            /* .text565 = */ 0x00A3,
+            /* .textDim565 = */ 0x2A6B,
+            /* .primary565 = */ 0x0528,
+            /* .accent565 = */ 0x0407,
+            /* .pressed565 = */ 0x0326,
+            /* .onPrimary565 = */ 0xFFFF,
+            /* .ok565 = */ 0x0449,
+            /* .warn565 = */ 0xAB40,
+            /* .err565 = */ 0xC0A4,
+        },
+    },
+    { // emerald
+        { // dark
+            /* .bg = */ 0x071115, // oklch(17.0% 0.018 225.0)
+            /* .bgGradEnd = */ 0x071A20, // oklch(20.5% 0.028 220.0)
+            /* .surface = */ 0x101D22, // oklch(22.0% 0.02 225.0)
+            /* .surface2 = */ 0x1B292F, // oklch(27.0% 0.022 225.0)
+            /* .border = */ 0x28353B, // oklch(32.0% 0.02 225.0)
+            /* .text = */ 0xEBF4F6, // oklch(96.0% 0.01 215.0)
+            /* .textDim = */ 0x98A8AD, // oklch(72.0% 0.02 220.0)
+            /* .primary = */ 0x00B981, // oklch(69.6% 0.17 162.48)
+            /* .accent = */ 0x00D294, // oklch(76.5% 0.177 163.223)
+            /* .pressed = */ 0x009669, // oklch(59.6% 0.145 163.225)
+            /* .onPrimary = */ 0x061A15, // oklch(20.0% 0.03 172.48)
+            /* .ok = */ 0x22C373, // oklch(72.0% 0.17 155.0)
+            /* .warn = */ 0xF0B135, // oklch(80.0% 0.15 80.0)
+            /* .err = */ 0xF4514F, // oklch(66.0% 0.2 25.0)
+            /* .bg565 = */ 0x0082,
+            /* .bgGradEnd565 = */ 0x00C4,
+            /* .surface565 = */ 0x10E4,
+            /* .surface2565 = */ 0x1945,
+            /* .border565 = */ 0x29A7,
+            /* .text565 = */ 0xEFBE,
+            /* .textDim565 = */ 0x9D55,
+            /* .primary565 = */ 0x05D0,
+            /* .accent565 = */ 0x0692,
+            /* .pressed565 = */ 0x04AD,
+            /* .onPrimary565 = */ 0x00C2,
+            /* .ok565 = */ 0x260E,
+            /* .warn565 = */ 0xF586,
+            /* .err565 = */ 0xF289,
+        },
+        { // light
+            /* .bg = */ 0xC9E6EC, // oklch(90.5% 0.032 212.0)
+            /* .bgGradEnd = */ 0xA9D5DE, // oklch(84.5% 0.048 212.0)
+            /* .surface = */ 0xFCFEFE, // oklch(99.5% 0.002 215.0)
+            /* .surface2 = */ 0xACCED6, // oklch(83.0% 0.038 214.0)
+            /* .border = */ 0x71A1AE, // oklch(68.0% 0.055 216.0)
+            /* .text = */ 0x00141E, // oklch(18.0% 0.035 228.0)
+            /* .textDim = */ 0x2D4D58, // oklch(40.0% 0.042 222.0)
+            /* .primary = */ 0x009669, // oklch(59.6% 0.145 163.225)
+            /* .accent = */ 0x007857, // oklch(50.8% 0.118 165.612)
+            /* .pressed = */ 0x005F46, // oklch(43.2% 0.095 166.913)
+            /* .onPrimary = */ 0xFAFCFB, // oklch(99.0% 0.003 162.48)
+            /* .ok = */ 0x00884D, // oklch(55.0% 0.155 155.0)
+            /* .warn = */ 0xA96B00, // oklch(58.0% 0.155 70.0)
+            /* .err = */ 0xC21725, // oklch(52.0% 0.2 25.0)
+            /* .bg565 = */ 0xCF3D,
+            /* .bgGradEnd565 = */ 0xAEBB,
+            /* .surface565 = */ 0xFFFF,
+            /* .surface2565 = */ 0xAE7A,
+            /* .border565 = */ 0x7515,
+            /* .text565 = */ 0x00A3,
+            /* .textDim565 = */ 0x2A6B,
+            /* .primary565 = */ 0x04AD,
+            /* .accent565 = */ 0x03CA,
+            /* .pressed565 = */ 0x02E8,
+            /* .onPrimary565 = */ 0xFFFF,
+            /* .ok565 = */ 0x0449,
+            /* .warn565 = */ 0xAB40,
+            /* .err565 = */ 0xC0A4,
+        },
+    },
+    { // teal
+        { // dark
+            /* .bg = */ 0x071115, // oklch(17.0% 0.018 225.0)
+            /* .bgGradEnd = */ 0x071A20, // oklch(20.5% 0.028 220.0)
+            /* .surface = */ 0x101D22, // oklch(22.0% 0.02 225.0)
+            /* .surface2 = */ 0x1B292F, // oklch(27.0% 0.022 225.0)
+            /* .border = */ 0x28353B, // oklch(32.0% 0.02 225.0)
+            /* .text = */ 0xEBF4F6, // oklch(96.0% 0.01 215.0)
+            /* .textDim = */ 0x98A8AD, // oklch(72.0% 0.02 220.0)
+            /* .primary = */ 0x00B9A6, // oklch(70.4% 0.14 182.503)
+            /* .accent = */ 0x00D3BD, // oklch(77.7% 0.152 181.912)
+            /* .pressed = */ 0x009488, // oklch(60.0% 0.118 184.704)
+            /* .onPrimary = */ 0x031A1A, // oklch(20.0% 0.03 192.503)
+            /* .ok = */ 0x22C373, // oklch(72.0% 0.17 155.0)
+            /* .warn = */ 0xF0B135, // oklch(80.0% 0.15 80.0)
+            /* .err = */ 0xF4514F, // oklch(66.0% 0.2 25.0)
+            /* .bg565 = */ 0x0082,
+            /* .bgGradEnd565 = */ 0x00C4,
+            /* .surface565 = */ 0x10E4,
+            /* .surface2565 = */ 0x1945,
+            /* .border565 = */ 0x29A7,
+            /* .text565 = */ 0xEFBE,
+            /* .textDim565 = */ 0x9D55,
+            /* .primary565 = */ 0x05D4,
+            /* .accent565 = */ 0x0697,
+            /* .pressed565 = */ 0x04B1,
+            /* .onPrimary565 = */ 0x00C3,
+            /* .ok565 = */ 0x260E,
+            /* .warn565 = */ 0xF586,
+            /* .err565 = */ 0xF289,
+        },
+        { // light
+            /* .bg = */ 0xC9E6EC, // oklch(90.5% 0.032 212.0)
+            /* .bgGradEnd = */ 0xA9D5DE, // oklch(84.5% 0.048 212.0)
+            /* .surface = */ 0xFCFEFE, // oklch(99.5% 0.002 215.0)
+            /* .surface2 = */ 0xACCED6, // oklch(83.0% 0.038 214.0)
+            /* .border = */ 0x71A1AE, // oklch(68.0% 0.055 216.0)
+            /* .text = */ 0x00141E, // oklch(18.0% 0.035 228.0)
+            /* .textDim = */ 0x2D4D58, // oklch(40.0% 0.042 222.0)
+            /* .primary = */ 0x009488, // oklch(60.0% 0.118 184.704)
+            /* .accent = */ 0x00776E, // oklch(51.1% 0.096 186.391)
+            /* .pressed = */ 0x005F5A, // oklch(43.7% 0.078 188.216)
+            /* .onPrimary = */ 0xFAFCFC, // oklch(99.0% 0.003 182.503)
+            /* .ok = */ 0x00884D, // oklch(55.0% 0.155 155.0)
+            /* .warn = */ 0xA96B00, // oklch(58.0% 0.155 70.0)
+            /* .err = */ 0xC21725, // oklch(52.0% 0.2 25.0)
+            /* .bg565 = */ 0xCF3D,
+            /* .bgGradEnd565 = */ 0xAEBB,
+            /* .surface565 = */ 0xFFFF,
+            /* .surface2565 = */ 0xAE7A,
+            /* .border565 = */ 0x7515,
+            /* .text565 = */ 0x00A3,
+            /* .textDim565 = */ 0x2A6B,
+            /* .primary565 = */ 0x04B1,
+            /* .accent565 = */ 0x03AD,
+            /* .pressed565 = */ 0x02EB,
+            /* .onPrimary565 = */ 0xFFFF,
+            /* .ok565 = */ 0x0449,
+            /* .warn565 = */ 0xAB40,
+            /* .err565 = */ 0xC0A4,
+        },
+    },
+    { // cyan
+        { // dark
+            /* .bg = */ 0x071115, // oklch(17.0% 0.018 225.0)
+            /* .bgGradEnd = */ 0x071A20, // oklch(20.5% 0.028 220.0)
+            /* .surface = */ 0x101D22, // oklch(22.0% 0.02 225.0)
+            /* .surface2 = */ 0x1B292F, // oklch(27.0% 0.022 225.0)
+            /* .border = */ 0x28353B, // oklch(32.0% 0.02 225.0)
+            /* .text = */ 0xEBF4F6, // oklch(96.0% 0.01 215.0)
+            /* .textDim = */ 0x98A8AD, // oklch(72.0% 0.02 220.0)
+            /* .primary = */ 0x00B6D4, // oklch(71.5% 0.143 215.221)
+            /* .accent = */ 0x00D1EC, // oklch(78.9% 0.154 211.53)
+            /* .pressed = */ 0x0091B3, // oklch(60.9% 0.126 221.723)
+            /* .onPrimary = */ 0x051920, // oklch(20.0% 0.03 225.221)
+            /* .ok = */ 0x22C373, // oklch(72.0% 0.17 155.0)
+            /* .warn = */ 0xF0B135, // oklch(80.0% 0.15 80.0)
+            /* .err = */ 0xF4514F, // oklch(66.0% 0.2 25.0)
+            /* .bg565 = */ 0x0082,
+            /* .bgGradEnd565 = */ 0x00C4,
+            /* .surface565 = */ 0x10E4,
+            /* .surface2565 = */ 0x1945,
+            /* .border565 = */ 0x29A7,
+            /* .text565 = */ 0xEFBE,
+            /* .textDim565 = */ 0x9D55,
+            /* .primary565 = */ 0x05BA,
+            /* .accent565 = */ 0x069D,
+            /* .pressed565 = */ 0x0496,
+            /* .onPrimary565 = */ 0x00C4,
+            /* .ok565 = */ 0x260E,
+            /* .warn565 = */ 0xF586,
+            /* .err565 = */ 0xF289,
+        },
+        { // light
+            /* .bg = */ 0xC9E6EC, // oklch(90.5% 0.032 212.0)
+            /* .bgGradEnd = */ 0xA9D5DE, // oklch(84.5% 0.048 212.0)
+            /* .surface = */ 0xFCFEFE, // oklch(99.5% 0.002 215.0)
+            /* .surface2 = */ 0xACCED6, // oklch(83.0% 0.038 214.0)
+            /* .border = */ 0x71A1AE, // oklch(68.0% 0.055 216.0)
+            /* .text = */ 0x00141E, // oklch(18.0% 0.035 228.0)
+            /* .textDim = */ 0x2D4D58, // oklch(40.0% 0.042 222.0)
+            /* .primary = */ 0x0091B3, // oklch(60.9% 0.126 221.723)
+            /* .accent = */ 0x007491, // oklch(52.0% 0.105 223.128)
+            /* .pressed = */ 0x005F78, // oklch(45.0% 0.085 224.283)
+            /* .onPrimary = */ 0xFAFCFD, // oklch(99.0% 0.003 215.221)
+            /* .ok = */ 0x00884D, // oklch(55.0% 0.155 155.0)
+            /* .warn = */ 0xA96B00, // oklch(58.0% 0.155 70.0)
+            /* .err = */ 0xC21725, // oklch(52.0% 0.2 25.0)
+            /* .bg565 = */ 0xCF3D,
+            /* .bgGradEnd565 = */ 0xAEBB,
+            /* .surface565 = */ 0xFFFF,
+            /* .surface2565 = */ 0xAE7A,
+            /* .border565 = */ 0x7515,
+            /* .text565 = */ 0x00A3,
+            /* .textDim565 = */ 0x2A6B,
+            /* .primary565 = */ 0x0496,
+            /* .accent565 = */ 0x03B2,
+            /* .pressed565 = */ 0x02EF,
+            /* .onPrimary565 = */ 0xFFFF,
+            /* .ok565 = */ 0x0449,
+            /* .warn565 = */ 0xAB40,
+            /* .err565 = */ 0xC0A4,
+        },
+    },
+    { // sky
+        { // dark
+            /* .bg = */ 0x071115, // oklch(17.0% 0.018 225.0)
+            /* .bgGradEnd = */ 0x071A20, // oklch(20.5% 0.028 220.0)
+            /* .surface = */ 0x101D22, // oklch(22.0% 0.02 225.0)
+            /* .surface2 = */ 0x1B292F, // oklch(27.0% 0.022 225.0)
+            /* .border = */ 0x28353B, // oklch(32.0% 0.02 225.0)
+            /* .text = */ 0xEBF4F6, // oklch(96.0% 0.01 215.0)
+            /* .textDim = */ 0x98A8AD, // oklch(72.0% 0.02 220.0)
+            /* .primary = */ 0x00A5EA, // oklch(68.5% 0.169 237.323)
+            /* .accent = */ 0x00BBFD, // oklch(74.6% 0.16 232.661)
+            /* .pressed = */ 0x0084C7, // oklch(58.8% 0.158 241.966)
+            /* .onPrimary = */ 0x0A1723, // oklch(20.0% 0.03 247.323)
+            /* .ok = */ 0x22C373, // oklch(72.0% 0.17 155.0)
+            /* .warn = */ 0xF0B135, // oklch(80.0% 0.15 80.0)
+            /* .err = */ 0xF4514F, // oklch(66.0% 0.2 25.0)
+            /* .bg565 = */ 0x0082,
+            /* .bgGradEnd565 = */ 0x00C4,
+            /* .surface565 = */ 0x10E4,
+            /* .surface2565 = */ 0x1945,
+            /* .border565 = */ 0x29A7,
+            /* .text565 = */ 0xEFBE,
+            /* .textDim565 = */ 0x9D55,
+            /* .primary565 = */ 0x053D,
+            /* .accent565 = */ 0x05DF,
+            /* .pressed565 = */ 0x0438,
+            /* .onPrimary565 = */ 0x08A4,
+            /* .ok565 = */ 0x260E,
+            /* .warn565 = */ 0xF586,
+            /* .err565 = */ 0xF289,
+        },
+        { // light
+            /* .bg = */ 0xC9E6EC, // oklch(90.5% 0.032 212.0)
+            /* .bgGradEnd = */ 0xA9D5DE, // oklch(84.5% 0.048 212.0)
+            /* .surface = */ 0xFCFEFE, // oklch(99.5% 0.002 215.0)
+            /* .surface2 = */ 0xACCED6, // oklch(83.0% 0.038 214.0)
+            /* .border = */ 0x71A1AE, // oklch(68.0% 0.055 216.0)
+            /* .text = */ 0x00141E, // oklch(18.0% 0.035 228.0)
+            /* .textDim = */ 0x2D4D58, // oklch(40.0% 0.042 222.0)
+            /* .primary = */ 0x0084C7, // oklch(58.8% 0.158 241.966)
+            /* .accent = */ 0x0069A2, // oklch(50.0% 0.134 242.749)
+            /* .pressed = */ 0x005986, // oklch(44.3% 0.11 240.79)
+            /* .onPrimary = */ 0xFAFCFE, // oklch(99.0% 0.003 237.323)
+            /* .ok = */ 0x00884D, // oklch(55.0% 0.155 155.0)
+            /* .warn = */ 0xA96B00, // oklch(58.0% 0.155 70.0)
+            /* .err = */ 0xC21725, // oklch(52.0% 0.2 25.0)
+            /* .bg565 = */ 0xCF3D,
+            /* .bgGradEnd565 = */ 0xAEBB,
+            /* .surface565 = */ 0xFFFF,
+            /* .surface2565 = */ 0xAE7A,
+            /* .border565 = */ 0x7515,
+            /* .text565 = */ 0x00A3,
+            /* .textDim565 = */ 0x2A6B,
+            /* .primary565 = */ 0x0438,
+            /* .accent565 = */ 0x0354,
+            /* .pressed565 = */ 0x02D0,
+            /* .onPrimary565 = */ 0xFFFF,
+            /* .ok565 = */ 0x0449,
+            /* .warn565 = */ 0xAB40,
+            /* .err565 = */ 0xC0A4,
+        },
+    },
+    { // blue
+        { // dark
+            /* .bg = */ 0x071115, // oklch(17.0% 0.018 225.0)
+            /* .bgGradEnd = */ 0x071A20, // oklch(20.5% 0.028 220.0)
+            /* .surface = */ 0x101D22, // oklch(22.0% 0.02 225.0)
+            /* .surface2 = */ 0x1B292F, // oklch(27.0% 0.022 225.0)
+            /* .border = */ 0x28353B, // oklch(32.0% 0.02 225.0)
+            /* .text = */ 0xEBF4F6, // oklch(96.0% 0.01 215.0)
+            /* .textDim = */ 0x98A8AD, // oklch(72.0% 0.02 220.0)
+            /* .primary = */ 0x3280FF, // oklch(62.3% 0.214 259.815)
+            /* .accent = */ 0x56A2FF, // oklch(70.7% 0.165 254.624)
+            /* .pressed = */ 0x155DFC, // oklch(54.6% 0.245 262.881)
+            /* .onPrimary = */ 0x111524, // oklch(20.0% 0.03 269.815)
+            /* .ok = */ 0x22C373, // oklch(72.0% 0.17 155.0)
+            /* .warn = */ 0xF0B135, // oklch(80.0% 0.15 80.0)
+            /* .err = */ 0xF4514F, // oklch(66.0% 0.2 25.0)
+            /* .bg565 = */ 0x0082,
+            /* .bgGradEnd565 = */ 0x00C4,
+            /* .surface565 = */ 0x10E4,
+            /* .surface2565 = */ 0x1945,
+            /* .border565 = */ 0x29A7,
+            /* .text565 = */ 0xEFBE,
+            /* .textDim565 = */ 0x9D55,
+            /* .primary565 = */ 0x341F,
+            /* .accent565 = */ 0x551F,
+            /* .pressed565 = */ 0x12FF,
+            /* .onPrimary565 = */ 0x10A4,
+            /* .ok565 = */ 0x260E,
+            /* .warn565 = */ 0xF586,
+            /* .err565 = */ 0xF289,
+        },
+        { // light
+            /* .bg = */ 0xC9E6EC, // oklch(90.5% 0.032 212.0)
+            /* .bgGradEnd = */ 0xA9D5DE, // oklch(84.5% 0.048 212.0)
+            /* .surface = */ 0xFCFEFE, // oklch(99.5% 0.002 215.0)
+            /* .surface2 = */ 0xACCED6, // oklch(83.0% 0.038 214.0)
+            /* .border = */ 0x71A1AE, // oklch(68.0% 0.055 216.0)
+            /* .text = */ 0x00141E, // oklch(18.0% 0.035 228.0)
+            /* .textDim = */ 0x2D4D58, // oklch(40.0% 0.042 222.0)
+            /* .primary = */ 0x155DFC, // oklch(54.6% 0.245 262.881)
+            /* .accent = */ 0x1447E6, // oklch(48.8% 0.243 264.376)
+            /* .pressed = */ 0x193CB8, // oklch(42.4% 0.199 265.638)
+            /* .onPrimary = */ 0xFBFCFE, // oklch(99.0% 0.003 259.815)
+            /* .ok = */ 0x00884D, // oklch(55.0% 0.155 155.0)
+            /* .warn = */ 0xA96B00, // oklch(58.0% 0.155 70.0)
+            /* .err = */ 0xC21725, // oklch(52.0% 0.2 25.0)
+            /* .bg565 = */ 0xCF3D,
+            /* .bgGradEnd565 = */ 0xAEBB,
+            /* .surface565 = */ 0xFFFF,
+            /* .surface2565 = */ 0xAE7A,
+            /* .border565 = */ 0x7515,
+            /* .text565 = */ 0x00A3,
+            /* .textDim565 = */ 0x2A6B,
+            /* .primary565 = */ 0x12FF,
+            /* .accent565 = */ 0x123C,
+            /* .pressed565 = */ 0x19F7,
+            /* .onPrimary565 = */ 0xFFFF,
+            /* .ok565 = */ 0x0449,
+            /* .warn565 = */ 0xAB40,
+            /* .err565 = */ 0xC0A4,
+        },
+    },
+    { // indigo
+        { // dark
+            /* .bg = */ 0x071115, // oklch(17.0% 0.018 225.0)
+            /* .bgGradEnd = */ 0x071A20, // oklch(20.5% 0.028 220.0)
+            /* .surface = */ 0x101D22, // oklch(22.0% 0.02 225.0)
+            /* .surface2 = */ 0x1B292F, // oklch(27.0% 0.022 225.0)
+            /* .border = */ 0x28353B, // oklch(32.0% 0.02 225.0)
+            /* .text = */ 0xEBF4F6, // oklch(96.0% 0.01 215.0)
+            /* .textDim = */ 0x98A8AD, // oklch(72.0% 0.02 220.0)
+            /* .primary = */ 0x6260FF, // oklch(58.5% 0.233 277.117)
+            /* .accent = */ 0x7D87FF, // oklch(67.3% 0.182 276.935)
+            /* .pressed = */ 0x4F39F6, // oklch(51.1% 0.262 276.966)
+            /* .onPrimary = */ 0xFBFCFE, // oklch(99.0% 0.003 277.117)
+            /* .ok = */ 0x22C373, // oklch(72.0% 0.17 155.0)
+            /* .warn = */ 0xF0B135, // oklch(80.0% 0.15 80.0)
+            /* .err = */ 0xF4514F, // oklch(66.0% 0.2 25.0)
+            /* .bg565 = */ 0x0082,
+            /* .bgGradEnd565 = */ 0x00C4,
+            /* .surface565 = */ 0x10E4,
+            /* .surface2565 = */ 0x1945,
+            /* .border565 = */ 0x29A7,
+            /* .text565 = */ 0xEFBE,
+            /* .textDim565 = */ 0x9D55,
+            /* .primary565 = */ 0x631F,
+            /* .accent565 = */ 0x7C3F,
+            /* .pressed565 = */ 0x49DE,
+            /* .onPrimary565 = */ 0xFFFF,
+            /* .ok565 = */ 0x260E,
+            /* .warn565 = */ 0xF586,
+            /* .err565 = */ 0xF289,
+        },
+        { // light
+            /* .bg = */ 0xC9E6EC, // oklch(90.5% 0.032 212.0)
+            /* .bgGradEnd = */ 0xA9D5DE, // oklch(84.5% 0.048 212.0)
+            /* .surface = */ 0xFCFEFE, // oklch(99.5% 0.002 215.0)
+            /* .surface2 = */ 0xACCED6, // oklch(83.0% 0.038 214.0)
+            /* .border = */ 0x71A1AE, // oklch(68.0% 0.055 216.0)
+            /* .text = */ 0x00141E, // oklch(18.0% 0.035 228.0)
+            /* .textDim = */ 0x2D4D58, // oklch(40.0% 0.042 222.0)
+            /* .primary = */ 0x4F39F6, // oklch(51.1% 0.262 276.966)
+            /* .accent = */ 0x432DD7, // oklch(45.7% 0.24 277.023)
+            /* .pressed = */ 0x372AAC, // oklch(39.8% 0.195 277.366)
+            /* .onPrimary = */ 0xFBFCFE, // oklch(99.0% 0.003 277.117)
+            /* .ok = */ 0x00884D, // oklch(55.0% 0.155 155.0)
+            /* .warn = */ 0xA96B00, // oklch(58.0% 0.155 70.0)
+            /* .err = */ 0xC21725, // oklch(52.0% 0.2 25.0)
+            /* .bg565 = */ 0xCF3D,
+            /* .bgGradEnd565 = */ 0xAEBB,
+            /* .surface565 = */ 0xFFFF,
+            /* .surface2565 = */ 0xAE7A,
+            /* .border565 = */ 0x7515,
+            /* .text565 = */ 0x00A3,
+            /* .textDim565 = */ 0x2A6B,
+            /* .primary565 = */ 0x49DE,
+            /* .accent565 = */ 0x417A,
+            /* .pressed565 = */ 0x3155,
+            /* .onPrimary565 = */ 0xFFFF,
+            /* .ok565 = */ 0x0449,
+            /* .warn565 = */ 0xAB40,
+            /* .err565 = */ 0xC0A4,
+        },
+    },
+    { // violet
+        { // dark
+            /* .bg = */ 0x071115, // oklch(17.0% 0.018 225.0)
+            /* .bgGradEnd = */ 0x071A20, // oklch(20.5% 0.028 220.0)
+            /* .surface = */ 0x101D22, // oklch(22.0% 0.02 225.0)
+            /* .surface2 = */ 0x1B292F, // oklch(27.0% 0.022 225.0)
+            /* .border = */ 0x28353B, // oklch(32.0% 0.02 225.0)
+            /* .text = */ 0xEBF4F6, // oklch(96.0% 0.01 215.0)
+            /* .textDim = */ 0x98A8AD, // oklch(72.0% 0.02 220.0)
+            /* .primary = */ 0x8D56FF, // oklch(60.6% 0.25 292.717)
+            /* .accent = */ 0xA686FF, // oklch(70.2% 0.183 293.541)
+            /* .pressed = */ 0x7F22FE, // oklch(54.1% 0.281 293.009)
+            /* .onPrimary = */ 0x191321, // oklch(20.0% 0.03 302.717)
+            /* .ok = */ 0x22C373, // oklch(72.0% 0.17 155.0)
+            /* .warn = */ 0xF0B135, // oklch(80.0% 0.15 80.0)
+            /* .err = */ 0xF4514F, // oklch(66.0% 0.2 25.0)
+            /* .bg565 = */ 0x0082,
+            /* .bgGradEnd565 = */ 0x00C4,
+            /* .surface565 = */ 0x10E4,
+            /* .surface2565 = */ 0x1945,
+            /* .border565 = */ 0x29A7,
+            /* .text565 = */ 0xEFBE,
+            /* .textDim565 = */ 0x9D55,
+            /* .primary565 = */ 0x8ABF,
+            /* .accent565 = */ 0xA43F,
+            /* .pressed565 = */ 0x791F,
+            /* .onPrimary565 = */ 0x1884,
+            /* .ok565 = */ 0x260E,
+            /* .warn565 = */ 0xF586,
+            /* .err565 = */ 0xF289,
+        },
+        { // light
+            /* .bg = */ 0xC9E6EC, // oklch(90.5% 0.032 212.0)
+            /* .bgGradEnd = */ 0xA9D5DE, // oklch(84.5% 0.048 212.0)
+            /* .surface = */ 0xFCFEFE, // oklch(99.5% 0.002 215.0)
+            /* .surface2 = */ 0xACCED6, // oklch(83.0% 0.038 214.0)
+            /* .border = */ 0x71A1AE, // oklch(68.0% 0.055 216.0)
+            /* .text = */ 0x00141E, // oklch(18.0% 0.035 228.0)
+            /* .textDim = */ 0x2D4D58, // oklch(40.0% 0.042 222.0)
+            /* .primary = */ 0x7F22FE, // oklch(54.1% 0.281 293.009)
+            /* .accent = */ 0x7008E7, // oklch(49.1% 0.27 292.581)
+            /* .pressed = */ 0x5D0EC0, // oklch(43.2% 0.232 292.759)
+            /* .onPrimary = */ 0xFCFBFE, // oklch(99.0% 0.003 292.717)
+            /* .ok = */ 0x00884D, // oklch(55.0% 0.155 155.0)
+            /* .warn = */ 0xA96B00, // oklch(58.0% 0.155 70.0)
+            /* .err = */ 0xC21725, // oklch(52.0% 0.2 25.0)
+            /* .bg565 = */ 0xCF3D,
+            /* .bgGradEnd565 = */ 0xAEBB,
+            /* .surface565 = */ 0xFFFF,
+            /* .surface2565 = */ 0xAE7A,
+            /* .border565 = */ 0x7515,
+            /* .text565 = */ 0x00A3,
+            /* .textDim565 = */ 0x2A6B,
+            /* .primary565 = */ 0x791F,
+            /* .accent565 = */ 0x705C,
+            /* .pressed565 = */ 0x5878,
+            /* .onPrimary565 = */ 0xFFDF,
+            /* .ok565 = */ 0x0449,
+            /* .warn565 = */ 0xAB40,
+            /* .err565 = */ 0xC0A4,
+        },
+    },
+    { // purple
+        { // dark
+            /* .bg = */ 0x071115, // oklch(17.0% 0.018 225.0)
+            /* .bgGradEnd = */ 0x071A20, // oklch(20.5% 0.028 220.0)
+            /* .surface = */ 0x101D22, // oklch(22.0% 0.02 225.0)
+            /* .surface2 = */ 0x1B292F, // oklch(27.0% 0.022 225.0)
+            /* .border = */ 0x28353B, // oklch(32.0% 0.02 225.0)
+            /* .text = */ 0xEBF4F6, // oklch(96.0% 0.01 215.0)
+            /* .textDim = */ 0x98A8AD, // oklch(72.0% 0.02 220.0)
+            /* .primary = */ 0xAB4EFF, // oklch(62.7% 0.265 303.9)
+            /* .accent = */ 0xBF7EFF, // oklch(71.4% 0.203 305.504)
+            /* .pressed = */ 0x9810FA, // oklch(55.8% 0.288 302.321)
+            /* .onPrimary = */ 0x1B1220, // oklch(20.0% 0.03 313.9)
+            /* .ok = */ 0x22C373, // oklch(72.0% 0.17 155.0)
+            /* .warn = */ 0xF0B135, // oklch(80.0% 0.15 80.0)
+            /* .err = */ 0xF4514F, // oklch(66.0% 0.2 25.0)
+            /* .bg565 = */ 0x0082,
+            /* .bgGradEnd565 = */ 0x00C4,
+            /* .surface565 = */ 0x10E4,
+            /* .surface2565 = */ 0x1945,
+            /* .border565 = */ 0x29A7,
+            /* .text565 = */ 0xEFBE,
+            /* .textDim565 = */ 0x9D55,
+            /* .primary565 = */ 0xAA7F,
+            /* .accent565 = */ 0xBBFF,
+            /* .pressed565 = */ 0x989F,
+            /* .onPrimary565 = */ 0x1884,
+            /* .ok565 = */ 0x260E,
+            /* .warn565 = */ 0xF586,
+            /* .err565 = */ 0xF289,
+        },
+        { // light
+            /* .bg = */ 0xC9E6EC, // oklch(90.5% 0.032 212.0)
+            /* .bgGradEnd = */ 0xA9D5DE, // oklch(84.5% 0.048 212.0)
+            /* .surface = */ 0xFCFEFE, // oklch(99.5% 0.002 215.0)
+            /* .surface2 = */ 0xACCED6, // oklch(83.0% 0.038 214.0)
+            /* .border = */ 0x71A1AE, // oklch(68.0% 0.055 216.0)
+            /* .text = */ 0x00141E, // oklch(18.0% 0.035 228.0)
+            /* .textDim = */ 0x2D4D58, // oklch(40.0% 0.042 222.0)
+            /* .primary = */ 0x9810FA, // oklch(55.8% 0.288 302.321)
+            /* .accent = */ 0x8200D9, // oklch(49.6% 0.265 301.924)
+            /* .pressed = */ 0x6E11B0, // oklch(43.8% 0.218 303.724)
+            /* .onPrimary = */ 0xFCFBFD, // oklch(99.0% 0.003 303.9)
+            /* .ok = */ 0x00884D, // oklch(55.0% 0.155 155.0)
+            /* .warn = */ 0xA96B00, // oklch(58.0% 0.155 70.0)
+            /* .err = */ 0xC21725, // oklch(52.0% 0.2 25.0)
+            /* .bg565 = */ 0xCF3D,
+            /* .bgGradEnd565 = */ 0xAEBB,
+            /* .surface565 = */ 0xFFFF,
+            /* .surface2565 = */ 0xAE7A,
+            /* .border565 = */ 0x7515,
+            /* .text565 = */ 0x00A3,
+            /* .textDim565 = */ 0x2A6B,
+            /* .primary565 = */ 0x989F,
+            /* .accent565 = */ 0x801B,
+            /* .pressed565 = */ 0x6896,
+            /* .onPrimary565 = */ 0xFFDF,
+            /* .ok565 = */ 0x0449,
+            /* .warn565 = */ 0xAB40,
+            /* .err565 = */ 0xC0A4,
+        },
+    },
+    { // fuchsia
+        { // dark
+            /* .bg = */ 0x071115, // oklch(17.0% 0.018 225.0)
+            /* .bgGradEnd = */ 0x071A20, // oklch(20.5% 0.028 220.0)
+            /* .surface = */ 0x101D22, // oklch(22.0% 0.02 225.0)
+            /* .surface2 = */ 0x1B292F, // oklch(27.0% 0.022 225.0)
+            /* .border = */ 0x28353B, // oklch(32.0% 0.02 225.0)
+            /* .text = */ 0xEBF4F6, // oklch(96.0% 0.01 215.0)
+            /* .textDim = */ 0x98A8AD, // oklch(72.0% 0.02 220.0)
+            /* .primary = */ 0xE12AFB, // oklch(66.7% 0.295 322.15)
+            /* .accent = */ 0xEC6DFF, // oklch(74.0% 0.238 322.16)
+            /* .pressed = */ 0xC500DA, // oklch(59.1% 0.293 322.896)
+            /* .onPrimary = */ 0x1E111C, // oklch(20.0% 0.03 332.15)
+            /* .ok = */ 0x22C373, // oklch(72.0% 0.17 155.0)
+            /* .warn = */ 0xF0B135, // oklch(80.0% 0.15 80.0)
+            /* .err = */ 0xF4514F, // oklch(66.0% 0.2 25.0)
+            /* .bg565 = */ 0x0082,
+            /* .bgGradEnd565 = */ 0x00C4,
+            /* .surface565 = */ 0x10E4,
+            /* .surface2565 = */ 0x1945,
+            /* .border565 = */ 0x29A7,
+            /* .text565 = */ 0xEFBE,
+            /* .textDim565 = */ 0x9D55,
+            /* .primary565 = */ 0xE15F,
+            /* .accent565 = */ 0xEB7F,
+            /* .pressed565 = */ 0xC01B,
+            /* .onPrimary565 = */ 0x1883,
+            /* .ok565 = */ 0x260E,
+            /* .warn565 = */ 0xF586,
+            /* .err565 = */ 0xF289,
+        },
+        { // light
+            /* .bg = */ 0xC9E6EC, // oklch(90.5% 0.032 212.0)
+            /* .bgGradEnd = */ 0xA9D5DE, // oklch(84.5% 0.048 212.0)
+            /* .surface = */ 0xFCFEFE, // oklch(99.5% 0.002 215.0)
+            /* .surface2 = */ 0xACCED6, // oklch(83.0% 0.038 214.0)
+            /* .border = */ 0x71A1AE, // oklch(68.0% 0.055 216.0)
+            /* .text = */ 0x00141E, // oklch(18.0% 0.035 228.0)
+            /* .textDim = */ 0x2D4D58, // oklch(40.0% 0.042 222.0)
+            /* .primary = */ 0xC500DA, // oklch(59.1% 0.293 322.896)
+            /* .accent = */ 0xA600B4, // oklch(51.8% 0.253 323.949)
+            /* .pressed = */ 0x8A0194, // oklch(45.2% 0.211 324.591)
+            /* .onPrimary = */ 0xFDFBFD, // oklch(99.0% 0.003 322.15)
+            /* .ok = */ 0x00884D, // oklch(55.0% 0.155 155.0)
+            /* .warn = */ 0xA96B00, // oklch(58.0% 0.155 70.0)
+            /* .err = */ 0xC21725, // oklch(52.0% 0.2 25.0)
+            /* .bg565 = */ 0xCF3D,
+            /* .bgGradEnd565 = */ 0xAEBB,
+            /* .surface565 = */ 0xFFFF,
+            /* .surface2565 = */ 0xAE7A,
+            /* .border565 = */ 0x7515,
+            /* .text565 = */ 0x00A3,
+            /* .textDim565 = */ 0x2A6B,
+            /* .primary565 = */ 0xC01B,
+            /* .accent565 = */ 0xA016,
+            /* .pressed565 = */ 0x8812,
+            /* .onPrimary565 = */ 0xFFDF,
+            /* .ok565 = */ 0x0449,
+            /* .warn565 = */ 0xAB40,
+            /* .err565 = */ 0xC0A4,
+        },
+    },
+    { // pink
+        { // dark
+            /* .bg = */ 0x071115, // oklch(17.0% 0.018 225.0)
+            /* .bgGradEnd = */ 0x071A20, // oklch(20.5% 0.028 220.0)
+            /* .surface = */ 0x101D22, // oklch(22.0% 0.02 225.0)
+            /* .surface2 = */ 0x1B292F, // oklch(27.0% 0.022 225.0)
+            /* .border = */ 0x28353B, // oklch(32.0% 0.02 225.0)
+            /* .text = */ 0xEBF4F6, // oklch(96.0% 0.01 215.0)
+            /* .textDim = */ 0x98A8AD, // oklch(72.0% 0.02 220.0)
+            /* .primary = */ 0xF6339A, // oklch(65.6% 0.241 354.308)
+            /* .accent = */ 0xFB64B6, // oklch(71.8% 0.202 349.761)
+            /* .pressed = */ 0xE30076, // oklch(59.2% 0.249 0.584)
+            /* .onPrimary = */ 0x211014, // oklch(20.0% 0.03 4.308)
+            /* .ok = */ 0x22C373, // oklch(72.0% 0.17 155.0)
+            /* .warn = */ 0xF0B135, // oklch(80.0% 0.15 80.0)
+            /* .err = */ 0xF4514F, // oklch(66.0% 0.2 25.0)
+            /* .bg565 = */ 0x0082,
+            /* .bgGradEnd565 = */ 0x00C4,
+            /* .surface565 = */ 0x10E4,
+            /* .surface2565 = */ 0x1945,
+            /* .border565 = */ 0x29A7,
+            /* .text565 = */ 0xEFBE,
+            /* .textDim565 = */ 0x9D55,
+            /* .primary565 = */ 0xF193,
+            /* .accent565 = */ 0xFB36,
+            /* .pressed565 = */ 0xE00E,
+            /* .onPrimary565 = */ 0x2082,
+            /* .ok565 = */ 0x260E,
+            /* .warn565 = */ 0xF586,
+            /* .err565 = */ 0xF289,
+        },
+        { // light
+            /* .bg = */ 0xC9E6EC, // oklch(90.5% 0.032 212.0)
+            /* .bgGradEnd = */ 0xA9D5DE, // oklch(84.5% 0.048 212.0)
+            /* .surface = */ 0xFCFEFE, // oklch(99.5% 0.002 215.0)
+            /* .surface2 = */ 0xACCED6, // oklch(83.0% 0.038 214.0)
+            /* .border = */ 0x71A1AE, // oklch(68.0% 0.055 216.0)
+            /* .text = */ 0x00141E, // oklch(18.0% 0.035 228.0)
+            /* .textDim = */ 0x2D4D58, // oklch(40.0% 0.042 222.0)
+            /* .primary = */ 0xE30076, // oklch(59.2% 0.249 0.584)
+            /* .accent = */ 0xC2005C, // oklch(52.5% 0.223 3.958)
+            /* .pressed = */ 0xA2004C, // oklch(45.9% 0.187 3.815)
+            /* .onPrimary = */ 0xFEFBFC, // oklch(99.0% 0.003 354.308)
+            /* .ok = */ 0x00884D, // oklch(55.0% 0.155 155.0)
+            /* .warn = */ 0xA96B00, // oklch(58.0% 0.155 70.0)
+            /* .err = */ 0xC21725, // oklch(52.0% 0.2 25.0)
+            /* .bg565 = */ 0xCF3D,
+            /* .bgGradEnd565 = */ 0xAEBB,
+            /* .surface565 = */ 0xFFFF,
+            /* .surface2565 = */ 0xAE7A,
+            /* .border565 = */ 0x7515,
+            /* .text565 = */ 0x00A3,
+            /* .textDim565 = */ 0x2A6B,
+            /* .primary565 = */ 0xE00E,
+            /* .accent565 = */ 0xC00B,
+            /* .pressed565 = */ 0xA009,
+            /* .onPrimary565 = */ 0xFFDF,
+            /* .ok565 = */ 0x0449,
+            /* .warn565 = */ 0xAB40,
+            /* .err565 = */ 0xC0A4,
+        },
+    },
+    { // rose
+        { // dark
+            /* .bg = */ 0x071115, // oklch(17.0% 0.018 225.0)
+            /* .bgGradEnd = */ 0x071A20, // oklch(20.5% 0.028 220.0)
+            /* .surface = */ 0x101D22, // oklch(22.0% 0.02 225.0)
+            /* .surface2 = */ 0x1B292F, // oklch(27.0% 0.022 225.0)
+            /* .border = */ 0x28353B, // oklch(32.0% 0.02 225.0)
+            /* .text = */ 0xEBF4F6, // oklch(96.0% 0.01 215.0)
+            /* .textDim = */ 0x98A8AD, // oklch(72.0% 0.02 220.0)
+            /* .primary = */ 0xFF2357, // oklch(64.5% 0.246 16.439)
+            /* .accent = */ 0xFF6880, // oklch(71.2% 0.194 13.428)
+            /* .pressed = */ 0xE60045, // oklch(58.6% 0.253 17.585)
+            /* .onPrimary = */ 0x22110F, // oklch(20.0% 0.03 26.439)
+            /* .ok = */ 0x22C373, // oklch(72.0% 0.17 155.0)
+            /* .warn = */ 0xF0B135, // oklch(80.0% 0.15 80.0)
+            /* .err = */ 0xF4514F, // oklch(66.0% 0.2 25.0)
+            /* .bg565 = */ 0x0082,
+            /* .bgGradEnd565 = */ 0x00C4,
+            /* .surface565 = */ 0x10E4,
+            /* .surface2565 = */ 0x1945,
+            /* .border565 = */ 0x29A7,
+            /* .text565 = */ 0xEFBE,
+            /* .textDim565 = */ 0x9D55,
+            /* .primary565 = */ 0xF90A,
+            /* .accent565 = */ 0xFB50,
+            /* .pressed565 = */ 0xE008,
+            /* .onPrimary565 = */ 0x2081,
+            /* .ok565 = */ 0x260E,
+            /* .warn565 = */ 0xF586,
+            /* .err565 = */ 0xF289,
+        },
+        { // light
+            /* .bg = */ 0xC9E6EC, // oklch(90.5% 0.032 212.0)
+            /* .bgGradEnd = */ 0xA9D5DE, // oklch(84.5% 0.048 212.0)
+            /* .surface = */ 0xFCFEFE, // oklch(99.5% 0.002 215.0)
+            /* .surface2 = */ 0xACCED6, // oklch(83.0% 0.038 214.0)
+            /* .border = */ 0x71A1AE, // oklch(68.0% 0.055 216.0)
+            /* .text = */ 0x00141E, // oklch(18.0% 0.035 228.0)
+            /* .textDim = */ 0x2D4D58, // oklch(40.0% 0.042 222.0)
+            /* .primary = */ 0xE60045, // oklch(58.6% 0.253 17.585)
+            /* .accent = */ 0xC1003A, // oklch(51.4% 0.222 16.935)
+            /* .pressed = */ 0xA30037, // oklch(45.5% 0.188 13.697)
+            /* .onPrimary = */ 0xFEFBFB, // oklch(99.0% 0.003 16.439)
+            /* .ok = */ 0x00884D, // oklch(55.0% 0.155 155.0)
+            /* .warn = */ 0xA96B00, // oklch(58.0% 0.155 70.0)
+            /* .err = */ 0xC21725, // oklch(52.0% 0.2 25.0)
+            /* .bg565 = */ 0xCF3D,
+            /* .bgGradEnd565 = */ 0xAEBB,
+            /* .surface565 = */ 0xFFFF,
+            /* .surface2565 = */ 0xAE7A,
+            /* .border565 = */ 0x7515,
+            /* .text565 = */ 0x00A3,
+            /* .textDim565 = */ 0x2A6B,
+            /* .primary565 = */ 0xE008,
+            /* .accent565 = */ 0xC007,
+            /* .pressed565 = */ 0xA006,
+            /* .onPrimary565 = */ 0xFFDF,
+            /* .ok565 = */ 0x0449,
+            /* .warn565 = */ 0xAB40,
+            /* .err565 = */ 0xC0A4,
+        },
+    },
 };
+
+// Default (brand cyan) palettes
+static constexpr const Palette &kDarkPalette = kPalettes[kDefaultAccent][0];
+static constexpr const Palette &kLightPalette = kPalettes[kDefaultAccent][1];
 
 } // namespace ThemeTokens

@@ -5,18 +5,33 @@
 
 namespace Theme {
 
+namespace {
+// Palettes are precomputed per accent in flash, so switching accents is just
+// an index change: nothing is mutated that a half-drawn frame could observe.
+const ThemeTokens::Palette &palette(bool dark) {
+  return ThemeTokens::kPalettes[Settings::getAccent()][dark ? 0 : 1];
+}
+} // namespace
+
 const ThemeTokens::Palette &active() {
-  return Settings::isDarkThemeEffective() ? ThemeTokens::kDarkPalette
-                                          : ThemeTokens::kLightPalette;
+  return palette(Settings::isDarkThemeEffective());
 }
 
-const ThemeTokens::Palette &dark() { return ThemeTokens::kDarkPalette; }
+const ThemeTokens::Palette &dark() { return palette(true); }
+
+uint32_t resolveMediaTint(uint32_t bgTop) {
+  // 0 = no tint yet; kLegacyMediaTint = the companion's "no artwork" default,
+  // which predates accents and is always cyan. Both follow the accent instead.
+  if (bgTop == 0 || bgTop == kLegacyMediaTint) {
+    return dark().pressed;
+  }
+  return bgTop;
+}
 
 bool isDark() { return Settings::isDarkThemeEffective(); }
 
 void styleScreen(lv_obj_t *scr, bool withWallpaper, bool forceDark) {
-  const ThemeTokens::Palette &p =
-      forceDark ? ThemeTokens::kDarkPalette : active();
+  const ThemeTokens::Palette &p = forceDark ? dark() : active();
 
   lv_obj_set_style_bg_color(scr, lv_color_hex(p.bg), LV_PART_MAIN);
   lv_obj_set_style_bg_opa(scr, LV_OPA_COVER, LV_PART_MAIN);
@@ -38,8 +53,7 @@ void styleScreen(lv_obj_t *scr, bool withWallpaper, bool forceDark) {
 lv_obj_t *createCard(lv_obj_t *parent, int16_t w, int16_t h, int16_t x,
                      int16_t y, uint8_t radius, bool forceDark) {
   const bool useDark = forceDark || isDark();
-  const ThemeTokens::Palette &p =
-      useDark ? ThemeTokens::kDarkPalette : ThemeTokens::kLightPalette;
+  const ThemeTokens::Palette &p = palette(useDark);
 
   lv_obj_t *card = lv_obj_create(parent);
   lv_obj_set_pos(card, x, y);
@@ -66,8 +80,7 @@ void setFocusRing(lv_obj_t *obj, bool focused, bool forceDark) {
   if (obj == nullptr)
     return;
   const bool useDark = forceDark || isDark();
-  const ThemeTokens::Palette &p =
-      useDark ? ThemeTokens::kDarkPalette : ThemeTokens::kLightPalette;
+  const ThemeTokens::Palette &p = palette(useDark);
 
   if (focused) {
     lv_obj_set_style_border_color(obj, lv_color_hex(p.accent), LV_PART_MAIN);
@@ -96,7 +109,8 @@ uint8_t luminance(uint32_t rgb888) {
 bool isColorLight(uint32_t rgb888) { return luminance(rgb888) > 118U; }
 
 uint32_t tintAccent(uint32_t bgTop, uint32_t fallbackRgb) {
-  if (bgTop == 0 || bgTop == 0x071115 || bgTop == 0x05090B) {
+  if (bgTop == 0 || bgTop == 0x071115 || bgTop == 0x05090B ||
+      bgTop == kLegacyMediaTint || bgTop == dark().pressed) {
     return fallbackRgb;
   }
   uint32_t r = (bgTop >> 16) & 0xFF;

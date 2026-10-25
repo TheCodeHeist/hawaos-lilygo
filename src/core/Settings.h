@@ -35,6 +35,14 @@ bool isDarkThemeEffective();
 void setThemeMode(ThemeMode mode);
 void toggleDarkLightTheme();
 
+// Accent theme: index into ThemeTokens::kAccentIds (persisted by id, so the
+// table can grow without remapping stored values).
+uint8_t getAccent();
+void setAccent(uint8_t idx);
+bool setAccentById(const char *id); // false if the id is unknown
+const char *getAccentId();
+void cycleAccent();
+
 bool getAodEnabled();
 void setAodEnabled(bool enabled);
 

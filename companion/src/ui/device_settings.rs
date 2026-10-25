@@ -9,11 +9,12 @@ use gpui_kit::gpui::*;
 
 use crate::models::{CompanionConfig, OutboundAction};
 use crate::ui::CompanionWindowView;
+use crate::ui::accents::ACCENTS;
 use crate::ui::components::{
-    button_row, card_header, card_row, choice, divider, glass_card, page_header, progress_bar,
-    row_card, setting_row,
+    accent_swatch, button_row, card_header, card_row, choice, divider, glass_card, page_header,
+    pill, progress_bar, row_card, setting_row,
 };
-use crate::ui::theme::HawaPalette;
+use crate::ui::theme::{accent_by_id, HawaPalette};
 
 impl CompanionWindowView {
     pub(crate) fn render_device_settings(
@@ -28,6 +29,7 @@ impl CompanionWindowView {
         };
 
         let brightness_steps: [u8; 5] = [20, 40, 60, 80, 100];
+        let current_accent = accent_by_id(&cfg.accent);
         let aod_timeouts: [u16; 5] = [15, 30, 60, 120, 300];
 
         v_flex()
@@ -80,12 +82,12 @@ impl CompanionWindowView {
                 card_row()
                     .child(
                         row_card(pal, 300.)
-                            .child(card_header(pal, IconName::Palette, "Theme"))
+                            .child(card_header(pal, IconName::SunMoon, "Theme"))
                             .child(
                                 button_row()
                                     .child(
                                         Button::new("theme-dark-btn")
-                                            .with_variant(choice(cfg.device_theme == "dark"))
+                                            .with_variant(choice(pal, cfg.device_theme == "dark", cx))
                                             .icon(IconName::Moon)
                                             .label("Dark")
                                             .on_click(cx.listener(|this, _, _, cx| {
@@ -94,7 +96,7 @@ impl CompanionWindowView {
                                     )
                                     .child(
                                         Button::new("theme-light-btn")
-                                            .with_variant(choice(cfg.device_theme == "light"))
+                                            .with_variant(choice(pal, cfg.device_theme == "light", cx))
                                             .icon(IconName::Sun)
                                             .label("Light")
                                             .on_click(cx.listener(|this, _, _, cx| {
@@ -103,7 +105,7 @@ impl CompanionWindowView {
                                     )
                                     .child(
                                         Button::new("theme-auto-btn")
-                                            .with_variant(choice(cfg.device_theme == "auto"))
+                                            .with_variant(choice(pal, cfg.device_theme == "auto", cx))
                                             .icon(IconName::Sparkles)
                                             .label("Auto")
                                             .on_click(cx.listener(|this, _, _, cx| {
@@ -129,7 +131,7 @@ impl CompanionWindowView {
                                     .child(
                                         Button::new("wp-gradient")
                                             .small()
-                                            .with_variant(choice(cfg.wallpaper == "gradient"))
+                                            .with_variant(choice(pal, cfg.wallpaper == "gradient", cx))
                                             .label("Gradient")
                                             .on_click(cx.listener(|this, _, _, cx| {
                                                 this.mutate_config_and_sync(cx, |c| c.wallpaper = "gradient".into());
@@ -138,7 +140,7 @@ impl CompanionWindowView {
                                     .child(
                                         Button::new("wp-solid")
                                             .small()
-                                            .with_variant(choice(cfg.wallpaper == "solid"))
+                                            .with_variant(choice(pal, cfg.wallpaper == "solid", cx))
                                             .label("Solid")
                                             .on_click(cx.listener(|this, _, _, cx| {
                                                 this.mutate_config_and_sync(cx, |c| c.wallpaper = "solid".into());
@@ -153,7 +155,7 @@ impl CompanionWindowView {
                                     .child(
                                         Button::new("clk-24h")
                                             .small()
-                                            .with_variant(choice(cfg.use_24h))
+                                            .with_variant(choice(pal, cfg.use_24h, cx))
                                             .label("24h")
                                             .on_click(cx.listener(|this, _, _, cx| {
                                                 this.mutate_config_and_sync(cx, |c| c.use_24h = true);
@@ -162,13 +164,43 @@ impl CompanionWindowView {
                                     .child(
                                         Button::new("clk-12h")
                                             .small()
-                                            .with_variant(choice(!cfg.use_24h))
+                                            .with_variant(choice(pal, !cfg.use_24h, cx))
                                             .label("12h")
                                             .on_click(cx.listener(|this, _, _, cx| {
                                                 this.mutate_config_and_sync(cx, |c| c.use_24h = false);
                                             })),
                                     ),
                             )),
+                    ),
+            )
+            // Accent color
+            .child(
+                glass_card(pal)
+                    .child(
+                        card_header(pal, IconName::Palette, "Accent color").child(pill(
+                            current_accent.label,
+                            pal.accent,
+                            pal.primary.opacity(0.16),
+                        )),
+                    )
+                    .child(
+                        h_flex()
+                            .w_full()
+                            .flex_wrap()
+                            .gap_2()
+                            .children(ACCENTS.iter().map(|accent| {
+                                let id = accent.id;
+                                accent_swatch(pal, accent, accent.id == current_accent.id)
+                                    .on_click(cx.listener(move |this, _, _, cx| {
+                                        this.mutate_config_and_sync(cx, |c| c.accent = id.into());
+                                    }))
+                            })),
+                    )
+                    .child(
+                        div()
+                            .text_xs()
+                            .text_color(pal.text_dim)
+                            .child("Recolors the device and this app. Backgrounds and text stay the same."),
                     ),
             )
             // Brightness
@@ -187,7 +219,7 @@ impl CompanionWindowView {
                     .child(button_row().children(brightness_steps.into_iter().map(|step| {
                         Button::new(("brightness-step", step as usize))
                             .small()
-                            .with_variant(choice(cfg.brightness == step))
+                            .with_variant(choice(pal, cfg.brightness == step, cx))
                             .label(format!("{}%", step))
                             .on_click(cx.listener(move |this, _, _, cx| {
                                 this.mutate_config_and_sync(cx, |c| c.brightness = step);
@@ -217,7 +249,7 @@ impl CompanionWindowView {
                             button_row().children(aod_timeouts.into_iter().map(|secs| {
                                 Button::new(("aod-timeout", secs as usize))
                                     .small()
-                                    .with_variant(choice(cfg.aod_timeout_s == secs))
+                                    .with_variant(choice(pal, cfg.aod_timeout_s == secs, cx))
                                     .label(if secs >= 60 {
                                         format!("{}m", secs / 60)
                                     } else {
@@ -278,7 +310,7 @@ impl CompanionWindowView {
                             .child(
                                 Button::new("orient-normal-btn")
                                     .small()
-                                    .with_variant(choice(cfg.orientation != "inverted"))
+                                    .with_variant(choice(pal, cfg.orientation != "inverted", cx))
                                     .label("Normal")
                                     .on_click(cx.listener(|this, _, _, cx| {
                                         this.mutate_config_and_sync(cx, |c| c.orientation = "normal".into());
@@ -287,7 +319,7 @@ impl CompanionWindowView {
                             .child(
                                 Button::new("orient-inverted-btn")
                                     .small()
-                                    .with_variant(choice(cfg.orientation == "inverted"))
+                                    .with_variant(choice(pal, cfg.orientation == "inverted", cx))
                                     .label("Flipped")
                                     .on_click(cx.listener(|this, _, _, cx| {
                                         this.mutate_config_and_sync(cx, |c| c.orientation = "inverted".into());
@@ -360,7 +392,7 @@ impl CompanionWindowView {
                             .child(
                                 Button::new("weather-unit-c-btn")
                                     .small()
-                                    .with_variant(choice(cfg.weather_unit != "f"))
+                                    .with_variant(choice(pal, cfg.weather_unit != "f", cx))
                                     .label("°C")
                                     .on_click(cx.listener(|this, _, _, cx| {
                                         this.mutate_config_and_sync(cx, |c| c.weather_unit = "c".into());
@@ -372,7 +404,7 @@ impl CompanionWindowView {
                             .child(
                                 Button::new("weather-unit-f-btn")
                                     .small()
-                                    .with_variant(choice(cfg.weather_unit == "f"))
+                                    .with_variant(choice(pal, cfg.weather_unit == "f", cx))
                                     .label("°F")
                                     .on_click(cx.listener(|this, _, _, cx| {
                                         this.mutate_config_and_sync(cx, |c| c.weather_unit = "f".into());
