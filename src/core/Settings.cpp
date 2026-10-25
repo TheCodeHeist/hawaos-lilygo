@@ -1,6 +1,8 @@
 #include "core/Settings.h"
 #include "config.h"
 #include "services/CompanionLink.h"
+#include "drivers/Buttons.h"
+#include "drivers/Display.h"
 
 #include <Arduino.h>
 #include <Preferences.h>
@@ -26,6 +28,7 @@ bool s_notifyPopupEnabled = true;
 uint32_t s_configVersion = 0;
 int32_t s_gmtOffsetSec = Config::DEFAULT_GMT_OFFSET_SEC;
 bool s_use24Hour = false;
+bool s_orientationInverted = false;
 
 uint8_t snapBrightnessPct(uint8_t pct) {
   if (pct <= 25)
@@ -81,6 +84,7 @@ void begin() {
   s_configVersion = s_prefs.getUInt("cfg_ver", 1);
   s_gmtOffsetSec = s_prefs.getInt("gmt_offset", Config::DEFAULT_GMT_OFFSET_SEC);
   s_use24Hour = s_prefs.getBool("use_24h", false);
+  s_orientationInverted = s_prefs.getBool("orient_inv", false);
 
   Serial.printf("[Settings] Loaded: SSID='%s', bright=%u%%, theme=%u, "
                 "aod=%d(%us), redMotion=%d, notifyPopup=%d, v=%lu\n",
@@ -260,6 +264,16 @@ bool getUse24Hour() { return s_use24Hour; }
 void setUse24Hour(bool use24h) {
   s_use24Hour = use24h;
   s_prefs.putBool("use_24h", s_use24Hour);
+}
+
+bool getOrientationInverted() { return s_orientationInverted; }
+
+void setOrientationInverted(bool inverted) {
+  s_orientationInverted = inverted;
+  s_prefs.putBool("orient_inv", s_orientationInverted);
+  Display::setRotation(s_orientationInverted ? 1 : 3);
+  Buttons::setOrientationInverted(s_orientationInverted);
+  bumpLocalConfigVersion();
 }
 
 } // namespace Settings

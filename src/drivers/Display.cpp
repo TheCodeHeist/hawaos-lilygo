@@ -110,7 +110,8 @@ bool begin() {
     }
   }
 
-  s_tft.setRotation(Config::LCD_ROTATION);
+  const uint8_t initialRot = Settings::getOrientationInverted() ? 1 : Config::LCD_ROTATION;
+  s_tft.setRotation(initialRot);
 
   // 5. Draw theme-matched `bg` + centered multi-color boot logo directly before
   // LVGL starts
@@ -201,5 +202,15 @@ void rampBrightness(uint8_t targetStep, uint32_t durationMs) {
 }
 
 uint8_t getBrightness() { return s_brightness; }
+
+void setRotation(uint8_t rotation) {
+  s_tft.setRotation(rotation);
+  if (lv_scr_act() != nullptr) {
+    lv_obj_invalidate(lv_scr_act());
+  }
+  if (lv_layer_top() != nullptr) {
+    lv_obj_invalidate(lv_layer_top());
+  }
+}
 
 } // namespace Display

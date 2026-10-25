@@ -1,0 +1,316 @@
+use std::io::{BufRead, BufReader};
+use std::net::{SocketAddr, UdpSocket};
+use std::thread;
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use sysinfo::{Networks, System};
+
+use crate::config::CompanionConfig;
+use crate::media::query_mpris_media;
+use crate::config::{get_local_lan_ip, ART_HTTP_PORT, DEFAULT_DEVICE_IP, UDP_PORT, USB_BAUD};
+use crate::models::{
+    MediaMsg, OutboundAction, SharedArtCache, SharedState, StatsMsg, WeatherMsg,
+};
+use crate::config::sanitize_ip_str;
+use crate::protocol::{
+    handle_incoming_json_line, sanitize_for_font, send_usb_line,
+};
+use crate::weather::trigger_weather_update;
+
+pub fn spawn_daemon_worker(state: SharedState, art_cache: SharedArtCache) {
+    thread::spawn(move || {
+        let udp = UdpSocket::bind("0.0.0.0:0").expect("Failed to bind local UDP socket");
+        let _ = udp.set_nonblocking(true);
+
+        if let Ok(mut g) = state.lock() {
+            g.outbound_queue
+                .push_back(OutboundAction::QueryDevice { via_usb: false });
+            let msg = format!(
+                "Daemon started · UDP -> {}:{} · Art HTTP :{}",
+                g.config.target_ip, UDP_PORT, ART_HTTP_PORT
+            );
+            g.push_log(msg);
+        }
+
+        let mut sys = System::new_all();
+        let mut networks = Networks::new_with_refreshed_list();
+        let mut last_stats_tick = Instant::now() - Duration::from_secs(1);
+        let mut last_media_heartbeat = Instant::now() - Duration::from_secs(10);
+        let mut last_weather_fetch = Instant::now();
+        let mut last_weather_send = Instant::now();
+        let mut prev_media: Option<MediaMsg> = None;
+        let mut prev_weather: Option<WeatherMsg> = None;
+        let mut rx_buf = [0u8; 1460];
+
+        trigger_weather_update(&state);
+
+        loop {
+            // 1. Poll incoming UDP packets from T-Display-S3
+            while let Ok((len, src)) = udp.recv_from(&mut rx_buf) {
+                if let Ok(s) = std::str::from_utf8(&rx_buf[..len]) {
+                    if let Ok(mut g) = state.lock() {
+                        if g.device_reported_ip.is_none() {
+                            g.device_reported_ip = Some(src.ip().to_string());
+                        }
+                    }
+                    handle_incoming_json_line(s, &state);
+                }
+            }
+
+            // 2. Process queued outbound actions
+            let actions: Vec<(OutboundAction, CompanionConfig, Option<String>)> = if let Ok(mut g) = state.lock() {
+                let cfg = g.config.clone();
+                let dev_ip = g.device_reported_ip.clone();
+                let mut drained = Vec::new();
+                while let Some(act) = g.outbound_queue.pop_front() {
+                    drained.push((act, cfg.clone(), dev_ip.clone()));
+                }
+                drained
+            } else {
+                Vec::new()
+            };
+
+            for (act, cfg, dev_ip) in actions {
+                let target_ip_str = dev_ip.unwrap_or_else(|| sanitize_ip_str(&cfg.target_ip));
+                let target_addr: Option<SocketAddr> =
+                    format!("{}:{}", target_ip_str, UDP_PORT)
+                        .parse()
+                        .ok();
+
+                match act {
+                    OutboundAction::PushConfig {
+                        wifi_ssid,
+                        wifi_pass,
+                        forget_wifi,
+                        force_usb,
+                    } => {
+                        let mut obj = serde_json::json!({
+                            "type": "config",
+                            "v": cfg.config_version,
+                            "theme": cfg.device_theme,
+                            "brightness": cfg.brightness,
+                            "aod": cfg.aod_enabled,
+                            "aod_timeout_s": cfg.aod_timeout_s,
+                            "reduce_motion": cfg.reduce_motion,
+                            "wallpaper": cfg.wallpaper,
+                            "use_24h": cfg.use_24h,
+                            "notify_popup": cfg.notify_popup,
+                            "orientation": cfg.orientation,
+                        });
+                        if forget_wifi {
+                            obj["forget_wifi"] = serde_json::Value::Bool(true);
+                        } else if let (Some(ssid), Some(pass)) = (wifi_ssid.as_ref(), wifi_pass.as_ref()) {
+                            if !ssid.is_empty() {
+                                obj["wifi_ssid"] = serde_json::Value::String(ssid.clone());
+                                obj["wifi_pass"] = serde_json::Value::String(pass.clone());
+                            }
+                        }
+                        if let Ok(json_str) = serde_json::to_string(&obj) {
+                            if force_usb || cfg.stream_via_usb {
+                                let ok = send_usb_line(&cfg.usb_port, &json_str, &state);
+                                if ok && wifi_ssid.is_some() {
+                                    if let Ok(port) = serialport::new(&cfg.usb_port, USB_BAUD)
+                                        .timeout(Duration::from_millis(500))
+                                        .open()
+                                    {
+                                        let mut reader = BufReader::new(port);
+                                        let wait_start = Instant::now();
+                                        while wait_start.elapsed() < Duration::from_secs(6) {
+                                            let mut line = String::new();
+                                            if let Ok(n) = reader.read_line(&mut line) {
+                                                if n > 0 {
+                                                    handle_incoming_json_line(&line, &state);
+                                                    if line.contains("Connected! IP=") {
+                                                        break;
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            if let Some(addr) = target_addr {
+                                let _ = udp.send_to(json_str.as_bytes(), addr);
+                            }
+                        }
+                    }
+                    OutboundAction::SendNotification { app, title, body } => {
+                        let ts = SystemTime::now()
+                            .duration_since(UNIX_EPOCH)
+                            .unwrap_or_default()
+                            .as_secs();
+                        let pkt = serde_json::json!({
+                            "type": "notify",
+                            "app": sanitize_for_font(&app),
+                            "title": sanitize_for_font(&title),
+                            "body": sanitize_for_font(&body),
+                            "ts": ts
+                        });
+                        if let Ok(json_str) = serde_json::to_string(&pkt) {
+                            eprintln!("[Daemon] Dispatching notification to {:?}: {}", target_addr, json_str);
+                            if let Some(addr) = target_addr {
+                                let _ = udp.send_to(json_str.as_bytes(), addr);
+                            }
+                            if cfg.stream_via_usb {
+                                let _ = send_usb_line(&cfg.usb_port, &json_str, &state);
+                            }
+                        }
+                    }
+                    OutboundAction::QueryDevice { via_usb } => {
+                        let pkt = r#"{"type":"query"}"#;
+                        if via_usb {
+                            let _ = send_usb_line(&cfg.usb_port, pkt, &state);
+                        } else if let Some(addr) = target_addr {
+                            let _ = udp.send_to(pkt.as_bytes(), addr);
+                        }
+                    }
+                    OutboundAction::RefreshWeather => {
+                        trigger_weather_update(&state);
+                    }
+                }
+            }
+
+            // 3. 1 Hz Telemetry + Media tick
+            if last_stats_tick.elapsed() >= Duration::from_secs(1) {
+                let dt = last_stats_tick.elapsed().as_secs_f64().max(0.1);
+                last_stats_tick = Instant::now();
+
+                sys.refresh_cpu_usage();
+                sys.refresh_memory();
+                networks.refresh(true);
+
+                let cpu_pct = sys.global_cpu_usage().round().clamp(0.0, 100.0) as u8;
+                let total_mem = sys.total_memory().max(1);
+                let used_mem = sys.used_memory();
+                let ram_pct = (((used_mem as f64) * 100.0) / (total_mem as f64))
+                    .round()
+                    .clamp(0.0, 100.0) as u8;
+
+                let mut rx_bytes: u64 = 0;
+                let mut tx_bytes: u64 = 0;
+                for (iface_name, data) in &networks {
+                    if iface_name == "lo" {
+                        continue;
+                    }
+                    rx_bytes += data.received();
+                    tx_bytes += data.transmitted();
+                }
+
+                let net_down_kbps = ((rx_bytes as f64 / 1024.0) / dt).round() as u32;
+                let net_up_kbps = ((tx_bytes as f64 / 1024.0) / dt).round() as u32;
+
+                let ts = SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs();
+
+                let (cur_media, cur_art_img, cur_player) = query_mpris_media(&art_cache);
+
+                let (target_ip, stream_usb, usb_port) = if let Ok(mut g) = state.lock() {
+                    g.cpu_pct = cpu_pct;
+                    g.ram_pct = ram_pct;
+                    g.used_ram_gb = (used_mem as f32) / (1024.0 * 1024.0 * 1024.0);
+                    g.total_ram_gb = (total_mem as f32) / (1024.0 * 1024.0 * 1024.0);
+                    g.net_up_kbps = net_up_kbps;
+                    g.net_down_kbps = net_down_kbps;
+                    if g.cpu_history.len() >= 30 {
+                        g.cpu_history.pop_front();
+                    }
+                    g.cpu_history.push_back(cpu_pct);
+                    g.media = cur_media.clone();
+                    g.current_art_png = cur_art_img;
+                    g.active_player = cur_player;
+                    (
+                        g.config.target_ip.clone(),
+                        g.config.stream_via_usb,
+                        g.config.usb_port.clone(),
+                    )
+                } else {
+                    (DEFAULT_DEVICE_IP.to_string(), false, String::new())
+                };
+
+                let clean_ip = sanitize_ip_str(&target_ip);
+                let target_addr: Option<SocketAddr> =
+                    format!("{}:{}", clean_ip, UDP_PORT).parse().ok();
+
+                let local_ip_str = get_local_lan_ip();
+                let stats_msg = StatsMsg {
+                    msg_type: "stats",
+                    ts,
+                    cpu: cpu_pct,
+                    ram: ram_pct,
+                    net_up_kbps,
+                    net_down_kbps,
+                    host_ip: if local_ip_str.is_empty() {
+                        None
+                    } else {
+                        Some(&local_ip_str)
+                    },
+                };
+
+                if let Ok(json_str) = serde_json::to_string(&stats_msg) {
+                    if let Some(addr) = target_addr {
+                        let _ = udp.send_to(json_str.as_bytes(), addr);
+                    }
+                    if stream_usb {
+                        let _ = send_usb_line(&usb_port, &json_str, &state);
+                    }
+                }
+
+                let changed = match &prev_media {
+                    Some(prev) => {
+                        prev.state != cur_media.state
+                            || prev.title != cur_media.title
+                            || prev.artist != cur_media.artist
+                            || prev.art != cur_media.art
+                    }
+                    None => true,
+                };
+
+                if changed || last_media_heartbeat.elapsed() >= Duration::from_secs(5) {
+                    if let Ok(json_str) = serde_json::to_string(&cur_media) {
+                        if let Some(addr) = target_addr {
+                            let _ = udp.send_to(json_str.as_bytes(), addr);
+                        }
+                        if stream_usb {
+                            let _ = send_usb_line(&usb_port, &json_str, &state);
+                        }
+                    }
+                    prev_media = Some(cur_media);
+                    last_media_heartbeat = Instant::now();
+                }
+
+                if last_weather_fetch.elapsed() >= Duration::from_secs(900) {
+                    last_weather_fetch = Instant::now();
+                    trigger_weather_update(&state);
+                }
+
+                let cur_weather = if let Ok(g) = state.lock() {
+                    g.weather.clone()
+                } else {
+                    None
+                };
+
+                if let Some(w) = cur_weather {
+                    let weather_changed = match &prev_weather {
+                        Some(prev) => prev != &w,
+                        None => true,
+                    };
+                    if weather_changed || last_weather_send.elapsed() >= Duration::from_secs(60) {
+                        if let Ok(json_str) = serde_json::to_string(&w) {
+                            if let Some(addr) = target_addr {
+                                let _ = udp.send_to(json_str.as_bytes(), addr);
+                            }
+                            if stream_usb {
+                                let _ = send_usb_line(&usb_port, &json_str, &state);
+                            }
+                        }
+                        prev_weather = Some(w);
+                        last_weather_send = Instant::now();
+                    }
+                }
+            }
+
+            thread::sleep(Duration::from_millis(50));
+        }
+    });
+}

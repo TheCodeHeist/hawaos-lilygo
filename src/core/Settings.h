@@ -60,4 +60,7 @@ void setGmtOffsetSec(int32_t offsetSec);
 bool getUse24Hour();
 void setUse24Hour(bool use24h);
 
+bool getOrientationInverted();
+void setOrientationInverted(bool inverted);
+
 } // namespace Settings

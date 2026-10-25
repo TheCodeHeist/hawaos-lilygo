@@ -116,36 +116,6 @@ void updateSingleFsm(ButtonTracker &b, uint32_t nowMs) {
   }
 }
 
-void pollSerialCommands() {
-  while (Serial.available() > 0) {
-    const int ch = Serial.read();
-    if (ch == 't' || ch == 'T') {
-      Serial.println(
-          "[Buttons] Serial 't' -> queuing 200x App switch stress test");
-      Event ev{};
-      ev.type = EventType::RunStressTest;
-      ev.stressIterations = 200;
-      EventBus::post(ev);
-    } else if (ch == 'r' || ch == 'R') {
-      Serial.println(
-          "[Buttons] Serial 'r' -> forcing WiFi disconnect/reconnect test");
-      WifiService::forceReconnect();
-    } else if (ch == 'n') {
-      emitEvent(Button::Next, Press::Short);
-    } else if (ch == 'l') {
-      emitEvent(Button::Next, Press::Long);
-    } else if (ch == 's') {
-      emitEvent(Button::Select, Press::Short);
-    } else if (ch == 'b') {
-      emitEvent(Button::Select, Press::Long);
-    } else if (ch == 'd') {
-      emitEvent(Button::Next, Press::Double);
-    } else if (ch == 'c' || ch == 'C') {
-      emitEvent(Button::Select, Press::Chord);
-    }
-  }
-}
-
 void buttonsTaskEntry(void * /*param*/) {
   for (;;) {
     const uint32_t nowMs = millis();
@@ -183,9 +153,30 @@ void buttonsTaskEntry(void * /*param*/) {
 
 } // namespace
 
+void setOrientationInverted(bool inverted) {
+  if (inverted) {
+    // Inverted 180° (USB-C on right): GPIO 14 is physically on top -> Select,
+    // GPIO 0 is physically on bottom -> Next
+    s_select.pin = Config::PIN_BUTTON_NEXT;
+    s_next.pin = Config::PIN_BUTTON_SELECT;
+  } else {
+    // Normal landscape (USB-C on left): GPIO 0 is physically on top -> Select,
+    // GPIO 14 is physically on bottom -> Next
+    s_select.pin = Config::PIN_BUTTON_SELECT;
+    s_next.pin = Config::PIN_BUTTON_NEXT;
+  }
+  s_select.state = SingleState::Idle;
+  s_next.state = SingleState::Idle;
+  s_select.debounced = false;
+  s_next.debounced = false;
+  s_chordLatch = false;
+  Serial.printf("[Buttons] Orientation %s -> Select=GPIO%u, Next=GPIO%u\n",
+                inverted ? "Inverted" : "Normal", s_select.pin, s_next.pin);
+}
+
 void begin() {
-  pinMode(s_next.pin, INPUT_PULLUP);
-  pinMode(s_select.pin, INPUT_PULLUP);
+  pinMode(Config::PIN_BUTTON_NEXT, INPUT_PULLUP);
+  pinMode(Config::PIN_BUTTON_SELECT, INPUT_PULLUP);
 
   xTaskCreatePinnedToCore(
       buttonsTaskEntry, "btn_task", Config::BTN_TASK_STACK_BYTES, nullptr,

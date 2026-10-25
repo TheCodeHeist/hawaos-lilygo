@@ -71,6 +71,15 @@ uint32_t s_aodLastSec = 0xFFFFFFFF;
 bool s_aodWasPlaying = false;
 uint32_t s_aodPausedSinceMs = 0;
 
+// --- Notification Full-Screen Alert Layer on lv_layer_top() ---
+lv_obj_t *s_alertLayer = nullptr;
+lv_obj_t *s_alertIcon = nullptr;
+lv_obj_t *s_alertHeaderLbl = nullptr;
+lv_obj_t *s_alertBodyLbl = nullptr;
+bool s_alertActive = false;
+uint32_t s_alertStartMs = 0;
+constexpr uint32_t kAlertDurationMs = 4500;
+
 void setLabelTextIfChanged(lv_obj_t *lbl, const char *newText) {
   if (lbl == nullptr || newText == nullptr)
     return;
@@ -765,7 +774,145 @@ bool activeAppWantsDouble(Button b) {
   return false;
 }
 
+void createAlertLayerIfNeeded() {
+  if (s_alertLayer != nullptr)
+    return;
+
+  lv_obj_t *sys = lv_layer_sys();
+  s_alertLayer = lv_obj_create(sys);
+  lv_obj_set_size(s_alertLayer, Config::LCD_HOR_RES, Config::LCD_VER_RES);
+  lv_obj_set_pos(s_alertLayer, 0, 0);
+  lv_obj_set_style_bg_color(s_alertLayer, lv_color_hex(0x000000), LV_PART_MAIN);
+  lv_obj_set_style_bg_opa(s_alertLayer, LV_OPA_COVER, LV_PART_MAIN);
+  lv_obj_set_style_border_width(s_alertLayer, 0, LV_PART_MAIN);
+  lv_obj_set_style_radius(s_alertLayer, 0, LV_PART_MAIN);
+  lv_obj_set_style_pad_all(s_alertLayer, 0, LV_PART_MAIN);
+  lv_obj_clear_flag(s_alertLayer, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_add_flag(s_alertLayer, LV_OBJ_FLAG_HIDDEN);
+
+  // Big app/notification icon (48px Lucide)
+  s_alertIcon = lv_label_create(s_alertLayer);
+  lv_label_set_text(s_alertIcon, ICON_BELL);
+  lv_obj_set_style_text_font(s_alertIcon, Theme::iconFont48(), LV_PART_MAIN);
+  lv_obj_set_style_text_color(s_alertIcon, lv_color_hex(Theme::dark().accent),
+                              LV_PART_MAIN);
+  lv_obj_align(s_alertIcon, LV_ALIGN_TOP_MID, 0, 18);
+
+  // Message below: "New Notification (count)" (18px SemiBold)
+  s_alertHeaderLbl = lv_label_create(s_alertLayer);
+  lv_obj_set_style_text_font(s_alertHeaderLbl, Theme::fontTitle(),
+                             LV_PART_MAIN);
+  lv_obj_set_style_text_color(s_alertHeaderLbl, lv_color_hex(0xFFFFFF),
+                              LV_PART_MAIN);
+  lv_obj_align(s_alertHeaderLbl, LV_ALIGN_TOP_MID, 0, 78);
+
+  // Title / Body snippet below that (14px regular)
+  s_alertBodyLbl = lv_label_create(s_alertLayer);
+  lv_obj_set_style_text_font(s_alertBodyLbl, Theme::fontBody(), LV_PART_MAIN);
+  lv_obj_set_style_text_color(s_alertBodyLbl, lv_color_hex(0xA0B4BA),
+                              LV_PART_MAIN);
+  lv_label_set_long_mode(s_alertBodyLbl, LV_LABEL_LONG_SCROLL_CIRCULAR);
+  lv_obj_set_style_anim_speed(s_alertBodyLbl, 28, LV_PART_MAIN);
+  lv_obj_set_width(s_alertBodyLbl, 280);
+  lv_obj_set_style_text_align(s_alertBodyLbl, LV_TEXT_ALIGN_CENTER,
+                              LV_PART_MAIN);
+  lv_obj_align(s_alertBodyLbl, LV_ALIGN_TOP_MID, 0, 112);
+}
+
+void showNotificationAlert(const char *app, const char *title, const char *body, uint8_t count) {
+  createAlertLayerIfNeeded();
+  if (s_alertLayer == nullptr) {
+    Serial.println("[AppManager] ERROR: s_alertLayer is NULL!");
+    return;
+  }
+
+  const char *appName = (app != nullptr && app[0] != '\0')
+                            ? app
+                            : ((title != nullptr && title[0] != '\0') ? title : "Notification");
+
+  Serial.printf("[AppManager] showNotificationAlert START: app='%s', title='%s', body='%s', count=%u\n",
+                appName, title ? title : "", body ? body : "", count);
+
+  const ThemeTokens::Palette &p = Theme::dark();
+  const char *iconGlyph = ICON_BELL;
+  if ((app != nullptr && (strstr(app, "Spotify") != nullptr || strstr(app, "Music") != nullptr)) ||
+      (title != nullptr && (strstr(title, "Spotify") != nullptr || strstr(title, "Music") != nullptr))) {
+    iconGlyph = ICON_MUSIC;
+  }
+  lv_label_set_text(s_alertIcon, iconGlyph);
+  lv_obj_set_style_text_color(s_alertIcon, lv_color_hex(p.accent), LV_PART_MAIN);
+
+  // Format: (`count`) New Notification "`app_name`"
+  char headerBuf[64];
+  snprintf(headerBuf, sizeof(headerBuf), "(%u) New Notification \"%s\"",
+           (count > 0 ? count : 1), appName);
+  lv_label_set_text(s_alertHeaderLbl, headerBuf);
+  lv_obj_align(s_alertHeaderLbl, LV_ALIGN_TOP_MID, 0, 78);
+
+  char bodyBuf[160] = {0};
+  if (title != nullptr && title[0] != '\0' && strcmp(title, appName) != 0) {
+    if (body != nullptr && body[0] != '\0') {
+      snprintf(bodyBuf, sizeof(bodyBuf), "%s: %s", title, body);
+    } else {
+      snprintf(bodyBuf, sizeof(bodyBuf), "%s", title);
+    }
+  } else if (body != nullptr && body[0] != '\0') {
+    snprintf(bodyBuf, sizeof(bodyBuf), "%s", body);
+  } else {
+    snprintf(bodyBuf, sizeof(bodyBuf), "New desktop alert received");
+  }
+  lv_label_set_text(s_alertBodyLbl, bodyBuf);
+  lv_obj_align(s_alertBodyLbl, LV_ALIGN_TOP_MID, 0, 112);
+
+  s_alertActive = true;
+  s_alertStartMs = millis();
+
+  if (s_viewState == ViewState::Aod) {
+    Display::setBrightness(Config::AOD_BRIGHTNESS_STEP);
+  }
+
+  lv_obj_clear_flag(s_alertLayer, LV_OBJ_FLAG_HIDDEN);
+  lv_obj_move_foreground(s_alertLayer);
+  lv_obj_invalidate(s_alertLayer);
+}
+
+void dismissNotificationAlert() {
+  if (!s_alertActive)
+    return;
+  s_alertActive = false;
+
+  if (s_alertLayer != nullptr) {
+    lv_obj_add_flag(s_alertLayer, LV_OBJ_FLAG_HIDDEN);
+  }
+
+  // Resume rendering:
+  if (s_viewState == ViewState::Aod) {
+    s_aodLastSec = 0xFFFFFFFF;
+    if (s_aodScreen != nullptr) {
+      refreshAodContent();
+      lv_obj_invalidate(s_aodScreen);
+    }
+  } else if (s_viewState == ViewState::Launcher) {
+    refreshLauncherCarousel();
+  } else if (s_viewState == ViewState::InApp && s_activeAppIdx >= 0 &&
+             static_cast<size_t>(s_activeAppIdx) < s_appCount) {
+    // Normal app ticks resume
+  }
+}
+
+bool isAlertActive() {
+  return s_alertActive;
+}
+
 void tick(uint32_t nowMs) {
+  // If notification alert is currently active, stop ALL normal rendering
+  // until alert duration expires!
+  if (s_alertActive) {
+    if (nowMs - s_alertStartMs >= kAlertDurationMs) {
+      dismissNotificationAlert();
+    }
+    return; // STOP ALL RENDERING DURING ALERT!
+  }
   if (s_lastInputMs == 0 || nowMs < s_lastInputMs) {
     s_lastInputMs = nowMs;
   }
@@ -802,6 +949,12 @@ void tick(uint32_t nowMs) {
 
 void handleButton(Button b, Press p) {
   s_lastInputMs = millis();
+
+  // If notification alert is currently active, any button press dismisses it immediately
+  if (s_alertActive) {
+    dismissNotificationAlert();
+    return;
+  }
 
   // 1. Any press in AOD wakes and is consumed (DESIGN.md Section 8)
   if (s_viewState == ViewState::Aod) {
@@ -892,6 +1045,10 @@ void handleButton(Button b, Press p) {
 }
 
 void handleData(const DataSnapshot &d) {
+  // If notification alert is currently active, do not re-render background views
+  if (s_alertActive) {
+    return;
+  }
   if (s_viewState == ViewState::InApp && s_activeAppIdx >= 0 &&
       static_cast<size_t>(s_activeAppIdx) < s_appCount) {
     s_apps[s_activeAppIdx]->onData(d);

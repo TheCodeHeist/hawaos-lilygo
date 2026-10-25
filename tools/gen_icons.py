@@ -61,6 +61,16 @@ ICON_NAMES = [
     "x",
     "check",
     "circle-alert",
+    "cloud",
+    "cloud-sun",
+    "cloud-moon",
+    "cloud-rain",
+    "cloud-snow",
+    "cloud-lightning",
+    "cloud-fog",
+    "wind",
+    "droplets",
+    "thermometer",
 ]
 
 ICON_SIZES = [20, 24, 32, 48]

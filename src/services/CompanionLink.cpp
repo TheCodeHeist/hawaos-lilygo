@@ -136,11 +136,14 @@ void handleJsonMessage(const char *payload, size_t len, bool viaUsb) {
     if (doc["notify"].is<JsonArrayConst>()) {
       JsonArrayConst arr = doc["notify"].as<JsonArrayConst>();
       for (JsonObjectConst item : arr) {
+        const char *app = item["app"] | "";
         const char *title = item["title"] | "";
         const char *body = item["body"] | "";
         const uint32_t nts = item["ts"] | ts;
-        if (title[0] != '\0') {
-          DataStore::pushNotification(title, body, nts);
+        if (title[0] != '\0' || app[0] != '\0') {
+          const char *a = (app[0] != '\0') ? app : ((title[0] != '\0') ? title : "Notification");
+          const char *t = (title[0] != '\0') ? title : a;
+          DataStore::pushNotification(a, t, body, nts);
           pushedNotify = true;
         }
       }
@@ -206,14 +209,58 @@ void handleJsonMessage(const char *payload, size_t len, bool viaUsb) {
     return;
   }
 
+  if (strcmp(type, "weather") == 0) {
+    WeatherSnapshot ws{};
+    const char *cityStr = doc["city"] | "";
+    strncpy(ws.city, cityStr, sizeof(ws.city) - 1);
+    ws.temp = doc["temp"] | 0;
+    ws.feelsLike = doc["feels_like"] | ws.temp;
+    ws.tempMin = doc["temp_min"] | ws.temp;
+    ws.tempMax = doc["temp_max"] | ws.temp;
+    ws.humidity = doc["humidity"] | 0;
+    ws.windSpeed = doc["wind_speed"] | 0;
+    const char *unitStr = doc["unit"] | "c";
+    strncpy(ws.unit, (unitStr[0] == 'f' || unitStr[0] == 'F') ? "F" : "C",
+            sizeof(ws.unit) - 1);
+    const char *condStr = doc["condition"] | "Clear";
+    strncpy(ws.condition, condStr, sizeof(ws.condition) - 1);
+    const char *iconStr = doc["icon"] | "cloud-sun";
+    strncpy(ws.icon, iconStr, sizeof(ws.icon) - 1);
+
+    if (doc["forecast"].is<JsonArrayConst>()) {
+      JsonArrayConst arr = doc["forecast"].as<JsonArrayConst>();
+      uint8_t idx = 0;
+      for (JsonObjectConst item : arr) {
+        if (idx >= WeatherSnapshot::FORECAST_DAYS)
+          break;
+        const char *day = item["day"] | "";
+        const char *fcIcon = item["icon"] | "cloud-sun";
+        strncpy(ws.forecast[idx].day, day, sizeof(ws.forecast[idx].day) - 1);
+        strncpy(ws.forecast[idx].icon, fcIcon, sizeof(ws.forecast[idx].icon) - 1);
+        ws.forecast[idx].tempMin = item["min"] | 0;
+        ws.forecast[idx].tempMax = item["max"] | 0;
+        ++idx;
+      }
+    }
+
+    Serial.printf("[CompanionLink] Weather RX: %s %d°%s (%s)\n", ws.city,
+                  ws.temp, ws.unit, ws.condition);
+    DataStore::updateWeather(ws);
+    postDataUpdated();
+    return;
+  }
+
   if (strcmp(type, "notify") == 0) {
+    const char *app = doc["app"] | "";
     const char *title = doc["title"] | "";
     const char *body = doc["body"] | "";
     const uint32_t ts = doc["ts"] | static_cast<uint32_t>(millis() / 1000);
-    if (title[0] != '\0') {
-      DataStore::pushNotification(title, body, ts);
-      postNotificationArrived();
-    }
+    const char *a = (app[0] != '\0') ? app : ((title[0] != '\0') ? title : "Notification");
+    const char *t = (title[0] != '\0') ? title : a;
+    Serial.printf("[CompanionLink] Notify RX via %s: app='%s', title='%s', body='%s', ts=%lu\n",
+                  viaUsb ? "USB" : "UDP", a, t, body, static_cast<unsigned long>(ts));
+    DataStore::pushNotification(a, t, body, ts);
+    postNotificationArrived();
     return;
   }
 
@@ -254,6 +301,12 @@ void handleJsonMessage(const char *payload, size_t len, bool viaUsb) {
     }
     if (doc["notify_popup"].is<bool>()) {
       Settings::setNotifyPopupEnabled(doc["notify_popup"].as<bool>());
+    }
+    if (doc["orientation"].is<const char *>()) {
+      const char *orient = doc["orientation"];
+      Settings::setOrientationInverted(strcmp(orient, "inverted") == 0);
+    } else if (doc["orientation_inverted"].is<bool>()) {
+      Settings::setOrientationInverted(doc["orientation_inverted"].as<bool>());
     }
     if (doc["forget_wifi"].is<bool>() && doc["forget_wifi"].as<bool>()) {
       WifiService::forgetWifi();
@@ -408,12 +461,15 @@ void flushPendingOutbound() {
     char ssidBuf[33] = {0};
     Settings::getWifiSsid(ssidBuf, sizeof(ssidBuf));
 
-    char buf[340];
+    const char *orientStr =
+        Settings::getOrientationInverted() ? "inverted" : "normal";
+
+    char buf[384];
     snprintf(buf, sizeof(buf),
              "{\"type\":\"config_ack\",\"v\":%lu,\"ip\":\"%s\",\"wifi\":%s,"
              "\"ssid\":\"%s\",\"theme\":\"%s\",\"brightness\":%u,\"aod\":%s,"
              "\"aod_timeout_s\":%u,\"reduce_motion\":%s,\"wallpaper\":\"%s\","
-             "\"use_24h\":%s,\"notify_popup\":%s}",
+             "\"use_24h\":%s,\"notify_popup\":%s,\"orientation\":\"%s\"}",
              static_cast<unsigned long>(ackVer), ipStr.c_str(),
              WifiService::isConnected() ? "true" : "false", ssidBuf, themeStr,
              static_cast<unsigned>(Settings::getBrightnessPct()),
@@ -421,7 +477,8 @@ void flushPendingOutbound() {
              static_cast<unsigned>(Settings::getAodTimeoutSec()),
              Settings::getReduceMotion() ? "true" : "false", wpStr,
              Settings::getUse24Hour() ? "true" : "false",
-             Settings::getNotifyPopupEnabled() ? "true" : "false");
+             Settings::getNotifyPopupEnabled() ? "true" : "false",
+             orientStr);
     sendJsonPacket(buf);
   }
 }

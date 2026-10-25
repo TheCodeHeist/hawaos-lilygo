@@ -21,4 +21,7 @@ void rampBrightness(uint8_t targetStep, uint32_t durationMs);
 // Return current brightness level (0..16).
 uint8_t getBrightness();
 
+// Set panel orientation (3 = normal landscape, 1 = inverted 180° landscape).
+void setRotation(uint8_t rotation);
+
 } // namespace Display

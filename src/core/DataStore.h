@@ -9,10 +9,36 @@ enum class MediaPlayState : uint8_t {
 };
 
 struct NotificationItem {
+  char app[32] = {0};
   char title[48] = {0};
   char body[96] = {0};
   uint32_t ts = 0;
   bool unread = false;
+};
+
+struct WeatherForecastDay {
+  char day[8] = {0};
+  char icon[24] = {0};
+  int16_t tempMin = 0;
+  int16_t tempMax = 0;
+};
+
+struct WeatherSnapshot {
+  bool valid = false;
+  uint32_t lastUpdateTs = 0;
+  char city[32] = {0};
+  int16_t temp = 0;
+  int16_t feelsLike = 0;
+  int16_t tempMin = 0;
+  int16_t tempMax = 0;
+  uint8_t humidity = 0;
+  uint16_t windSpeed = 0;
+  char unit[4] = "C";
+  char condition[32] = {0};
+  char icon[24] = {0};
+
+  static constexpr uint8_t FORECAST_DAYS = 3;
+  WeatherForecastDay forecast[FORECAST_DAYS] = {};
 };
 
 struct DataSnapshot {
@@ -49,6 +75,9 @@ struct DataSnapshot {
   uint32_t mediaBgBottom = 0x05090B; // Pre-darkened companion tint bottom
   bool mediaInkLight = true;         // true = light ink, false = dark ink
 
+  // Weather state from companion
+  WeatherSnapshot weather{};
+
   // Connectivity & time state
   bool wifiConnected = false;
   int8_t wifiRssi = 0;
@@ -78,9 +107,14 @@ void updateMedia(MediaPlayState state, const char *title, const char *artist,
 void setAlbumArtReady(const char *artHash, bool ready);
 uint16_t *albumArtBuffer(); // 128x128 RGB565 buffer in PSRAM
 
+void updateWeather(const WeatherSnapshot &ws);
+
 void updateWifi(bool connected, int8_t rssi, const char *ssid, const char *ip);
 void updateNtp(bool synced);
-void pushNotification(const char *title, const char *body, uint32_t ts);
+void pushNotification(const char *app, const char *title, const char *body, uint32_t ts);
+inline void pushNotification(const char *title, const char *body, uint32_t ts) {
+  pushNotification("", title, body, ts);
+}
 void dismissNotification(uint8_t index);
 void clearAllNotifications();
 void markAllNotificationsRead();

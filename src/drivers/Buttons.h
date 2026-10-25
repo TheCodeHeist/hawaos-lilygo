@@ -6,4 +6,8 @@ namespace Buttons {
 // task.
 void begin();
 
+// Dynamically swap physical GPIO button pins so physical Top is always Select
+// and physical Bottom is always Next regardless of 180° orientation.
+void setOrientationInverted(bool inverted);
+
 } // namespace Buttons

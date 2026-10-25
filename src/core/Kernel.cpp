@@ -4,6 +4,7 @@
 #include "apps/NotifyApp.h"
 #include "apps/SettingsApp.h"
 #include "apps/StatsApp.h"
+#include "apps/WeatherApp.h"
 #include "config.h"
 #include "core/App.h"
 #include "core/AppManager.h"
@@ -31,6 +32,7 @@ TaskHandle_t s_uiTaskHandle = nullptr;
 // DESIGN.md Section 9.2 Launcher order:
 // 0: Home, 1: Media, 2: Stats, 3: Notifications, 4: Settings
 ClockApp s_homeApp;
+WeatherApp s_weatherApp;
 MediaApp s_mediaApp;
 StatsApp s_statsApp;
 NotifyApp s_notifyApp;
@@ -41,6 +43,10 @@ void drainEvents() {
   while (EventBus::poll(ev)) {
     switch (ev.type) {
     case EventType::ButtonPressed:
+      if (AppManager::isAlertActive()) {
+        AppManager::dismissNotificationAlert();
+        break;
+      }
       if (StatusBar::isPopupVisible() && ev.btn.press == Press::Short) {
         StatusBar::dismissNotificationPopup();
         break;
@@ -49,21 +55,27 @@ void drainEvents() {
       break;
     case EventType::DataUpdated: {
       const DataSnapshot snap = DataStore::getSnapshot();
-      StatusBar::updateData(snap);
+      if (!AppManager::isAlertActive()) {
+        StatusBar::updateData(snap);
+      }
       AppManager::handleData(snap);
       break;
     }
     case EventType::NotificationArrived: {
       const DataSnapshot snap = DataStore::getSnapshot();
+      Serial.printf("[Kernel] NotificationArrived! notifyCount=%u, unread=%u, popupEnabled=%d\n",
+                    snap.notifyCount, snap.unreadCount, Settings::getNotifyPopupEnabled());
       StatusBar::updateData(snap);
       AppManager::handleData(snap);
       if (Settings::getNotifyPopupEnabled() && snap.notifyCount > 0) {
-        if (AppManager::isInAod()) {
-          AppManager::exitAod();
-        }
-        AppManager::resetActivity();
-        StatusBar::showNotificationPopup(snap.notifications[0].title,
-                                         snap.notifications[0].body);
+        Serial.printf("[Kernel] Triggering showNotificationAlert: app='%s', title='%s' | '%s' (inAod=%d)\n",
+                      snap.notifications[0].app, snap.notifications[0].title, snap.notifications[0].body, AppManager::isInAod());
+        AppManager::showNotificationAlert(
+            snap.notifications[0].app, snap.notifications[0].title, snap.notifications[0].body,
+            snap.unreadCount > 0 ? snap.unreadCount : snap.notifyCount);
+      } else {
+        Serial.printf("[Kernel] Suppressed alert! popupEnabled=%d, count=%u\n",
+                      Settings::getNotifyPopupEnabled(), snap.notifyCount);
       }
       break;
     }
@@ -104,7 +116,9 @@ void uiTaskEntry(void * /*param*/) {
 
     if (bootSplashDone) {
       drainEvents();
-      StatusBar::tick(nowMs);
+      if (!AppManager::isAlertActive()) {
+        StatusBar::tick(nowMs);
+      }
 
       if (nowMs - lastAppTickMs >= Config::APP_TICK_PERIOD_MS) {
         AppManager::tick(nowMs);
@@ -119,10 +133,14 @@ void uiTaskEntry(void * /*param*/) {
       lastHeapLogMs = nowMs;
     }
 
-    // DESIGN.md Section 10: 5 Hz UI timer in AOD mode, 200 Hz when active
-    const uint32_t tickDelayMs = AppManager::isInAod()
-                                     ? Config::UI_TICK_AOD_MS
-                                     : Config::UI_TICK_ACTIVE_MS;
+    // DESIGN.md Section 10: 5 Hz UI timer in AOD mode, 200 Hz when active.
+    // When notification alert is active, run at 50 Hz (20ms) for smooth
+    // animation:
+    const uint32_t tickDelayMs =
+        AppManager::isAlertActive()
+            ? 20
+            : (AppManager::isInAod() ? Config::UI_TICK_AOD_MS
+                                     : Config::UI_TICK_ACTIVE_MS);
     vTaskDelay(pdMS_TO_TICKS(tickDelayMs));
   }
 }
@@ -176,6 +194,7 @@ void begin() {
 
   AppManager::begin();
   AppManager::registerApp(&s_homeApp);
+  AppManager::registerApp(&s_weatherApp);
   AppManager::registerApp(&s_mediaApp);
   AppManager::registerApp(&s_statsApp);
   AppManager::registerApp(&s_notifyApp);

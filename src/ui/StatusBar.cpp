@@ -243,6 +243,7 @@ void showNotificationPopup(const char *title, const char *body) {
   const uint32_t dur = Theme::animDuration(180);
   if (dur == 0) {
     lv_obj_set_y(s_popupCard, kPopupVisibleY);
+    lv_obj_invalidate(s_popupCard);
     return;
   }
 
@@ -253,7 +254,9 @@ void showNotificationPopup(const char *title, const char *body) {
   lv_anim_set_time(&a, dur);
   lv_anim_set_path_cb(&a, lv_anim_path_ease_out);
   lv_anim_set_exec_cb(&a, popupAnimYCb);
+  lv_anim_set_early_apply(&a, true);
   lv_anim_start(&a);
+  lv_obj_invalidate(s_popupCard);
 }
 
 void dismissNotificationPopup() {
@@ -267,6 +270,7 @@ void dismissNotificationPopup() {
   if (dur == 0) {
     lv_obj_set_y(s_popupCard, kPopupHiddenY);
     lv_obj_add_flag(s_popupCard, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_invalidate(s_popupCard);
     return;
   }
 
@@ -278,7 +282,9 @@ void dismissNotificationPopup() {
   lv_anim_set_path_cb(&a, lv_anim_path_ease_in);
   lv_anim_set_exec_cb(&a, popupAnimYCb);
   lv_anim_set_ready_cb(&a, popupHideReadyCb);
+  lv_anim_set_early_apply(&a, true);
   lv_anim_start(&a);
+  lv_obj_invalidate(s_popupCard);
 }
 
 bool isPopupVisible() { return s_popupVisible; }

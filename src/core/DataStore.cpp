@@ -129,6 +129,16 @@ void setAlbumArtReady(const char *artHash, bool ready) {
 
 uint16_t *albumArtBuffer() { return s_albumArtBuf; }
 
+void updateWeather(const WeatherSnapshot &ws) {
+  if (s_mutex != nullptr &&
+      xSemaphoreTake(s_mutex, pdMS_TO_TICKS(20)) == pdTRUE) {
+    s_data.weather = ws;
+    s_data.weather.valid = true;
+    s_data.weather.lastUpdateTs = millis();
+    xSemaphoreGive(s_mutex);
+  }
+}
+
 void updateWifi(bool connected, int8_t rssi, const char *ssid, const char *ip) {
   if (s_mutex != nullptr &&
       xSemaphoreTake(s_mutex, pdMS_TO_TICKS(20)) == pdTRUE) {
@@ -158,8 +168,9 @@ void updateNtp(bool synced) {
   }
 }
 
-void pushNotification(const char *title, const char *body, uint32_t ts) {
-  if (title == nullptr || body == nullptr) {
+void pushNotification(const char *app, const char *title, const char *body, uint32_t ts) {
+  if ((app == nullptr || app[0] == '\0') && (title == nullptr || title[0] == '\0') &&
+      (body == nullptr || body[0] == '\0')) {
     return;
   }
   if (s_mutex != nullptr &&
@@ -171,7 +182,12 @@ void pushNotification(const char *title, const char *body, uint32_t ts) {
       s_data.notifications[i] = s_data.notifications[i - 1];
     }
     NotificationItem &item = s_data.notifications[0];
-    strncpy(item.title, title, sizeof(item.title) - 1);
+    const char *safeApp = (app != nullptr && app[0] != '\0')
+                              ? app
+                              : ((title != nullptr && title[0] != '\0') ? title : "Notification");
+    strncpy(item.app, safeApp, sizeof(item.app) - 1);
+    item.app[sizeof(item.app) - 1] = '\0';
+    strncpy(item.title, title ? title : "", sizeof(item.title) - 1);
     item.title[sizeof(item.title) - 1] = '\0';
     strncpy(item.body, body, sizeof(item.body) - 1);
     item.body[sizeof(item.body) - 1] = '\0';
