@@ -1,7 +1,9 @@
 #include "apps/ClockApp.h"
 #include "config.h"
 #include "core/AppManager.h"
+#include "core/DataStore.h"
 #include "core/Settings.h"
+#include "services/CompanionLink.h"
 #include "ui/Theme.h"
 #include "ui/icons.h"
 
@@ -25,128 +27,228 @@ void setLabelTextIfChanged(lv_obj_t *lbl, const char *newText) {
 
 void ClockApp::onEnter(lv_obj_t *root) {
   const ThemeTokens::Palette &p = Theme::active();
+  m_focusedSlot = 0;
 
-  // --- Left Column: Hero Time (48 SemiBold) + AM/PM + Date (Body 14, textDim)
-  // ---
-  m_timeLbl = lv_label_create(root);
+  // --- Left Card: Digital Clock & Calendar (144x136) ---
+  m_clockCard =
+      Theme::createCard(root, 142, 136, Config::OUTER_MARGIN_PX,
+                        Config::CONTENT_Y_START + 6, Config::RADIUS_MD);
+  lv_obj_set_style_pad_all(m_clockCard, 10, LV_PART_MAIN);
+
+  m_clockTagLbl = lv_label_create(m_clockCard);
+  lv_label_set_text(m_clockTagLbl, "TIME & DATE");
+  lv_obj_set_style_text_font(m_clockTagLbl, Theme::fontCaption(), LV_PART_MAIN);
+  lv_obj_set_style_text_color(m_clockTagLbl, lv_color_hex(p.textDim),
+                              LV_PART_MAIN);
+  lv_obj_align(m_clockTagLbl, LV_ALIGN_TOP_LEFT, 0, 0);
+
+  m_timeLbl = lv_label_create(m_clockCard);
   lv_label_set_text(m_timeLbl, "--:--");
-  lv_obj_set_style_text_font(m_timeLbl, Theme::fontHero(), LV_PART_MAIN);
+  lv_obj_set_style_text_font(m_timeLbl, Theme::fontDisplay(), LV_PART_MAIN);
   lv_obj_set_style_text_color(m_timeLbl, lv_color_hex(p.text), LV_PART_MAIN);
-  lv_obj_set_pos(m_timeLbl, Config::OUTER_MARGIN_PX,
-                 Config::CONTENT_Y_START + 12);
+  lv_obj_align(m_timeLbl, LV_ALIGN_TOP_LEFT, 0, 20);
 
-  m_ampmLbl = lv_label_create(root);
+  m_ampmLbl = lv_label_create(m_clockCard);
   lv_label_set_text(m_ampmLbl, "");
-  lv_obj_set_style_text_font(m_ampmLbl, Theme::fontBodySb(), LV_PART_MAIN);
+  lv_obj_set_style_text_font(m_ampmLbl, Theme::fontCaption(), LV_PART_MAIN);
   lv_obj_set_style_text_color(m_ampmLbl, lv_color_hex(p.accent), LV_PART_MAIN);
-  lv_obj_align_to(m_ampmLbl, m_timeLbl, LV_ALIGN_OUT_RIGHT_BOTTOM, 6, -8);
+  lv_obj_align(m_ampmLbl, LV_ALIGN_TOP_LEFT, 0, 52);
 
-  m_dateLbl = lv_label_create(root);
+  m_dateLbl = lv_label_create(m_clockCard);
   lv_label_set_text(m_dateLbl, "Syncing time...");
   lv_obj_set_style_text_font(m_dateLbl, Theme::fontBody(), LV_PART_MAIN);
-  lv_obj_set_style_text_color(m_dateLbl, lv_color_hex(p.textDim), LV_PART_MAIN);
-  lv_obj_set_pos(m_dateLbl, Config::OUTER_MARGIN_PX + 2,
-                 Config::CONTENT_Y_START + 68);
+  lv_obj_set_style_text_color(m_dateLbl, lv_color_hex(p.text), LV_PART_MAIN);
+  lv_obj_align(m_dateLbl, LV_ALIGN_TOP_LEFT, 0, 72);
 
-  // --- Right Column: Two small solid chips with CPU % and RAM % (radius 8) ---
-  m_cpuChip = Theme::createCard(
-      root, 108, 36, 202, Config::CONTENT_Y_START + 10, Config::RADIUS_SM);
-  lv_obj_set_style_pad_hor(m_cpuChip, 10, LV_PART_MAIN);
-  lv_obj_set_style_pad_ver(m_cpuChip, 6, LV_PART_MAIN);
+  m_syncLbl = lv_label_create(m_clockCard);
+  lv_label_set_text(m_syncLbl, "UTC+6");
+  lv_obj_set_style_text_font(m_syncLbl, Theme::fontCaption(), LV_PART_MAIN);
+  lv_obj_set_style_text_color(m_syncLbl, lv_color_hex(p.textDim), LV_PART_MAIN);
+  lv_obj_align(m_syncLbl, LV_ALIGN_BOTTOM_LEFT, 0, 0);
 
-  lv_obj_t *cpuIcon = lv_label_create(m_cpuChip);
-  lv_label_set_text(cpuIcon, ICON_CPU);
-  lv_obj_set_style_text_font(cpuIcon, Theme::iconFont20(), LV_PART_MAIN);
-  lv_obj_set_style_text_color(cpuIcon, lv_color_hex(p.accent), LV_PART_MAIN);
-  lv_obj_align(cpuIcon, LV_ALIGN_LEFT_MID, 0, 0);
+  // --- Right Column Card 1: STOPWATCH (154x65) ---
+  m_swCard = Theme::createCard(root, 154, 65, 156, Config::CONTENT_Y_START + 6,
+                               Config::RADIUS_MD);
+  lv_obj_set_style_pad_all(m_swCard, 8, LV_PART_MAIN);
 
-  m_cpuValLbl = lv_label_create(m_cpuChip);
-  lv_label_set_text(m_cpuValLbl, "CPU --%");
-  lv_obj_set_style_text_font(m_cpuValLbl, Theme::fontBodySb(), LV_PART_MAIN);
-  lv_obj_set_style_text_color(m_cpuValLbl, lv_color_hex(p.text), LV_PART_MAIN);
-  lv_obj_align(m_cpuValLbl, LV_ALIGN_RIGHT_MID, 0, 0);
+  m_swIcon = lv_label_create(m_swCard);
+  lv_label_set_text(m_swIcon, ICON_CLOCK);
+  lv_obj_set_style_text_font(m_swIcon, Theme::iconFont20(), LV_PART_MAIN);
+  lv_obj_set_style_text_color(m_swIcon, lv_color_hex(p.accent), LV_PART_MAIN);
+  lv_obj_align(m_swIcon, LV_ALIGN_TOP_LEFT, 0, 0);
 
-  m_ramChip = Theme::createCard(
-      root, 108, 36, 202, Config::CONTENT_Y_START + 54, Config::RADIUS_SM);
-  lv_obj_set_style_pad_hor(m_ramChip, 10, LV_PART_MAIN);
-  lv_obj_set_style_pad_ver(m_ramChip, 6, LV_PART_MAIN);
-
-  lv_obj_t *ramIcon = lv_label_create(m_ramChip);
-  lv_label_set_text(ramIcon, ICON_MEMORY_STICK);
-  lv_obj_set_style_text_font(ramIcon, Theme::iconFont20(), LV_PART_MAIN);
-  lv_obj_set_style_text_color(ramIcon, lv_color_hex(p.accent), LV_PART_MAIN);
-  lv_obj_align(ramIcon, LV_ALIGN_LEFT_MID, 0, 0);
-
-  m_ramValLbl = lv_label_create(m_ramChip);
-  lv_label_set_text(m_ramValLbl, "RAM --%");
-  lv_obj_set_style_text_font(m_ramValLbl, Theme::fontBodySb(), LV_PART_MAIN);
-  lv_obj_set_style_text_color(m_ramValLbl, lv_color_hex(p.text), LV_PART_MAIN);
-  lv_obj_align(m_ramValLbl, LV_ALIGN_RIGHT_MID, 0, 0);
-
-  // --- Bottom Now-Playing / Status Chip (radius 8, width 300, height 34) ---
-  m_mediaChip =
-      Theme::createCard(root, 300, 34, Config::OUTER_MARGIN_PX,
-                        Config::CONTENT_Y_START + 104, Config::RADIUS_SM);
-  lv_obj_set_style_pad_hor(m_mediaChip, 10, LV_PART_MAIN);
-  lv_obj_set_style_pad_ver(m_mediaChip, 4, LV_PART_MAIN);
-
-  lv_obj_t *musicIcon = lv_label_create(m_mediaChip);
-  lv_label_set_text(musicIcon, ICON_MUSIC);
-  lv_obj_set_style_text_font(musicIcon, Theme::iconFont20(), LV_PART_MAIN);
-  lv_obj_set_style_text_color(musicIcon, lv_color_hex(p.accent), LV_PART_MAIN);
-  lv_obj_align(musicIcon, LV_ALIGN_LEFT_MID, 0, 0);
-
-  m_mediaTextLbl = lv_label_create(m_mediaChip);
-  lv_label_set_long_mode(m_mediaTextLbl, LV_LABEL_LONG_SCROLL_CIRCULAR);
-  lv_obj_set_style_anim_speed(m_mediaTextLbl, 26, LV_PART_MAIN);
-  lv_obj_set_width(m_mediaTextLbl, 252);
-  lv_obj_set_style_text_font(m_mediaTextLbl, Theme::fontBody(), LV_PART_MAIN);
-  lv_obj_set_style_text_color(m_mediaTextLbl, lv_color_hex(p.textDim),
+  m_swTagLbl = lv_label_create(m_swCard);
+  lv_label_set_text(m_swTagLbl, "STOPWATCH");
+  lv_obj_set_style_text_font(m_swTagLbl, Theme::fontCaption(), LV_PART_MAIN);
+  lv_obj_set_style_text_color(m_swTagLbl, lv_color_hex(p.textDim),
                               LV_PART_MAIN);
-  lv_obj_align(m_mediaTextLbl, LV_ALIGN_LEFT_MID, 28, 0);
+  lv_obj_align(m_swTagLbl, LV_ALIGN_TOP_LEFT, 26, 2);
+
+  m_swDigitsLbl = lv_label_create(m_swCard);
+  lv_label_set_text(m_swDigitsLbl, "00:00:00");
+  lv_obj_set_style_text_font(m_swDigitsLbl, Theme::fontBodySb(), LV_PART_MAIN);
+  lv_obj_set_style_text_color(m_swDigitsLbl, lv_color_hex(p.text),
+                              LV_PART_MAIN);
+  lv_obj_align(m_swDigitsLbl, LV_ALIGN_TOP_LEFT, 0, 24);
+
+  m_swMsLbl = lv_label_create(m_swCard);
+  lv_label_set_text(m_swMsLbl, ".000");
+  lv_obj_set_style_text_font(m_swMsLbl, Theme::fontCaption(), LV_PART_MAIN);
+  lv_obj_set_style_text_color(m_swMsLbl, lv_color_hex(p.textDim),
+                              LV_PART_MAIN);
+  lv_obj_align_to(m_swMsLbl, m_swDigitsLbl, LV_ALIGN_OUT_RIGHT_BOTTOM, 2, -1);
+
+  m_swHintLbl = lv_label_create(m_swCard);
+  lv_label_set_text(m_swHintLbl, "[Select] Start");
+  lv_obj_set_style_text_font(m_swHintLbl, Theme::fontCaption(), LV_PART_MAIN);
+  lv_obj_set_style_text_color(m_swHintLbl, lv_color_hex(p.accent),
+                              LV_PART_MAIN);
+  lv_obj_align(m_swHintLbl, LV_ALIGN_BOTTOM_RIGHT, 0, 0);
+
+  // --- Right Column Card 2: TIMER (154x65) ---
+  m_tmCard = Theme::createCard(root, 154, 65, 156, Config::CONTENT_Y_START + 77,
+                               Config::RADIUS_MD);
+  lv_obj_set_style_pad_all(m_tmCard, 8, LV_PART_MAIN);
+
+  m_tmIcon = lv_label_create(m_tmCard);
+  lv_label_set_text(m_tmIcon, ICON_CLOCK);
+  lv_obj_set_style_text_font(m_tmIcon, Theme::iconFont20(), LV_PART_MAIN);
+  lv_obj_set_style_text_color(m_tmIcon, lv_color_hex(p.accent), LV_PART_MAIN);
+  lv_obj_align(m_tmIcon, LV_ALIGN_TOP_LEFT, 0, 0);
+
+  m_tmTagLbl = lv_label_create(m_tmCard);
+  lv_label_set_text(m_tmTagLbl, "TIMER");
+  lv_obj_set_style_text_font(m_tmTagLbl, Theme::fontCaption(), LV_PART_MAIN);
+  lv_obj_set_style_text_color(m_tmTagLbl, lv_color_hex(p.textDim),
+                              LV_PART_MAIN);
+  lv_obj_align(m_tmTagLbl, LV_ALIGN_TOP_LEFT, 26, 2);
+
+  m_tmDigitsLbl = lv_label_create(m_tmCard);
+  lv_label_set_text(m_tmDigitsLbl, "00:05:00");
+  lv_obj_set_style_text_font(m_tmDigitsLbl, Theme::fontBodySb(), LV_PART_MAIN);
+  lv_obj_set_style_text_color(m_tmDigitsLbl, lv_color_hex(p.text),
+                              LV_PART_MAIN);
+  lv_obj_align(m_tmDigitsLbl, LV_ALIGN_TOP_LEFT, 0, 24);
+
+  m_tmMsLbl = lv_label_create(m_tmCard);
+  lv_label_set_text(m_tmMsLbl, ".000");
+  lv_obj_set_style_text_font(m_tmMsLbl, Theme::fontCaption(), LV_PART_MAIN);
+  lv_obj_set_style_text_color(m_tmMsLbl, lv_color_hex(p.textDim),
+                              LV_PART_MAIN);
+  lv_obj_align_to(m_tmMsLbl, m_tmDigitsLbl, LV_ALIGN_OUT_RIGHT_BOTTOM, 2, -1);
+
+  m_tmHintLbl = lv_label_create(m_tmCard);
+  lv_label_set_text(m_tmHintLbl, "[Select] Start");
+  lv_obj_set_style_text_font(m_tmHintLbl, Theme::fontCaption(), LV_PART_MAIN);
+  lv_obj_set_style_text_color(m_tmHintLbl, lv_color_hex(p.accent),
+                              LV_PART_MAIN);
+  lv_obj_align(m_tmHintLbl, LV_ALIGN_BOTTOM_RIGHT, 0, 0);
+
+  m_tmProgBar = lv_bar_create(m_tmCard);
+  lv_obj_set_size(m_tmProgBar, 138, 2);
+  lv_obj_align(m_tmProgBar, LV_ALIGN_BOTTOM_MID, 0, 2);
+  lv_bar_set_range(m_tmProgBar, 0, 100);
+  lv_obj_set_style_bg_color(m_tmProgBar, lv_color_hex(p.border), LV_PART_MAIN);
+  lv_obj_set_style_bg_color(m_tmProgBar, lv_color_hex(p.accent),
+                            LV_PART_INDICATOR);
+
+  updateFocusRing();
 
   m_lastSec = 0xFFFFFFFF;
-  refreshDashboard(DataStore::getSnapshot());
+  m_lastSubSecMs = 0;
   refreshTime();
+  onData(DataStore::getSnapshot());
 }
 
 void ClockApp::onExit() {
+  m_clockCard = nullptr;
+  m_clockTagLbl = nullptr;
   m_timeLbl = nullptr;
   m_ampmLbl = nullptr;
   m_dateLbl = nullptr;
-  m_cpuChip = nullptr;
-  m_cpuValLbl = nullptr;
-  m_ramChip = nullptr;
-  m_ramValLbl = nullptr;
-  m_mediaChip = nullptr;
-  m_mediaTextLbl = nullptr;
+  m_syncLbl = nullptr;
+
+  m_swCard = nullptr;
+  m_swIcon = nullptr;
+  m_swTagLbl = nullptr;
+  m_swDigitsLbl = nullptr;
+  m_swMsLbl = nullptr;
+  m_swHintLbl = nullptr;
+
+  m_tmCard = nullptr;
+  m_tmIcon = nullptr;
+  m_tmTagLbl = nullptr;
+  m_tmDigitsLbl = nullptr;
+  m_tmMsLbl = nullptr;
+  m_tmHintLbl = nullptr;
+  m_tmProgBar = nullptr;
 }
 
-void ClockApp::onTick(uint32_t /*nowMs*/) { refreshTime(); }
+void ClockApp::updateFocusRing() {
+  Theme::setFocusRing(m_swCard, m_focusedSlot == 0);
+  Theme::setFocusRing(m_tmCard, m_focusedSlot == 1);
+}
+
+void ClockApp::onTick(uint32_t nowMs) {
+  const uint32_t nowSec = nowMs / 1000;
+  if (nowSec != m_lastSec) {
+    m_lastSec = nowSec;
+    refreshTime();
+  }
+
+  // Refresh stopwatch & timer sub-seconds (20 Hz)
+  if (nowMs - m_lastSubSecMs >= 50) {
+    m_lastSubSecMs = nowMs;
+    const DataSnapshot d = DataStore::getSnapshot();
+    refreshStopwatch(d);
+    refreshTimer(d);
+  }
+}
 
 bool ClockApp::onButton(Button b, Press p) {
-  // DESIGN.md Section 9.3: Select short opens Media if playing, or toggles
-  // 12/24h clock
-  if (b == Button::Select && p == Press::Short) {
-    const DataSnapshot snap = DataStore::getSnapshot();
-    if (snap.mediaState == MediaPlayState::Playing &&
-        AppManager::appCount() > 1) {
-      AppManager::switchTo(1);
-      return true;
-    }
-    Settings::setUse24Hour(!Settings::getUse24Hour());
-    Settings::bumpLocalConfigVersion();
-    m_lastSec = 0xFFFFFFFF;
-    refreshTime();
+  if (b == Button::Next && p == Press::Short) {
+    m_focusedSlot = (m_focusedSlot == 0) ? 1 : 0;
+    updateFocusRing();
     return true;
   }
+
+  if (b == Button::Select && p == Press::Short) {
+    if (m_focusedSlot == 0) {
+      DataStore::toggleStopwatch();
+      CompanionLink::sendClockCommand("stopwatch_toggle");
+    } else {
+      DataStore::toggleTimer();
+      CompanionLink::sendClockCommand("timer_toggle");
+    }
+    const DataSnapshot d = DataStore::getSnapshot();
+    refreshStopwatch(d);
+    refreshTimer(d);
+    return true;
+  }
+
+  if (b == Button::Select && p == Press::Long) {
+    if (m_focusedSlot == 0) {
+      DataStore::resetStopwatch();
+      CompanionLink::sendClockCommand("stopwatch_reset");
+    } else {
+      DataStore::resetTimer();
+      CompanionLink::sendClockCommand("timer_reset");
+    }
+    const DataSnapshot d = DataStore::getSnapshot();
+    refreshStopwatch(d);
+    refreshTimer(d);
+    return true;
+  }
+
   return false;
 }
 
 void ClockApp::onData(const DataSnapshot &d) {
-  refreshDashboard(d);
-  m_lastSec = 0xFFFFFFFF;
-  refreshTime();
+  refreshStopwatch(d);
+  refreshTimer(d);
+  if (m_syncLbl != nullptr) {
+    setLabelTextIfChanged(m_syncLbl, d.ntpSynced ? "NTP Synced" : "Local Time");
+  }
 }
 
 void ClockApp::refreshTime() {
@@ -154,91 +256,142 @@ void ClockApp::refreshTime() {
     return;
 
   const time_t now = time(nullptr);
-  if (now <= 1700000000) {
-    const uint32_t upSec = millis() / 1000;
-    if (upSec == m_lastSec)
-      return;
-    m_lastSec = upSec;
-    lv_label_set_text_fmt(m_timeLbl, "%02lu:%02lu",
-                          static_cast<unsigned long>((upSec / 60) % 60),
-                          static_cast<unsigned long>(upSec % 60));
-    if (m_ampmLbl != nullptr) {
-      lv_label_set_text(m_ampmLbl, "");
-    }
-    return;
-  }
-
-  if (static_cast<uint32_t>(now) == m_lastSec)
-    return;
-  m_lastSec = static_cast<uint32_t>(now);
-
-  struct tm ti{};
-  localtime_r(&now, &ti);
-
+  const bool valid = (now > 1700000000);
   const bool use24 = Settings::getUse24Hour();
-  int displayHour = ti.tm_hour;
-  if (!use24) {
-    displayHour = ti.tm_hour % 12;
-    if (displayHour == 0)
-      displayHour = 12;
-  }
 
-  lv_label_set_text_fmt(m_timeLbl, "%02d:%02d", displayHour, ti.tm_min);
+  char timeBuf[16] = "--:--";
+  char ampmBuf[32] = "";
+  char dateBuf[32] = "Syncing NTP...";
 
-  if (m_ampmLbl != nullptr) {
+  if (valid) {
+    struct tm ti{};
+    localtime_r(&now, &ti);
+
+    int hr = ti.tm_hour;
     if (!use24) {
-      lv_label_set_text(m_ampmLbl, (ti.tm_hour >= 12) ? "PM" : "AM");
-      lv_obj_align_to(m_ampmLbl, m_timeLbl, LV_ALIGN_OUT_RIGHT_BOTTOM, 6, -8);
+      const char *ampm = (ti.tm_hour >= 12) ? "PM" : "AM";
+      hr = ti.tm_hour % 12;
+      if (hr == 0)
+        hr = 12;
+      snprintf(ampmBuf, sizeof(ampmBuf), ":%02d %s", ti.tm_sec, ampm);
     } else {
-      lv_label_set_text(m_ampmLbl, "");
+      snprintf(ampmBuf, sizeof(ampmBuf), ":%02d", ti.tm_sec);
     }
+    snprintf(timeBuf, sizeof(timeBuf), "%02d:%02d", hr, ti.tm_min);
+    strftime(dateBuf, sizeof(dateBuf), "%a, %b %d", &ti);
+  } else {
+    const uint32_t up = millis() / 1000;
+    const int hr = static_cast<int>((up / 3600) % 24);
+    const int mn = static_cast<int>((up / 60) % 60);
+    const int sc = static_cast<int>(up % 60);
+    snprintf(timeBuf, sizeof(timeBuf), "%02d:%02d", hr, mn);
+    snprintf(ampmBuf, sizeof(ampmBuf), ":%02d", sc);
   }
 
-  char dateBuf[40];
-  strftime(dateBuf, sizeof(dateBuf), "%a \u00b7 %b %d", &ti);
-  lv_label_set_text(m_dateLbl, dateBuf);
+  setLabelTextIfChanged(m_timeLbl, timeBuf);
+  if (m_ampmLbl != nullptr) {
+    setLabelTextIfChanged(m_ampmLbl, ampmBuf);
+  }
+  if (m_dateLbl != nullptr) {
+    setLabelTextIfChanged(m_dateLbl, dateBuf);
+  }
 }
 
-void ClockApp::refreshDashboard(const DataSnapshot &d) {
-  if (m_cpuValLbl == nullptr)
+void ClockApp::refreshStopwatch(const DataSnapshot &d) {
+  if (m_swDigitsLbl == nullptr)
     return;
-  const ThemeTokens::Palette &p = Theme::active();
 
-  if (d.lastStatsMs > 0) {
-    lv_label_set_text_fmt(m_cpuValLbl, "CPU %u%%",
-                          static_cast<unsigned>(d.cpuPercent));
-    lv_label_set_text_fmt(m_ramValLbl, "RAM %u%%",
-                          static_cast<unsigned>(d.ramPercent));
-  } else {
-    lv_label_set_text(m_cpuValLbl, "CPU --%");
-    lv_label_set_text(m_ramValLbl, "RAM --%");
+  const uint32_t nowMs = millis();
+  const uint32_t elapsed = DataStore::getStopwatchElapsedMs(nowMs);
+  const uint32_t totalSec = elapsed / 1000;
+  const uint32_t hr = totalSec / 3600;
+  const uint32_t mn = (totalSec / 60) % 60;
+  const uint32_t sc = totalSec % 60;
+  const uint32_t ms = elapsed % 1000;
+
+  char swBuf[16];
+  snprintf(swBuf, sizeof(swBuf), "%02lu:%02lu:%02lu",
+           static_cast<unsigned long>(hr), static_cast<unsigned long>(mn),
+           static_cast<unsigned long>(sc));
+  setLabelTextIfChanged(m_swDigitsLbl, swBuf);
+
+  if (m_swMsLbl != nullptr) {
+    char msBuf[8];
+    snprintf(msBuf, sizeof(msBuf), ".%03lu", static_cast<unsigned long>(ms));
+    setLabelTextIfChanged(m_swMsLbl, msBuf);
+    lv_obj_align_to(m_swMsLbl, m_swDigitsLbl, LV_ALIGN_OUT_RIGHT_BOTTOM, 2, -1);
   }
 
-  char chipText[140] = {0};
-  if (d.mediaState == MediaPlayState::Playing && d.mediaTitle[0] != '\0') {
-    lv_obj_clear_flag(m_mediaChip, LV_OBJ_FLAG_HIDDEN);
-    Theme::setFocusRing(m_mediaChip, true);
-    lv_obj_set_style_text_color(m_mediaTextLbl, lv_color_hex(p.text),
-                                LV_PART_MAIN);
-    if (d.mediaArtist[0] != '\0') {
-      snprintf(chipText, sizeof(chipText), "%s \u00b7 %s", d.mediaTitle,
-               d.mediaArtist);
+  if (m_swHintLbl != nullptr) {
+    if (d.stopwatch.state == StopwatchState::Running) {
+      setLabelTextIfChanged(m_swHintLbl, "Running");
+      lv_obj_set_style_text_color(
+          m_swHintLbl, lv_color_hex(Theme::active().accent), LV_PART_MAIN);
+    } else if (d.stopwatch.state == StopwatchState::Paused) {
+      setLabelTextIfChanged(m_swHintLbl, "Paused");
+      lv_obj_set_style_text_color(
+          m_swHintLbl, lv_color_hex(Theme::active().textDim), LV_PART_MAIN);
     } else {
-      snprintf(chipText, sizeof(chipText), "%s", d.mediaTitle);
-    }
-  } else {
-    Theme::setFocusRing(m_mediaChip, false);
-    lv_obj_set_style_text_color(m_mediaTextLbl, lv_color_hex(p.textDim),
-                                LV_PART_MAIN);
-    if (d.wifiConnected) {
-      snprintf(chipText, sizeof(chipText), "%s \u00b7 %s", d.wifiSsid,
-               d.wifiIp);
-    } else if (d.wifiSsid[0] != '\0') {
-      snprintf(chipText, sizeof(chipText), "Connecting to %s...", d.wifiSsid);
-    } else {
-      snprintf(chipText, sizeof(chipText),
-               "Setup WiFi in HawaOS Companion (USB)");
+      setLabelTextIfChanged(m_swHintLbl, "[Select] Start");
+      lv_obj_set_style_text_color(
+          m_swHintLbl, lv_color_hex(Theme::active().textDim), LV_PART_MAIN);
     }
   }
-  setLabelTextIfChanged(m_mediaTextLbl, chipText);
+}
+
+void ClockApp::refreshTimer(const DataSnapshot &d) {
+  if (m_tmDigitsLbl == nullptr)
+    return;
+
+  const uint32_t nowMs = millis();
+  const uint32_t remMs = DataStore::getTimerRemainingMs(nowMs);
+  const uint32_t totalSec = remMs / 1000;
+  const uint32_t hr = totalSec / 3600;
+  const uint32_t mn = (totalSec / 60) % 60;
+  const uint32_t sc = totalSec % 60;
+  const uint32_t ms = remMs % 1000;
+
+  char tmBuf[16];
+  snprintf(tmBuf, sizeof(tmBuf), "%02lu:%02lu:%02lu",
+           static_cast<unsigned long>(hr), static_cast<unsigned long>(mn),
+           static_cast<unsigned long>(sc));
+  setLabelTextIfChanged(m_tmDigitsLbl, tmBuf);
+
+  if (m_tmMsLbl != nullptr) {
+    char msBuf[8];
+    snprintf(msBuf, sizeof(msBuf), ".%03lu", static_cast<unsigned long>(ms));
+    setLabelTextIfChanged(m_tmMsLbl, msBuf);
+    lv_obj_align_to(m_tmMsLbl, m_tmDigitsLbl, LV_ALIGN_OUT_RIGHT_BOTTOM, 2, -1);
+  }
+
+  if (m_tmProgBar != nullptr) {
+    int pct = 0;
+    if (d.timer.durationSec > 0) {
+      const uint32_t elapsedSec = (d.timer.durationSec >= totalSec)
+                                      ? (d.timer.durationSec - totalSec)
+                                      : d.timer.durationSec;
+      pct = static_cast<int>((elapsedSec * 100) / d.timer.durationSec);
+    }
+    lv_bar_set_value(m_tmProgBar, pct, LV_ANIM_OFF);
+  }
+
+  if (m_tmHintLbl != nullptr) {
+    if (d.timer.state == TimerState::Running) {
+      setLabelTextIfChanged(m_tmHintLbl, "Running");
+      lv_obj_set_style_text_color(
+          m_tmHintLbl, lv_color_hex(Theme::active().accent), LV_PART_MAIN);
+    } else if (d.timer.state == TimerState::Paused) {
+      setLabelTextIfChanged(m_tmHintLbl, "Paused");
+      lv_obj_set_style_text_color(
+          m_tmHintLbl, lv_color_hex(Theme::active().textDim), LV_PART_MAIN);
+    } else if (d.timer.state == TimerState::Finished) {
+      setLabelTextIfChanged(m_tmHintLbl, "Time's Up!");
+      lv_obj_set_style_text_color(
+          m_tmHintLbl, lv_color_hex(Theme::active().accent), LV_PART_MAIN);
+    } else {
+      setLabelTextIfChanged(m_tmHintLbl, "[Select] Start");
+      lv_obj_set_style_text_color(
+          m_tmHintLbl, lv_color_hex(Theme::active().textDim), LV_PART_MAIN);
+    }
+  }
 }

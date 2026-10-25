@@ -5,6 +5,7 @@
 #include "core/Settings.h"
 #include "drivers/Display.h"
 #include "services/WifiService.h"
+#include "services/CompanionLink.h"
 #include "ui/StatusBar.h"
 #include "ui/Theme.h"
 #include "ui/icons.h"
@@ -68,8 +69,20 @@ uint32_t s_aodCurBot = 0x000000;
 uint32_t s_aodToTop = 0x000000;
 uint32_t s_aodToBot = 0x000000;
 uint32_t s_aodLastSec = 0xFFFFFFFF;
+uint32_t s_aodLastSubSecMs = 0;
 bool s_aodWasPlaying = false;
 uint32_t s_aodPausedSinceMs = 0;
+
+// --- AOD Timer / Stopwatch & Media Footnote Elements ---
+lv_obj_t *s_aodTimerTagLbl = nullptr;
+lv_obj_t *s_aodTimerDigitsLbl = nullptr;
+lv_obj_t *s_aodTimerMsLbl = nullptr;
+lv_obj_t *s_aodTimerSubLbl = nullptr;
+lv_obj_t *s_aodTimerProgBar = nullptr;
+lv_obj_t *s_aodMediaFootnoteCard = nullptr;
+lv_obj_t *s_aodFootnoteIcon = nullptr;
+lv_obj_t *s_aodFootnoteText = nullptr;
+lv_obj_t *s_aodFootnoteProgBar = nullptr;
 
 // --- AOD Notification Alert Elements ---
 lv_obj_t *s_aodAlertCard = nullptr;
@@ -116,6 +129,15 @@ void clearViewPointers() {
   s_aodTitleLbl = nullptr;
   s_aodArtistLbl = nullptr;
   s_aodProgBar = nullptr;
+  s_aodTimerTagLbl = nullptr;
+  s_aodTimerDigitsLbl = nullptr;
+  s_aodTimerMsLbl = nullptr;
+  s_aodTimerSubLbl = nullptr;
+  s_aodTimerProgBar = nullptr;
+  s_aodMediaFootnoteCard = nullptr;
+  s_aodFootnoteIcon = nullptr;
+  s_aodFootnoteText = nullptr;
+  s_aodFootnoteProgBar = nullptr;
   s_aodAlertCard = nullptr;
   s_aodAlertIcon = nullptr;
   s_aodAlertHeaderLbl = nullptr;
@@ -372,8 +394,7 @@ void refreshAodContent() {
   const bool use24 = Settings::getUse24Hour();
   const uint32_t nowMs = millis();
 
-  // DESIGN.md Section 10: If media is paused, stay tinted for 30s then tween to
-  // black + clock
+  // Media active check
   bool showMedia = false;
   if (d.mediaTitle[0] != '\0') {
     if (d.mediaState == MediaPlayState::Playing) {
@@ -394,9 +415,27 @@ void refreshAodContent() {
     }
   }
 
+  const bool timerActive =
+      (d.timer.state == TimerState::Running || d.timer.state == TimerState::Paused ||
+       d.timer.state == TimerState::Finished);
+  const bool stopwatchActive =
+      (d.stopwatch.state == StopwatchState::Running || d.stopwatch.state == StopwatchState::Paused);
+  const bool clockToolsActive = (timerActive || stopwatchActive);
+
+  // Dynamic background gradient tween: keep tinted gradient if media is active
   const uint32_t targetTop = showMedia ? d.mediaBgTop : 0x000000;
   const uint32_t targetBot = showMedia ? d.mediaBgBottom : 0x000000;
   startAodTintTween(targetTop, targetBot, Config::ANIM_AOD_ENTER_MS);
+
+  const uint32_t aodBgTop = (showMedia && d.mediaBgTop != 0) ? d.mediaBgTop : 0x071115;
+  const bool aodLightBg = Theme::isColorLight(aodBgTop) || (!d.mediaInkLight && showMedia);
+  const uint32_t clockColor = aodLightBg ? 0x0A1014 : 0xFFFFFF;
+  const uint32_t dateColor = aodLightBg ? 0x2D3E45 : 0xA0B4BA;
+  const uint32_t titleColor = aodLightBg ? 0x0A1014 : 0xFFFFFF;
+  const uint32_t artistColor = aodLightBg ? 0x243238 : 0xD0DCE0;
+  const uint32_t aodProgColor = Theme::tintAccent(aodBgTop, p.primary);
+  const uint32_t aodTrackColor = aodLightBg ? 0x000000 : 0xFFFFFF;
+  const lv_opa_t aodTrackOpa = aodLightBg ? LV_OPA_20 : LV_OPA_30;
 
   const time_t now = time(nullptr);
   const bool validTime = (now > 1700000000);
@@ -424,24 +463,186 @@ void refreshAodContent() {
     snprintf(shortDateStr, sizeof(shortDateStr), "Syncing NTP...");
   }
 
-  if (showMedia) {
-    const uint32_t aodBgTop = (d.mediaBgTop != 0) ? d.mediaBgTop : 0x071115;
-    const bool aodLightBg =
-        Theme::isColorLight(aodBgTop) || (!d.mediaInkLight && showMedia);
-    const uint32_t clockColor = aodLightBg ? 0x0A1014 : 0xFFFFFF;
-    const uint32_t dateColor = aodLightBg ? 0x2D3E45 : 0xA0B4BA;
-    const uint32_t titleColor = aodLightBg ? 0x0A1014 : 0xFFFFFF;
-    const uint32_t artistColor = aodLightBg ? 0x243238 : 0xD0DCE0;
-    const uint32_t aodProgColor = Theme::tintAccent(aodBgTop, p.primary);
-    const uint32_t aodTrackColor = aodLightBg ? 0x000000 : 0xFFFFFF;
-    const lv_opa_t aodTrackOpa = aodLightBg ? LV_OPA_20 : LV_OPA_30;
+  // =========================================================================
+  // Case A: Stopwatch or Timer is Active in AOD
+  // =========================================================================
+  if (clockToolsActive) {
+    // 1. Top bar: Main clock is made SMALLER (Theme::fontBodySb()) when timer/stopwatch is running
+    lv_obj_set_style_text_font(s_aodClockLbl, Theme::fontBodySb(), LV_PART_MAIN);
+    lv_obj_set_style_text_color(s_aodClockLbl, lv_color_hex(clockColor), LV_PART_MAIN);
+    if (!use24 && validTime) {
+      lv_label_set_text_fmt(s_aodClockLbl, "%02d:%02d %s", hr, mn, ampmStr);
+    } else {
+      lv_label_set_text_fmt(s_aodClockLbl, "%02d:%02d", hr, mn);
+    }
+    lv_obj_align(s_aodClockLbl, LV_ALIGN_TOP_LEFT, 20, 6);
+    lv_obj_clear_flag(s_aodClockLbl, LV_OBJ_FLAG_HIDDEN);
 
-    // Media playing AOD: top bar has time (+ AM/PM) and short day/date with
-    // adaptive contrast
-    lv_obj_set_style_text_font(s_aodClockLbl, Theme::fontDisplay(),
-                               LV_PART_MAIN);
-    lv_obj_set_style_text_color(s_aodClockLbl, lv_color_hex(clockColor),
-                                LV_PART_MAIN);
+    if (s_aodAmPmLbl != nullptr) {
+      lv_obj_add_flag(s_aodAmPmLbl, LV_OBJ_FLAG_HIDDEN);
+    }
+
+    if (s_aodDateLbl != nullptr) {
+      setLabelTextIfChanged(s_aodDateLbl, shortDateStr);
+      lv_obj_set_style_text_font(s_aodDateLbl, Theme::fontCaption(), LV_PART_MAIN);
+      lv_obj_set_style_text_color(s_aodDateLbl, lv_color_hex(dateColor), LV_PART_MAIN);
+      lv_obj_align(s_aodDateLbl, LV_ALIGN_TOP_RIGHT, -20, 7);
+      lv_obj_clear_flag(s_aodDateLbl, LV_OBJ_FLAG_HIDDEN);
+    }
+
+    // 2. Hide large media widgets
+    lv_obj_add_flag(s_aodArtBox, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(s_aodTitleLbl, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(s_aodArtistLbl, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(s_aodProgBar, LV_OBJ_FLAG_HIDDEN);
+
+    // 3. Middle Section: Timer or Stopwatch display with HOURS and smaller MILLISECONDS
+    char digitsBuf[16] = {0};
+    char msBuf[8] = {0};
+    const char *tagStr = "";
+    const char *subStr = "";
+    int progPct = -1;
+
+    if (timerActive) {
+      tagStr = "TIMER";
+      const uint32_t remMs = DataStore::getTimerRemainingMs(nowMs);
+      const uint32_t totSec = remMs / 1000;
+      const uint32_t remHr = totSec / 3600;
+      const uint32_t remMin = (totSec / 60) % 60;
+      const uint32_t remSec = totSec % 60;
+      const uint32_t remMsFrac = remMs % 1000;
+      snprintf(digitsBuf, sizeof(digitsBuf), "%02lu:%02lu:%02lu",
+               static_cast<unsigned long>(remHr), static_cast<unsigned long>(remMin),
+               static_cast<unsigned long>(remSec));
+      snprintf(msBuf, sizeof(msBuf), ".%03lu", static_cast<unsigned long>(remMsFrac));
+
+      if (d.timer.state == TimerState::Running) {
+        subStr = "RUNNING";
+      } else if (d.timer.state == TimerState::Paused) {
+        subStr = "PAUSED";
+      } else {
+        subStr = "TIME'S UP!";
+      }
+
+      if (d.timer.durationSec > 0) {
+        const uint32_t el = (d.timer.durationSec >= totSec) ? (d.timer.durationSec - totSec) : d.timer.durationSec;
+        progPct = static_cast<int>((el * 100) / d.timer.durationSec);
+      }
+    } else { // stopwatchActive
+      tagStr = "STOPWATCH";
+      const uint32_t el = DataStore::getStopwatchElapsedMs(nowMs);
+      const uint32_t totSec = el / 1000;
+      const uint32_t elHr = totSec / 3600;
+      const uint32_t elMin = (totSec / 60) % 60;
+      const uint32_t elSec = totSec % 60;
+      const uint32_t elMsFrac = el % 1000;
+      snprintf(digitsBuf, sizeof(digitsBuf), "%02lu:%02lu:%02lu",
+               static_cast<unsigned long>(elHr), static_cast<unsigned long>(elMin),
+               static_cast<unsigned long>(elSec));
+      snprintf(msBuf, sizeof(msBuf), ".%03lu", static_cast<unsigned long>(elMsFrac));
+      subStr = (d.stopwatch.state == StopwatchState::Running) ? "RUNNING" : "PAUSED";
+    }
+
+    if (s_aodTimerTagLbl != nullptr) {
+      setLabelTextIfChanged(s_aodTimerTagLbl, tagStr);
+      lv_obj_set_style_text_color(s_aodTimerTagLbl, lv_color_hex(p.accent), LV_PART_MAIN);
+      lv_obj_clear_flag(s_aodTimerTagLbl, LV_OBJ_FLAG_HIDDEN);
+    }
+    if (s_aodTimerDigitsLbl != nullptr) {
+      setLabelTextIfChanged(s_aodTimerDigitsLbl, digitsBuf);
+      lv_obj_set_style_text_font(s_aodTimerDigitsLbl, Theme::fontDisplay(), LV_PART_MAIN);
+      lv_obj_set_style_text_color(s_aodTimerDigitsLbl, lv_color_hex(titleColor), LV_PART_MAIN);
+      lv_obj_clear_flag(s_aodTimerDigitsLbl, LV_OBJ_FLAG_HIDDEN);
+    }
+    if (s_aodTimerMsLbl != nullptr) {
+      setLabelTextIfChanged(s_aodTimerMsLbl, msBuf);
+      lv_obj_set_style_text_font(s_aodTimerMsLbl, Theme::fontBody(), LV_PART_MAIN);
+      lv_obj_set_style_text_color(s_aodTimerMsLbl, lv_color_hex(artistColor), LV_PART_MAIN);
+      lv_obj_clear_flag(s_aodTimerMsLbl, LV_OBJ_FLAG_HIDDEN);
+    }
+    if (s_aodTimerSubLbl != nullptr) {
+      setLabelTextIfChanged(s_aodTimerSubLbl, subStr);
+      lv_obj_set_style_text_color(s_aodTimerSubLbl, lv_color_hex(p.textDim), LV_PART_MAIN);
+      lv_obj_clear_flag(s_aodTimerSubLbl, LV_OBJ_FLAG_HIDDEN);
+    }
+
+    if (s_aodTimerProgBar != nullptr) {
+      if (progPct >= 0) {
+        lv_bar_set_value(s_aodTimerProgBar, progPct, LV_ANIM_OFF);
+        lv_obj_clear_flag(s_aodTimerProgBar, LV_OBJ_FLAG_HIDDEN);
+      } else {
+        lv_obj_add_flag(s_aodTimerProgBar, LV_OBJ_FLAG_HIDDEN);
+      }
+    }
+
+    // Positioning centered in available vertical space
+    if (showMedia) {
+      // Top bar at y=8..32, Footnote at y=128..160 -> Center region y=34..126
+      if (s_aodTimerTagLbl != nullptr) lv_obj_align(s_aodTimerTagLbl, LV_ALIGN_CENTER, 0, -28);
+      if (s_aodTimerDigitsLbl != nullptr) {
+        lv_obj_align(s_aodTimerDigitsLbl, LV_ALIGN_CENTER, -16, -4);
+        if (s_aodTimerMsLbl != nullptr) {
+          lv_obj_align_to(s_aodTimerMsLbl, s_aodTimerDigitsLbl, LV_ALIGN_OUT_RIGHT_BOTTOM, 2, -3);
+        }
+      }
+      if (s_aodTimerSubLbl != nullptr) lv_obj_align(s_aodTimerSubLbl, LV_ALIGN_CENTER, 0, 18);
+      if (s_aodTimerProgBar != nullptr) lv_obj_align(s_aodTimerProgBar, LV_ALIGN_CENTER, 0, 30);
+
+      // Footnote chip at the bottom
+      if (s_aodMediaFootnoteCard != nullptr) {
+        char fnText[128];
+        snprintf(fnText, sizeof(fnText), "%s \u2014 %s", d.mediaTitle,
+                 d.mediaArtist[0] ? d.mediaArtist : "Unknown");
+        if (s_aodFootnoteText != nullptr) {
+          setLabelTextIfChanged(s_aodFootnoteText, fnText);
+          lv_obj_set_style_text_color(s_aodFootnoteText, lv_color_hex(artistColor), LV_PART_MAIN);
+        }
+        if (s_aodFootnoteProgBar != nullptr) {
+          uint32_t curPos = d.mediaPosMs;
+          if (d.mediaState == MediaPlayState::Playing && d.mediaRxMillis > 0) {
+            curPos = min(d.mediaDurMs, d.mediaPosMs + (nowMs - d.mediaRxMillis));
+          }
+          const int mPct = (d.mediaDurMs > 0)
+                              ? static_cast<int>(min<uint32_t>(100, (curPos * 100) / d.mediaDurMs))
+                              : 0;
+          lv_bar_set_value(s_aodFootnoteProgBar, mPct, LV_ANIM_OFF);
+          lv_obj_set_style_bg_color(s_aodFootnoteProgBar, lv_color_hex(aodProgColor), LV_PART_INDICATOR);
+        }
+        lv_obj_clear_flag(s_aodMediaFootnoteCard, LV_OBJ_FLAG_HIDDEN);
+      }
+    } else {
+      // Full screen available: Hero size digits!
+      if (s_aodTimerTagLbl != nullptr) lv_obj_align(s_aodTimerTagLbl, LV_ALIGN_CENTER, 0, -32);
+      if (s_aodTimerDigitsLbl != nullptr) {
+        lv_obj_align(s_aodTimerDigitsLbl, LV_ALIGN_CENTER, -16, 2);
+        if (s_aodTimerMsLbl != nullptr) {
+          lv_obj_align_to(s_aodTimerMsLbl, s_aodTimerDigitsLbl, LV_ALIGN_OUT_RIGHT_BOTTOM, 2, -3);
+        }
+      }
+      if (s_aodTimerSubLbl != nullptr) lv_obj_align(s_aodTimerSubLbl, LV_ALIGN_CENTER, 0, 36);
+      if (s_aodTimerProgBar != nullptr) lv_obj_align(s_aodTimerProgBar, LV_ALIGN_CENTER, 0, 48);
+
+      if (s_aodMediaFootnoteCard != nullptr) {
+        lv_obj_add_flag(s_aodMediaFootnoteCard, LV_OBJ_FLAG_HIDDEN);
+      }
+    }
+    return;
+  }
+
+  // If clock tools are NOT active, hide timer & footnote elements
+  if (s_aodTimerTagLbl != nullptr) lv_obj_add_flag(s_aodTimerTagLbl, LV_OBJ_FLAG_HIDDEN);
+  if (s_aodTimerDigitsLbl != nullptr) lv_obj_add_flag(s_aodTimerDigitsLbl, LV_OBJ_FLAG_HIDDEN);
+  if (s_aodTimerMsLbl != nullptr) lv_obj_add_flag(s_aodTimerMsLbl, LV_OBJ_FLAG_HIDDEN);
+  if (s_aodTimerSubLbl != nullptr) lv_obj_add_flag(s_aodTimerSubLbl, LV_OBJ_FLAG_HIDDEN);
+  if (s_aodTimerProgBar != nullptr) lv_obj_add_flag(s_aodTimerProgBar, LV_OBJ_FLAG_HIDDEN);
+  if (s_aodMediaFootnoteCard != nullptr) lv_obj_add_flag(s_aodMediaFootnoteCard, LV_OBJ_FLAG_HIDDEN);
+
+  // =========================================================================
+  // Case B: Media Playing AOD (No Timer/Stopwatch)
+  // =========================================================================
+  if (showMedia) {
+    lv_obj_set_style_text_font(s_aodClockLbl, Theme::fontDisplay(), LV_PART_MAIN);
+    lv_obj_set_style_text_color(s_aodClockLbl, lv_color_hex(clockColor), LV_PART_MAIN);
     if (!use24 && validTime) {
       lv_label_set_text_fmt(s_aodClockLbl, "%02d:%02d %s", hr, mn, ampmStr);
     } else {
@@ -456,10 +657,8 @@ void refreshAodContent() {
 
     if (s_aodDateLbl != nullptr) {
       setLabelTextIfChanged(s_aodDateLbl, shortDateStr);
-      lv_obj_set_style_text_font(s_aodDateLbl, Theme::fontCaption(),
-                                 LV_PART_MAIN);
-      lv_obj_set_style_text_color(s_aodDateLbl, lv_color_hex(dateColor),
-                                  LV_PART_MAIN);
+      lv_obj_set_style_text_font(s_aodDateLbl, Theme::fontCaption(), LV_PART_MAIN);
+      lv_obj_set_style_text_color(s_aodDateLbl, lv_color_hex(dateColor), LV_PART_MAIN);
       lv_obj_align(s_aodDateLbl, LV_ALIGN_TOP_RIGHT, -20, 16);
       lv_obj_clear_flag(s_aodDateLbl, LV_OBJ_FLAG_HIDDEN);
     }
@@ -479,18 +678,12 @@ void refreshAodContent() {
     }
 
     setLabelTextIfChanged(s_aodTitleLbl, d.mediaTitle);
-    lv_obj_set_style_text_color(s_aodTitleLbl, lv_color_hex(titleColor),
-                                LV_PART_MAIN);
-    setLabelTextIfChanged(s_aodArtistLbl,
-                          d.mediaArtist[0] ? d.mediaArtist : "Unknown Artist");
-    lv_obj_set_style_text_color(s_aodArtistLbl, lv_color_hex(artistColor),
-                                LV_PART_MAIN);
+    lv_obj_set_style_text_color(s_aodTitleLbl, lv_color_hex(titleColor), LV_PART_MAIN);
+    setLabelTextIfChanged(s_aodArtistLbl, d.mediaArtist[0] ? d.mediaArtist : "Unknown Artist");
+    lv_obj_set_style_text_color(s_aodArtistLbl, lv_color_hex(artistColor), LV_PART_MAIN);
 
-    // Dynamic progress bar indicator derived directly from dominant tint
-    lv_obj_set_style_bg_color(s_aodProgBar, lv_color_hex(aodProgColor),
-                              LV_PART_INDICATOR);
-    lv_obj_set_style_bg_color(s_aodProgBar, lv_color_hex(aodTrackColor),
-                              LV_PART_MAIN);
+    lv_obj_set_style_bg_color(s_aodProgBar, lv_color_hex(aodProgColor), LV_PART_INDICATOR);
+    lv_obj_set_style_bg_color(s_aodProgBar, lv_color_hex(aodTrackColor), LV_PART_MAIN);
     lv_obj_set_style_bg_opa(s_aodProgBar, aodTrackOpa, LV_PART_MAIN);
 
     uint32_t curPos = d.mediaPosMs;
@@ -498,16 +691,15 @@ void refreshAodContent() {
       curPos = min(d.mediaDurMs, d.mediaPosMs + (nowMs - d.mediaRxMillis));
     }
     const int pct = (d.mediaDurMs > 0)
-                        ? static_cast<int>(
-                              min<uint32_t>(100, (curPos * 100) / d.mediaDurMs))
+                        ? static_cast<int>(min<uint32_t>(100, (curPos * 100) / d.mediaDurMs))
                         : 0;
     lv_bar_set_value(s_aodProgBar, pct, LV_ANIM_OFF);
   } else {
-    // Centered ambient clock when no media is playing:
-    // Hero 48px HH:MM + AM/PM badge (if 12h) + short day & date below
+    // =======================================================================
+    // Case C: Standard Centered Ambient Clock (No Media, No Timer)
+    // =======================================================================
     lv_obj_set_style_text_font(s_aodClockLbl, Theme::fontHero(), LV_PART_MAIN);
-    lv_obj_set_style_text_color(s_aodClockLbl, lv_color_hex(p.text),
-                                LV_PART_MAIN);
+    lv_obj_set_style_text_color(s_aodClockLbl, lv_color_hex(p.text), LV_PART_MAIN);
     lv_label_set_text_fmt(s_aodClockLbl, "%02d:%02d", hr, mn);
 
     const int16_t clockXOffset = (!use24 && validTime) ? -16 : 0;
@@ -517,11 +709,9 @@ void refreshAodContent() {
     if (s_aodAmPmLbl != nullptr) {
       if (!use24 && validTime) {
         setLabelTextIfChanged(s_aodAmPmLbl, ampmStr);
-        lv_obj_set_style_text_color(s_aodAmPmLbl, lv_color_hex(p.accent),
-                                    LV_PART_MAIN);
+        lv_obj_set_style_text_color(s_aodAmPmLbl, lv_color_hex(p.accent), LV_PART_MAIN);
         lv_obj_clear_flag(s_aodAmPmLbl, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_align_to(s_aodAmPmLbl, s_aodClockLbl, LV_ALIGN_OUT_RIGHT_BOTTOM,
-                        6, -8);
+        lv_obj_align_to(s_aodAmPmLbl, s_aodClockLbl, LV_ALIGN_OUT_RIGHT_BOTTOM, 6, -8);
       } else {
         lv_obj_add_flag(s_aodAmPmLbl, LV_OBJ_FLAG_HIDDEN);
       }
@@ -530,8 +720,7 @@ void refreshAodContent() {
     if (s_aodDateLbl != nullptr) {
       setLabelTextIfChanged(s_aodDateLbl, shortDateStr);
       lv_obj_set_style_text_font(s_aodDateLbl, Theme::fontBody(), LV_PART_MAIN);
-      lv_obj_set_style_text_color(s_aodDateLbl, lv_color_hex(p.textDim),
-                                  LV_PART_MAIN);
+      lv_obj_set_style_text_color(s_aodDateLbl, lv_color_hex(p.textDim), LV_PART_MAIN);
       lv_obj_align(s_aodDateLbl, LV_ALIGN_CENTER, 0, 26);
       lv_obj_clear_flag(s_aodDateLbl, LV_OBJ_FLAG_HIDDEN);
     }
@@ -630,6 +819,62 @@ void buildAodScreen(lv_obj_t *root) {
   lv_obj_set_style_bg_opa(s_aodProgBar, LV_OPA_30, LV_PART_MAIN);
   lv_obj_set_style_bg_color(s_aodProgBar, lv_color_hex(p.primary),
                             LV_PART_INDICATOR);
+
+  // --- AOD Timer / Stopwatch widgets ---
+  s_aodTimerTagLbl = lv_label_create(root);
+  lv_obj_set_style_text_font(s_aodTimerTagLbl, Theme::fontCaption(), LV_PART_MAIN);
+  lv_obj_set_style_text_color(s_aodTimerTagLbl, lv_color_hex(p.accent), LV_PART_MAIN);
+  lv_obj_add_flag(s_aodTimerTagLbl, LV_OBJ_FLAG_HIDDEN);
+
+  s_aodTimerDigitsLbl = lv_label_create(root);
+  lv_obj_set_style_text_font(s_aodTimerDigitsLbl, Theme::fontDisplay(), LV_PART_MAIN);
+  lv_obj_set_style_text_color(s_aodTimerDigitsLbl, lv_color_hex(p.text), LV_PART_MAIN);
+  lv_obj_add_flag(s_aodTimerDigitsLbl, LV_OBJ_FLAG_HIDDEN);
+
+  s_aodTimerMsLbl = lv_label_create(root);
+  lv_obj_set_style_text_font(s_aodTimerMsLbl, Theme::fontBody(), LV_PART_MAIN);
+  lv_obj_set_style_text_color(s_aodTimerMsLbl, lv_color_hex(p.textDim), LV_PART_MAIN);
+  lv_obj_add_flag(s_aodTimerMsLbl, LV_OBJ_FLAG_HIDDEN);
+
+  s_aodTimerSubLbl = lv_label_create(root);
+  lv_obj_set_style_text_font(s_aodTimerSubLbl, Theme::fontCaption(), LV_PART_MAIN);
+  lv_obj_set_style_text_color(s_aodTimerSubLbl, lv_color_hex(p.textDim), LV_PART_MAIN);
+  lv_obj_add_flag(s_aodTimerSubLbl, LV_OBJ_FLAG_HIDDEN);
+
+  s_aodTimerProgBar = lv_bar_create(root);
+  lv_obj_set_size(s_aodTimerProgBar, 180, 2);
+  lv_bar_set_range(s_aodTimerProgBar, 0, 100);
+  lv_obj_set_style_bg_color(s_aodTimerProgBar, lv_color_hex(0x22333B), LV_PART_MAIN);
+  lv_obj_set_style_bg_color(s_aodTimerProgBar, lv_color_hex(p.accent), LV_PART_INDICATOR);
+  lv_obj_add_flag(s_aodTimerProgBar, LV_OBJ_FLAG_HIDDEN);
+
+  // --- AOD Media Footnote Card (shown when Timer/Stopwatch is active AND Media is playing) ---
+  s_aodMediaFootnoteCard = Theme::createCard(root, 300, 32, 10, 128, Config::RADIUS_SM, true);
+  lv_obj_set_style_bg_color(s_aodMediaFootnoteCard, lv_color_hex(0x0C1317), LV_PART_MAIN);
+  lv_obj_set_style_bg_opa(s_aodMediaFootnoteCard, LV_OPA_70, LV_PART_MAIN);
+  lv_obj_set_style_pad_all(s_aodMediaFootnoteCard, 6, LV_PART_MAIN);
+  lv_obj_add_flag(s_aodMediaFootnoteCard, LV_OBJ_FLAG_HIDDEN);
+
+  s_aodFootnoteIcon = lv_label_create(s_aodMediaFootnoteCard);
+  lv_label_set_text(s_aodFootnoteIcon, ICON_MUSIC);
+  lv_obj_set_style_text_font(s_aodFootnoteIcon, Theme::iconFont20(), LV_PART_MAIN);
+  lv_obj_set_style_text_color(s_aodFootnoteIcon, lv_color_hex(p.accent), LV_PART_MAIN);
+  lv_obj_align(s_aodFootnoteIcon, LV_ALIGN_LEFT_MID, 2, 0);
+
+  s_aodFootnoteText = lv_label_create(s_aodMediaFootnoteCard);
+  lv_label_set_long_mode(s_aodFootnoteText, LV_LABEL_LONG_DOT);
+  lv_obj_set_width(s_aodFootnoteText, 256);
+  lv_obj_set_style_text_font(s_aodFootnoteText, Theme::fontCaption(), LV_PART_MAIN);
+  lv_obj_set_style_text_color(s_aodFootnoteText, lv_color_hex(0xD0DCE0), LV_PART_MAIN);
+  lv_obj_align(s_aodFootnoteText, LV_ALIGN_LEFT_MID, 28, 0);
+
+  s_aodFootnoteProgBar = lv_bar_create(s_aodMediaFootnoteCard);
+  lv_obj_set_size(s_aodFootnoteProgBar, 290, 2);
+  lv_obj_align(s_aodFootnoteProgBar, LV_ALIGN_BOTTOM_MID, 0, 2);
+  lv_bar_set_range(s_aodFootnoteProgBar, 0, 100);
+  lv_obj_set_style_bg_color(s_aodFootnoteProgBar, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
+  lv_obj_set_style_bg_opa(s_aodFootnoteProgBar, LV_OPA_20, LV_PART_MAIN);
+  lv_obj_set_style_bg_color(s_aodFootnoteProgBar, lv_color_hex(p.primary), LV_PART_INDICATOR);
 
   // --- Notification Alert Card for AOD mode ---
   s_aodAlertCard = Theme::createCard(root, 300, 140, 10, 15, Config::RADIUS_MD, true);
@@ -954,6 +1199,7 @@ bool activeAppWantsDouble(Button b) {
 }
 
 void tick(uint32_t nowMs) {
+  DataStore::tickClock(nowMs);
   if (s_lastInputMs == 0 || nowMs < s_lastInputMs) {
     s_lastInputMs = nowMs;
   }
@@ -982,10 +1228,18 @@ void tick(uint32_t nowMs) {
       return; // Suspend clock/media rendering while notification alert is
               // displayed
     }
-    const uint32_t nowSec = nowMs / 1000;
-    if (nowSec != s_aodLastSec) {
-      s_aodLastSec = nowSec;
-      refreshAodContent();
+    const bool clockToolsRunning = DataStore::isClockToolRunning();
+    if (clockToolsRunning) {
+      if (nowMs - s_aodLastSubSecMs >= 50) {
+        s_aodLastSubSecMs = nowMs;
+        refreshAodContent();
+      }
+    } else {
+      const uint32_t nowSec = nowMs / 1000;
+      if (nowSec != s_aodLastSec) {
+        s_aodLastSec = nowSec;
+        refreshAodContent();
+      }
     }
     return;
   }
@@ -999,13 +1253,34 @@ void tick(uint32_t nowMs) {
 void handleButton(Button b, Press p) {
   s_lastInputMs = millis();
 
-  // 1. Any press in AOD: if notification alert is active, dismiss alert;
-  // otherwise exit AOD
+  // 1. Any press in AOD:
+  // - If alert active, dismiss alert
+  // - If timer/stopwatch is active and Button::Select pressed, toggle play/pause directly in AOD!
+  // - Otherwise exit AOD
   if (s_viewState == ViewState::Aod) {
     if (s_aodAlertActive) {
       dismissAodNotificationAlert();
       return;
     }
+
+    const DataSnapshot d = DataStore::getSnapshot();
+    const bool timerActive =
+        (d.timer.state == TimerState::Running || d.timer.state == TimerState::Paused);
+    const bool stopwatchActive =
+        (d.stopwatch.state == StopwatchState::Running || d.stopwatch.state == StopwatchState::Paused);
+
+    if ((timerActive || stopwatchActive) && b == Button::Select && p == Press::Short) {
+      if (timerActive) {
+        DataStore::toggleTimer();
+        CompanionLink::sendClockCommand("timer_toggle");
+      } else {
+        DataStore::toggleStopwatch();
+        CompanionLink::sendClockCommand("stopwatch_toggle");
+      }
+      refreshAodContent();
+      return; // Handled directly in AOD without waking or exiting!
+    }
+
     exitAod();
     return;
   }

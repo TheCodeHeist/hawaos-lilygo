@@ -39,6 +39,10 @@ pub struct CompanionWindowView {
     pub(crate) notify_title_input: Entity<InputState>,
     pub(crate) notify_body_input: Entity<InputState>,
     pub(crate) weather_city_input: Entity<InputState>,
+    pub(crate) timer_h_input: Entity<InputState>,
+    pub(crate) timer_m_input: Entity<InputState>,
+    pub(crate) timer_s_input: Entity<InputState>,
+    pub(crate) timer_ms_input: Entity<InputState>,
     pub(crate) status_banner: Option<String>,
 }
 
@@ -84,6 +88,26 @@ impl CompanionWindowView {
                 .placeholder("e.g. London, Tokyo, New York")
                 .default_value(weather_city)
         });
+        let timer_h_input = cx.new(|cx| {
+            InputState::new(window, cx)
+                .placeholder("00")
+                .default_value("00")
+        });
+        let timer_m_input = cx.new(|cx| {
+            InputState::new(window, cx)
+                .placeholder("05")
+                .default_value("05")
+        });
+        let timer_s_input = cx.new(|cx| {
+            InputState::new(window, cx)
+                .placeholder("00")
+                .default_value("00")
+        });
+        let timer_ms_input = cx.new(|cx| {
+            InputState::new(window, cx)
+                .placeholder("000")
+                .default_value("000")
+        });
 
         // Pre-resize logo to 96x96 via Lanczos3 for crisp rendering without pixelation/aliasing
         let logo_image = if let Ok(img) =
@@ -107,6 +131,10 @@ impl CompanionWindowView {
             notify_title_input,
             notify_body_input,
             weather_city_input,
+            timer_h_input,
+            timer_m_input,
+            timer_s_input,
+            timer_ms_input,
             status_banner: None,
         }
     }

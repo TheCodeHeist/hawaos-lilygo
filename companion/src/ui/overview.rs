@@ -4,7 +4,7 @@ use gpui_kit::gpui::prelude::*;
 use gpui_kit::gpui::*;
 use gpui_kit::component::button::{Button, ButtonVariants};
 use gpui_kit::assets::IconName;
-use gpui_kit::component::input::Input;
+use gpui_kit::component::input::{Input, NumberInput};
 use gpui_kit::component::{h_flex, v_flex, Sizable, StyledExt};
 use gpui_kit::prelude::FluentBuilder as _;
 
@@ -28,6 +28,12 @@ impl CompanionWindowView {
             cfg,
             reported_ip,
             active_player,
+            sw_state,
+            sw_elapsed_ms,
+            tm_state,
+            tm_duration_sec,
+            tm_remaining_sec,
+            tm_remaining_ms,
         ) = if let Ok(g) = self.state.lock() {
             (
                 g.cpu_pct,
@@ -42,6 +48,12 @@ impl CompanionWindowView {
                 g.config.clone(),
                 g.device_reported_ip.clone(),
                 g.active_player.clone(),
+                g.stopwatch_state.clone(),
+                g.stopwatch_elapsed_ms,
+                g.timer_state.clone(),
+                g.timer_duration_sec,
+                g.timer_remaining_sec,
+                g.timer_remaining_ms,
             )
         } else {
             (
@@ -57,7 +69,19 @@ impl CompanionWindowView {
                 CompanionConfig::default(),
                 None,
                 None,
+                "stopped".to_string(),
+                0,
+                "stopped".to_string(),
+                300,
+                300,
+                300_000,
             )
+        };
+
+        let tm_progress_pct = if tm_duration_sec > 0 {
+            ((tm_remaining_sec as f32 / tm_duration_sec as f32) * 100.0).clamp(0.0, 100.0)
+        } else {
+            0.0
         };
 
         let progress_pct = if media.dur_ms > 0 {
@@ -656,6 +680,450 @@ impl CompanionWindowView {
                                                     ));
                                                     cx.notify();
                                                 }
+                                            })),
+                                    ),
+                            ),
+                    ),
+            )
+            // Clock Tools Card: Live Stopwatch & Countdown Timer
+            .child(
+                h_flex()
+                    .gap_4()
+                    .w_full()
+                    .items_stretch()
+                    .child(
+                        // Stopwatch Card
+                        v_flex()
+                            .flex_1()
+                            .p_4()
+                            .rounded(px(14.))
+                            .bg(pal.surface)
+                            .border_1()
+                            .border_color(pal.border)
+                            .justify_between()
+                            .gap_4()
+                            .child(
+                                h_flex()
+                                    .justify_between()
+                                    .items_center()
+                                    .child(
+                                        h_flex()
+                                            .gap_2()
+                                            .items_center()
+                                            .child(div().text_color(pal.accent).child(IconName::Timer))
+                                            .child(
+                                                div()
+                                                    .text_xs()
+                                                    .font_semibold()
+                                                    .text_color(pal.text_dim)
+                                                    .child("STOPWATCH"),
+                                            ),
+                                    )
+                                    .child(
+                                        div()
+                                            .px_2()
+                                            .py_0p5()
+                                            .rounded(px(6.))
+                                            .bg(if sw_state == "running" {
+                                                pal.primary.opacity(0.18)
+                                            } else if sw_state == "paused" {
+                                                pal.warn.opacity(0.18)
+                                            } else {
+                                                pal.surface2
+                                            })
+                                            .text_xs()
+                                            .font_semibold()
+                                            .text_color(if sw_state == "running" {
+                                                pal.accent
+                                            } else if sw_state == "paused" {
+                                                pal.warn
+                                            } else {
+                                                pal.text_dim
+                                            })
+                                            .child(sw_state.to_uppercase()),
+                                    ),
+                            )
+                            .child({
+                                let total_s = sw_elapsed_ms / 1000;
+                                let msec = sw_elapsed_ms % 1000;
+                                let h = total_s / 3600;
+                                let m = (total_s / 60) % 60;
+                                let s = total_s % 60;
+                                let sw_hms = format!("{:02}:{:02}:{:02}", h, m, s);
+                                let sw_ms = format!(".{:03}", msec);
+
+                                v_flex()
+                                    .gap_1()
+                                    .items_center()
+                                    .py_2()
+                                    .child(
+                                        h_flex()
+                                            .items_baseline()
+                                            .gap_0p5()
+                                            .child(
+                                                div()
+                                                    .text_3xl()
+                                                    .font_bold()
+                                                    .text_color(pal.text)
+                                                    .child(sw_hms),
+                                            )
+                                            .child(
+                                                div()
+                                                    .text_sm()
+                                                    .font_semibold()
+                                                    .text_color(pal.text_dim)
+                                                    .child(sw_ms),
+                                            ),
+                                    )
+                                    .child(
+                                        div()
+                                            .text_xs()
+                                            .text_color(pal.text_dim)
+                                            .child("Live stopwatch synced to LilyGo AOD & Clock app"),
+                                    )
+                            })
+                            .child(
+                                h_flex()
+                                    .justify_end()
+                                    .gap_2()
+                                    .child(
+                                        Button::new("sw-toggle-btn")
+                                            .small()
+                                            .with_variant(if sw_state == "running" {
+                                                gpui_kit::component::button::ButtonVariant::Secondary
+                                            } else {
+                                                gpui_kit::component::button::ButtonVariant::Primary
+                                            })
+                                            .icon(if sw_state == "running" {
+                                                IconName::Pause
+                                            } else {
+                                                IconName::Play
+                                            })
+                                            .label(if sw_state == "running" {
+                                                "Pause"
+                                            } else {
+                                                "Start"
+                                            })
+                                            .on_click(cx.listener(|this, _, _, cx| {
+                                                if let Ok(mut g) = this.state.lock() {
+                                                    g.toggle_stopwatch();
+                                                }
+                                                cx.notify();
+                                            })),
+                                    )
+                                    .child(
+                                        Button::new("sw-reset-btn")
+                                            .small()
+                                            .secondary()
+                                            .icon(IconName::RotateCcw)
+                                            .label("Reset")
+                                            .on_click(cx.listener(|this, _, _, cx| {
+                                                if let Ok(mut g) = this.state.lock() {
+                                                    g.reset_stopwatch();
+                                                }
+                                                cx.notify();
+                                            })),
+                                    ),
+                            ),
+                    )
+                    .child(
+                        // Countdown Timer Card
+                        v_flex()
+                            .flex_1()
+                            .p_4()
+                            .rounded(px(14.))
+                            .bg(pal.surface)
+                            .border_1()
+                            .border_color(pal.border)
+                            .justify_between()
+                            .gap_4()
+                            .child(
+                                h_flex()
+                                    .justify_between()
+                                    .items_center()
+                                    .child(
+                                        h_flex()
+                                            .gap_2()
+                                            .items_center()
+                                            .child(div().text_color(pal.accent).child(IconName::Clock))
+                                            .child(
+                                                div()
+                                                    .text_xs()
+                                                    .font_semibold()
+                                                    .text_color(pal.text_dim)
+                                                    .child("COUNTDOWN TIMER"),
+                                            ),
+                                    )
+                                    .child(
+                                        div()
+                                            .px_2()
+                                            .py_0p5()
+                                            .rounded(px(6.))
+                                            .bg(if tm_state == "running" {
+                                                pal.primary.opacity(0.18)
+                                            } else if tm_state == "paused" {
+                                                pal.warn.opacity(0.18)
+                                            } else {
+                                                pal.surface2
+                                            })
+                                            .text_xs()
+                                            .font_semibold()
+                                            .text_color(if tm_state == "running" {
+                                                pal.accent
+                                            } else if tm_state == "paused" {
+                                                pal.warn
+                                            } else {
+                                                pal.text_dim
+                                            })
+                                            .child(tm_state.to_uppercase()),
+                                    ),
+                            )
+                            .child({
+                                let total_s = tm_remaining_ms / 1000;
+                                let msec = tm_remaining_ms % 1000;
+                                let h = total_s / 3600;
+                                let m = (total_s / 60) % 60;
+                                let s = total_s % 60;
+                                let tm_hms = format!("{:02}:{:02}:{:02}", h, m, s);
+                                let tm_ms = format!(".{:03}", msec);
+
+                                v_flex()
+                                    .gap_2()
+                                    .items_center()
+                                    .child(
+                                        h_flex()
+                                            .items_baseline()
+                                            .gap_0p5()
+                                            .child(
+                                                div()
+                                                    .text_3xl()
+                                                    .font_bold()
+                                                    .text_color(pal.text)
+                                                    .child(tm_hms),
+                                            )
+                                            .child(
+                                                div()
+                                                    .text_sm()
+                                                    .font_semibold()
+                                                    .text_color(pal.text_dim)
+                                                    .child(tm_ms),
+                                            ),
+                                    )
+                                    .child(
+                                        div()
+                                            .w_full()
+                                            .h(px(6.))
+                                            .rounded_full()
+                                            .bg(pal.surface2)
+                                            .overflow_hidden()
+                                            .child(
+                                                div()
+                                                    .h_full()
+                                                    .w(relative(tm_progress_pct / 100.0))
+                                                    .rounded_full()
+                                                    .bg(pal.accent),
+                                            ),
+                                    )
+                                    .child(
+                                        // Arbitrary Time Selector (up to 59:99:99.999 max) using GPUI NumberInput
+                                        h_flex()
+                                            .w_full()
+                                            .items_center()
+                                            .justify_between()
+                                            .gap_2()
+                                            .p_2()
+                                            .rounded(px(10.))
+                                            .bg(pal.surface2)
+                                            .child(
+                                                h_flex()
+                                                    .items_center()
+                                                    .gap_1()
+                                                    .child(
+                                                        v_flex()
+                                                            .items_center()
+                                                            .child(div().text_xs().text_color(pal.text_dim).child("HH"))
+                                                            .child(
+                                                                div()
+                                                                    .w(px(48.))
+                                                                    .child(NumberInput::new(&self.timer_h_input).placeholder("00"))
+                                                            )
+                                                    )
+                                                    .child(div().text_sm().font_bold().text_color(pal.text_dim).child(":"))
+                                                    .child(
+                                                        v_flex()
+                                                            .items_center()
+                                                            .child(div().text_xs().text_color(pal.text_dim).child("MM"))
+                                                            .child(
+                                                                div()
+                                                                    .w(px(48.))
+                                                                    .child(NumberInput::new(&self.timer_m_input).placeholder("05"))
+                                                            )
+                                                    )
+                                                    .child(div().text_sm().font_bold().text_color(pal.text_dim).child(":"))
+                                                    .child(
+                                                        v_flex()
+                                                            .items_center()
+                                                            .child(div().text_xs().text_color(pal.text_dim).child("SS"))
+                                                            .child(
+                                                                div()
+                                                                    .w(px(48.))
+                                                                    .child(NumberInput::new(&self.timer_s_input).placeholder("00"))
+                                                            )
+                                                    )
+                                                    .child(div().text_sm().font_bold().text_color(pal.text_dim).child("."))
+                                                    .child(
+                                                        v_flex()
+                                                            .items_center()
+                                                            .child(div().text_xs().text_color(pal.text_dim).child("MS"))
+                                                            .child(
+                                                                div()
+                                                                    .w(px(56.))
+                                                                    .child(NumberInput::new(&self.timer_ms_input).placeholder("000"))
+                                                            )
+                                                    )
+                                            )
+                                            .child(
+                                                Button::new("set-timer-val-btn")
+                                                    .primary()
+                                                    .small()
+                                                    .icon(IconName::Clock)
+                                                    .label("Set")
+                                                    .on_click(cx.listener(|this, _, _, cx| {
+                                                        let h = this.timer_h_input.read(cx).value().trim().parse::<u32>().unwrap_or(0).min(59);
+                                                        let m = this.timer_m_input.read(cx).value().trim().parse::<u32>().unwrap_or(0).min(99);
+                                                        let s = this.timer_s_input.read(cx).value().trim().parse::<u32>().unwrap_or(0).min(99);
+                                                        let ms = this.timer_ms_input.read(cx).value().trim().parse::<u32>().unwrap_or(0).min(999);
+                                                        let total_ms = (h * 3600 + m * 60 + s) * 1000 + ms;
+                                                        if total_ms > 0 {
+                                                            if let Ok(mut g) = this.state.lock() {
+                                                                g.start_timer_ms(total_ms);
+                                                            }
+                                                            this.status_banner = Some(format!("Timer set to {:02}:{:02}:{:02}.{:03}", h, m, s, ms));
+                                                            cx.notify();
+                                                        }
+                                                    }))
+                                            )
+                                    )
+                                    .child(
+                                        h_flex()
+                                            .gap_1p5()
+                                            .items_center()
+                                            .child(
+                                                Button::new("tm-pre-1m")
+                                                    .small()
+                                                    .secondary()
+                                                    .label("1m")
+                                                    .on_click(cx.listener(|this, _, _, cx| {
+                                                        if let Ok(mut g) = this.state.lock() {
+                                                            g.start_timer(60);
+                                                        }
+                                                        cx.notify();
+                                                    })),
+                                            )
+                                            .child(
+                                                Button::new("tm-pre-3m")
+                                                    .small()
+                                                    .secondary()
+                                                    .label("3m")
+                                                    .on_click(cx.listener(|this, _, _, cx| {
+                                                        if let Ok(mut g) = this.state.lock() {
+                                                            g.start_timer(180);
+                                                        }
+                                                        cx.notify();
+                                                    })),
+                                            )
+                                            .child(
+                                                Button::new("tm-pre-5m")
+                                                    .small()
+                                                    .secondary()
+                                                    .label("5m")
+                                                    .on_click(cx.listener(|this, _, _, cx| {
+                                                        if let Ok(mut g) = this.state.lock() {
+                                                            g.start_timer(300);
+                                                        }
+                                                        cx.notify();
+                                                    })),
+                                            )
+                                            .child(
+                                                Button::new("tm-pre-10m")
+                                                    .small()
+                                                    .secondary()
+                                                    .label("10m")
+                                                    .on_click(cx.listener(|this, _, _, cx| {
+                                                        if let Ok(mut g) = this.state.lock() {
+                                                            g.start_timer(600);
+                                                        }
+                                                        cx.notify();
+                                                    })),
+                                            )
+                                            .child(
+                                                Button::new("tm-pre-15m")
+                                                    .small()
+                                                    .secondary()
+                                                    .label("15m")
+                                                    .on_click(cx.listener(|this, _, _, cx| {
+                                                        if let Ok(mut g) = this.state.lock() {
+                                                            g.start_timer(900);
+                                                        }
+                                                        cx.notify();
+                                                    })),
+                                            )
+                                            .child(
+                                                Button::new("tm-pre-25m")
+                                                    .small()
+                                                    .secondary()
+                                                    .label("25m")
+                                                    .on_click(cx.listener(|this, _, _, cx| {
+                                                        if let Ok(mut g) = this.state.lock() {
+                                                            g.start_timer(1500);
+                                                        }
+                                                        cx.notify();
+                                                    })),
+                                            ),
+                                    )
+                            })
+                            .child(
+                                h_flex()
+                                    .justify_end()
+                                    .gap_2()
+                                    .child(
+                                        Button::new("tm-toggle-btn")
+                                            .small()
+                                            .with_variant(if tm_state == "running" {
+                                                gpui_kit::component::button::ButtonVariant::Secondary
+                                            } else {
+                                                gpui_kit::component::button::ButtonVariant::Primary
+                                            })
+                                            .icon(if tm_state == "running" {
+                                                IconName::Pause
+                                            } else {
+                                                IconName::Play
+                                            })
+                                            .label(if tm_state == "running" {
+                                                "Pause"
+                                            } else if tm_state == "paused" {
+                                                "Resume"
+                                            } else {
+                                                "Start"
+                                            })
+                                            .on_click(cx.listener(|this, _, _, cx| {
+                                                if let Ok(mut g) = this.state.lock() {
+                                                    g.toggle_timer();
+                                                }
+                                                cx.notify();
+                                            })),
+                                    )
+                                    .child(
+                                        Button::new("tm-reset-btn")
+                                            .small()
+                                            .secondary()
+                                            .icon(IconName::RotateCcw)
+                                            .label("Reset")
+                                            .on_click(cx.listener(|this, _, _, cx| {
+                                                if let Ok(mut g) = this.state.lock() {
+                                                    g.reset_timer();
+                                                }
+                                                cx.notify();
                                             })),
                                     ),
                             ),

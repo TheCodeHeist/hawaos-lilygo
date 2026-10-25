@@ -1,4 +1,5 @@
 #include "core/Kernel.h"
+#include "apps/HomeApp.h"
 #include "apps/ClockApp.h"
 #include "apps/MediaApp.h"
 #include "apps/NotifyApp.h"
@@ -31,7 +32,8 @@ TaskHandle_t s_uiTaskHandle = nullptr;
 
 // DESIGN.md Section 9.2 Launcher order:
 // 0: Home, 1: Media, 2: Stats, 3: Notifications, 4: Settings
-ClockApp s_homeApp;
+HomeApp s_homeApp;
+ClockApp s_clockApp;
 WeatherApp s_weatherApp;
 MediaApp s_mediaApp;
 StatsApp s_statsApp;
@@ -63,6 +65,13 @@ void drainEvents() {
                     Settings::getNotifyPopupEnabled());
       StatusBar::updateData(snap);
       AppManager::handleData(snap);
+
+      // Mute all notifications if timer or stopwatch is actively running!
+      if (DataStore::isClockToolRunning()) {
+        Serial.println("[Kernel] Notification muted: timer or stopwatch is running!");
+        break;
+      }
+
       if (Settings::getNotifyPopupEnabled() && snap.notifyCount > 0) {
         const uint8_t count =
             snap.unreadCount > 0 ? snap.unreadCount : snap.notifyCount;
@@ -145,10 +154,11 @@ void uiTaskEntry(void * /*param*/) {
     // DESIGN.md Section 10: 5 Hz UI timer in AOD mode, 200 Hz when active.
     // When notification alert is active, run at 50 Hz (20ms) for smooth
     // animation and text scrolling:
+    const bool clockToolsRunning = DataStore::isClockToolRunning();
     const uint32_t tickDelayMs =
         (StatusBar::isPopupVisible() || AppManager::isAodAlertActive())
             ? 20
-            : (AppManager::isInAod() ? Config::UI_TICK_AOD_MS
+            : (AppManager::isInAod() ? (clockToolsRunning ? 50 : Config::UI_TICK_AOD_MS)
                                      : Config::UI_TICK_ACTIVE_MS);
     vTaskDelay(pdMS_TO_TICKS(tickDelayMs));
   }
@@ -203,6 +213,7 @@ void begin() {
 
   AppManager::begin();
   AppManager::registerApp(&s_homeApp);
+  AppManager::registerApp(&s_clockApp);
   AppManager::registerApp(&s_weatherApp);
   AppManager::registerApp(&s_mediaApp);
   AppManager::registerApp(&s_statsApp);

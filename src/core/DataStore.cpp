@@ -246,4 +246,239 @@ void markAllNotificationsRead() {
   }
 }
 
+void startStopwatch() {
+  if (s_mutex != nullptr &&
+      xSemaphoreTake(s_mutex, pdMS_TO_TICKS(20)) == pdTRUE) {
+    if (s_data.stopwatch.state != StopwatchState::Running) {
+      s_data.stopwatch.state = StopwatchState::Running;
+      s_data.stopwatch.lastStartMs = millis();
+    }
+    xSemaphoreGive(s_mutex);
+  }
+}
+
+void pauseStopwatch() {
+  if (s_mutex != nullptr &&
+      xSemaphoreTake(s_mutex, pdMS_TO_TICKS(20)) == pdTRUE) {
+    if (s_data.stopwatch.state == StopwatchState::Running) {
+      const uint32_t now = millis();
+      s_data.stopwatch.elapsedMs += (now - s_data.stopwatch.lastStartMs);
+      s_data.stopwatch.state = StopwatchState::Paused;
+    }
+    xSemaphoreGive(s_mutex);
+  }
+}
+
+void resetStopwatch() {
+  if (s_mutex != nullptr &&
+      xSemaphoreTake(s_mutex, pdMS_TO_TICKS(20)) == pdTRUE) {
+    s_data.stopwatch.state = StopwatchState::Stopped;
+    s_data.stopwatch.elapsedMs = 0;
+    s_data.stopwatch.lastStartMs = 0;
+    xSemaphoreGive(s_mutex);
+  }
+}
+
+void toggleStopwatch() {
+  if (s_mutex != nullptr &&
+      xSemaphoreTake(s_mutex, pdMS_TO_TICKS(20)) == pdTRUE) {
+    const uint32_t now = millis();
+    if (s_data.stopwatch.state == StopwatchState::Running) {
+      s_data.stopwatch.elapsedMs += (now - s_data.stopwatch.lastStartMs);
+      s_data.stopwatch.state = StopwatchState::Paused;
+    } else {
+      s_data.stopwatch.state = StopwatchState::Running;
+      s_data.stopwatch.lastStartMs = now;
+    }
+    xSemaphoreGive(s_mutex);
+  }
+}
+
+void startTimer(uint32_t durationSec) {
+  if (s_mutex != nullptr &&
+      xSemaphoreTake(s_mutex, pdMS_TO_TICKS(20)) == pdTRUE) {
+    if (durationSec > 0) {
+      s_data.timer.durationSec = durationSec;
+    }
+    s_data.timer.remainingSec = s_data.timer.durationSec;
+    s_data.timer.targetEpochMs = millis() + (s_data.timer.durationSec * 1000UL);
+    s_data.timer.state = TimerState::Running;
+    xSemaphoreGive(s_mutex);
+  }
+}
+
+void startTimerMs(uint32_t durationMs) {
+  if (s_mutex != nullptr &&
+      xSemaphoreTake(s_mutex, pdMS_TO_TICKS(20)) == pdTRUE) {
+    if (durationMs > 0) {
+      s_data.timer.durationSec = (durationMs + 999) / 1000;
+    }
+    s_data.timer.remainingSec = s_data.timer.durationSec;
+    s_data.timer.targetEpochMs = millis() + durationMs;
+    s_data.timer.state = TimerState::Running;
+    xSemaphoreGive(s_mutex);
+  }
+}
+
+void pauseTimer() {
+  if (s_mutex != nullptr &&
+      xSemaphoreTake(s_mutex, pdMS_TO_TICKS(20)) == pdTRUE) {
+    if (s_data.timer.state == TimerState::Running) {
+      const uint32_t now = millis();
+      if (now < s_data.timer.targetEpochMs) {
+        s_data.timer.remainingSec = (s_data.timer.targetEpochMs - now + 999) / 1000;
+      } else {
+        s_data.timer.remainingSec = 0;
+      }
+      s_data.timer.state = TimerState::Paused;
+    }
+    xSemaphoreGive(s_mutex);
+  }
+}
+
+void resumeTimer() {
+  if (s_mutex != nullptr &&
+      xSemaphoreTake(s_mutex, pdMS_TO_TICKS(20)) == pdTRUE) {
+    if (s_data.timer.state == TimerState::Paused || s_data.timer.state == TimerState::Stopped) {
+      if (s_data.timer.remainingSec == 0) {
+        s_data.timer.remainingSec = (s_data.timer.durationSec > 0) ? s_data.timer.durationSec : 300;
+      }
+      s_data.timer.targetEpochMs = millis() + (s_data.timer.remainingSec * 1000UL);
+      s_data.timer.state = TimerState::Running;
+    }
+    xSemaphoreGive(s_mutex);
+  }
+}
+
+void resetTimer() {
+  if (s_mutex != nullptr &&
+      xSemaphoreTake(s_mutex, pdMS_TO_TICKS(20)) == pdTRUE) {
+    s_data.timer.state = TimerState::Stopped;
+    s_data.timer.remainingSec = (s_data.timer.durationSec > 0) ? s_data.timer.durationSec : 300;
+    xSemaphoreGive(s_mutex);
+  }
+}
+
+void toggleTimer() {
+  if (s_mutex != nullptr &&
+      xSemaphoreTake(s_mutex, pdMS_TO_TICKS(20)) == pdTRUE) {
+    const uint32_t now = millis();
+    if (s_data.timer.state == TimerState::Running) {
+      if (now < s_data.timer.targetEpochMs) {
+        s_data.timer.remainingSec = (s_data.timer.targetEpochMs - now + 999) / 1000;
+      } else {
+        s_data.timer.remainingSec = 0;
+      }
+      s_data.timer.state = TimerState::Paused;
+    } else if (s_data.timer.state == TimerState::Paused) {
+      if (s_data.timer.remainingSec == 0) {
+        s_data.timer.remainingSec = (s_data.timer.durationSec > 0) ? s_data.timer.durationSec : 300;
+      }
+      s_data.timer.targetEpochMs = now + (s_data.timer.remainingSec * 1000UL);
+      s_data.timer.state = TimerState::Running;
+    } else { // Stopped or Finished
+      const uint32_t dur = (s_data.timer.durationSec > 0) ? s_data.timer.durationSec : 300;
+      s_data.timer.durationSec = dur;
+      s_data.timer.remainingSec = dur;
+      s_data.timer.targetEpochMs = now + (dur * 1000UL);
+      s_data.timer.state = TimerState::Running;
+    }
+    xSemaphoreGive(s_mutex);
+  }
+}
+
+void syncClock(StopwatchState swState, uint32_t swElapsedMs,
+               TimerState tmState, uint32_t tmDurationSec, uint32_t tmRemainingSec) {
+  if (s_mutex != nullptr &&
+      xSemaphoreTake(s_mutex, pdMS_TO_TICKS(20)) == pdTRUE) {
+    const uint32_t now = millis();
+    s_data.stopwatch.state = swState;
+    s_data.stopwatch.elapsedMs = swElapsedMs;
+    s_data.stopwatch.lastStartMs = now;
+
+    s_data.timer.state = tmState;
+    s_data.timer.durationSec = (tmDurationSec > 0) ? tmDurationSec : 300;
+    s_data.timer.remainingSec = tmRemainingSec;
+    if (tmState == TimerState::Running) {
+      s_data.timer.targetEpochMs = now + (tmRemainingSec * 1000UL);
+    }
+    xSemaphoreGive(s_mutex);
+  }
+}
+
+void tickClock(uint32_t nowMs) {
+  if (s_mutex != nullptr &&
+      xSemaphoreTake(s_mutex, pdMS_TO_TICKS(10)) == pdTRUE) {
+    if (s_data.timer.state == TimerState::Running) {
+      if (nowMs >= s_data.timer.targetEpochMs) {
+        s_data.timer.remainingSec = 0;
+        s_data.timer.state = TimerState::Finished;
+      } else {
+        s_data.timer.remainingSec = (s_data.timer.targetEpochMs - nowMs + 999) / 1000;
+      }
+    }
+    xSemaphoreGive(s_mutex);
+  }
+}
+
+uint32_t getStopwatchElapsedMs(uint32_t nowMs) {
+  uint32_t el = 0;
+  if (s_mutex != nullptr &&
+      xSemaphoreTake(s_mutex, pdMS_TO_TICKS(10)) == pdTRUE) {
+    el = s_data.stopwatch.elapsedMs;
+    if (s_data.stopwatch.state == StopwatchState::Running) {
+      el += (nowMs - s_data.stopwatch.lastStartMs);
+    }
+    xSemaphoreGive(s_mutex);
+  }
+  return el;
+}
+
+uint32_t getTimerRemainingSec(uint32_t nowMs) {
+  uint32_t rem = 0;
+  if (s_mutex != nullptr &&
+      xSemaphoreTake(s_mutex, pdMS_TO_TICKS(10)) == pdTRUE) {
+    if (s_data.timer.state == TimerState::Running) {
+      if (nowMs >= s_data.timer.targetEpochMs) {
+        rem = 0;
+      } else {
+        rem = (s_data.timer.targetEpochMs - nowMs + 999) / 1000;
+      }
+    } else {
+      rem = s_data.timer.remainingSec;
+    }
+    xSemaphoreGive(s_mutex);
+  }
+  return rem;
+}
+
+uint32_t getTimerRemainingMs(uint32_t nowMs) {
+  uint32_t rem = 0;
+  if (s_mutex != nullptr &&
+      xSemaphoreTake(s_mutex, pdMS_TO_TICKS(10)) == pdTRUE) {
+    if (s_data.timer.state == TimerState::Running) {
+      if (nowMs >= s_data.timer.targetEpochMs) {
+        rem = 0;
+      } else {
+        rem = s_data.timer.targetEpochMs - nowMs;
+      }
+    } else {
+      rem = s_data.timer.remainingSec * 1000UL;
+    }
+    xSemaphoreGive(s_mutex);
+  }
+  return rem;
+}
+
+bool isClockToolRunning() {
+  bool running = false;
+  if (s_mutex != nullptr &&
+      xSemaphoreTake(s_mutex, pdMS_TO_TICKS(10)) == pdTRUE) {
+    running = (s_data.stopwatch.state == StopwatchState::Running ||
+               s_data.timer.state == TimerState::Running);
+    xSemaphoreGive(s_mutex);
+  }
+  return running;
+}
+
 } // namespace DataStore

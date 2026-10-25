@@ -250,6 +250,54 @@ void handleJsonMessage(const char *payload, size_t len, bool viaUsb) {
     return;
   }
 
+  if (strcmp(type, "clock") == 0) {
+    if (doc["action"].is<const char *>()) {
+      const char *act = doc["action"];
+      if (strcmp(act, "stopwatch_start") == 0) {
+        DataStore::startStopwatch();
+      } else if (strcmp(act, "stopwatch_pause") == 0) {
+        DataStore::pauseStopwatch();
+      } else if (strcmp(act, "stopwatch_reset") == 0) {
+        DataStore::resetStopwatch();
+      } else if (strcmp(act, "stopwatch_toggle") == 0) {
+        DataStore::toggleStopwatch();
+      } else if (strcmp(act, "timer_start") == 0) {
+        if (doc["duration_ms"].is<uint32_t>() && doc["duration_ms"].as<uint32_t>() > 0) {
+          DataStore::startTimerMs(doc["duration_ms"].as<uint32_t>());
+        } else {
+          const uint32_t dur = doc["duration"] | 300U;
+          DataStore::startTimer(dur);
+        }
+      } else if (strcmp(act, "timer_pause") == 0) {
+        DataStore::pauseTimer();
+      } else if (strcmp(act, "timer_resume") == 0) {
+        DataStore::resumeTimer();
+      } else if (strcmp(act, "timer_reset") == 0) {
+        DataStore::resetTimer();
+      } else if (strcmp(act, "timer_toggle") == 0) {
+        DataStore::toggleTimer();
+      }
+    } else {
+      StopwatchState swState = StopwatchState::Stopped;
+      const char *swStr = doc["stopwatch_state"] | "stopped";
+      if (strcmp(swStr, "running") == 0) swState = StopwatchState::Running;
+      else if (strcmp(swStr, "paused") == 0) swState = StopwatchState::Paused;
+      const uint32_t swMs = doc["stopwatch_ms"] | 0U;
+
+      TimerState tmState = TimerState::Stopped;
+      const char *tmStr = doc["timer_state"] | "stopped";
+      if (strcmp(tmStr, "running") == 0) tmState = TimerState::Running;
+      else if (strcmp(tmStr, "paused") == 0) tmState = TimerState::Paused;
+      else if (strcmp(tmStr, "finished") == 0) tmState = TimerState::Finished;
+      const uint32_t tmDur = doc["timer_duration_sec"] | 300U;
+      const uint32_t tmRem = doc["timer_remaining_sec"] | tmDur;
+
+      DataStore::syncClock(swState, swMs, tmState, tmDur, tmRem);
+    }
+    postDataUpdated();
+    return;
+  }
+
   if (strcmp(type, "notify") == 0) {
     const char *app = doc["app"] | "";
     const char *title = doc["title"] | "";
@@ -558,6 +606,14 @@ void poll() {
     }
     flushPendingOutbound();
   }
+}
+
+void sendClockCommand(const char *cmd) {
+  if (cmd == nullptr)
+    return;
+  char buf[96];
+  snprintf(buf, sizeof(buf), "{\"type\":\"clock_cmd\",\"cmd\":\"%s\"}", cmd);
+  sendJsonPacket(buf);
 }
 
 void sendMediaCommand(const char *cmd, uint32_t posMs) {

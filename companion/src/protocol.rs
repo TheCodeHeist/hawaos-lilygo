@@ -68,7 +68,14 @@ pub fn handle_incoming_json_line(line: &str, state: &SharedState) {
     }
 
     if let Ok(pkt) = serde_json::from_str::<IncomingPacket>(trimmed) {
-        if pkt.msg_type == "cmd" {
+        if pkt.msg_type == "clock_cmd" {
+            if let Some(cmd) = pkt.cmd {
+                if let Ok(mut g) = state.lock() {
+                    g.handle_clock_cmd(&cmd);
+                    g.push_log(format!("Device triggered clock command: '{}'", cmd));
+                }
+            }
+        } else if pkt.msg_type == "cmd" {
             if let Some(cmd) = pkt.cmd {
                 let player_opt = state.lock().ok().and_then(|g| g.active_player.clone());
                 handle_device_command(&cmd, player_opt.as_deref());

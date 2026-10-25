@@ -134,6 +134,15 @@ pub fn spawn_daemon_worker(state: SharedState, art_cache: SharedArtCache) {
                         }
                     }
                     OutboundAction::SendNotification { app, title, body } => {
+                        let is_clock_running = if let Ok(g) = state.lock() {
+                            g.stopwatch_state == "running" || g.timer_state == "running"
+                        } else {
+                            false
+                        };
+                        if is_clock_running {
+                            eprintln!("[Daemon] Suppressing notification '{}' because timer/stopwatch is active", title);
+                            continue;
+                        }
                         let ts = SystemTime::now()
                             .duration_since(UNIX_EPOCH)
                             .unwrap_or_default()
@@ -166,11 +175,31 @@ pub fn spawn_daemon_worker(state: SharedState, art_cache: SharedArtCache) {
                     OutboundAction::RefreshWeather => {
                         trigger_weather_update(&state);
                     }
+                    OutboundAction::SendClockAction { action, duration_sec, duration_ms } => {
+                        let pkt = serde_json::json!({
+                            "type": "clock",
+                            "action": action,
+                            "duration": duration_sec,
+                            "duration_ms": duration_ms
+                        });
+                        if let Ok(json_str) = serde_json::to_string(&pkt) {
+                            eprintln!("[Daemon] Dispatching clock action to {:?}: {}", target_addr, json_str);
+                            if let Some(addr) = target_addr {
+                                let _ = udp.send_to(json_str.as_bytes(), addr);
+                            }
+                            if cfg.stream_via_usb {
+                                let _ = send_usb_line(&cfg.usb_port, &json_str, &state);
+                            }
+                        }
+                    }
                 }
             }
 
             // 3. 1 Hz Telemetry + Media tick
             if last_stats_tick.elapsed() >= Duration::from_secs(1) {
+                if let Ok(mut g) = state.lock() {
+                    g.tick_clock();
+                }
                 let dt = last_stats_tick.elapsed().as_secs_f64().max(0.1);
                 last_stats_tick = Instant::now();
 
@@ -277,6 +306,34 @@ pub fn spawn_daemon_worker(state: SharedState, art_cache: SharedArtCache) {
                     }
                     prev_media = Some(cur_media);
                     last_media_heartbeat = Instant::now();
+                }
+
+                let clock_pkt = if let Ok(g) = state.lock() {
+                    if g.stopwatch_state == "running" || g.timer_state == "running" || g.timer_state == "paused" || g.stopwatch_state == "paused" {
+                        Some(serde_json::json!({
+                            "type": "clock",
+                            "stopwatch_state": g.stopwatch_state,
+                            "stopwatch_ms": g.stopwatch_elapsed_ms,
+                            "timer_state": g.timer_state,
+                            "timer_duration_sec": g.timer_duration_sec,
+                            "timer_remaining_sec": g.timer_remaining_sec
+                        }))
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                };
+
+                if let Some(pkt) = clock_pkt {
+                    if let Ok(json_str) = serde_json::to_string(&pkt) {
+                        if let Some(addr) = target_addr {
+                            let _ = udp.send_to(json_str.as_bytes(), addr);
+                        }
+                        if stream_usb {
+                            let _ = send_usb_line(&usb_port, &json_str, &state);
+                        }
+                    }
                 }
 
                 if last_weather_fetch.elapsed() >= Duration::from_secs(900) {

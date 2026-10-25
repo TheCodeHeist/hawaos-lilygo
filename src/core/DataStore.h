@@ -8,6 +8,32 @@ enum class MediaPlayState : uint8_t {
   Paused = 2,
 };
 
+enum class StopwatchState : uint8_t {
+  Stopped = 0,
+  Running = 1,
+  Paused = 2,
+};
+
+enum class TimerState : uint8_t {
+  Stopped = 0,
+  Running = 1,
+  Paused = 2,
+  Finished = 3,
+};
+
+struct StopwatchSnapshot {
+  StopwatchState state = StopwatchState::Stopped;
+  uint32_t elapsedMs = 0;
+  uint32_t lastStartMs = 0;
+};
+
+struct TimerSnapshot {
+  TimerState state = TimerState::Stopped;
+  uint32_t durationSec = 300; // Default 5 minutes
+  uint32_t remainingSec = 300;
+  uint32_t targetEpochMs = 0;
+};
+
 struct NotificationItem {
   char app[32] = {0};
   char title[48] = {0};
@@ -78,6 +104,10 @@ struct DataSnapshot {
   // Weather state from companion
   WeatherSnapshot weather{};
 
+  // Clock, Stopwatch & Timer state
+  StopwatchSnapshot stopwatch{};
+  TimerSnapshot timer{};
+
   // Connectivity & time state
   bool wifiConnected = false;
   int8_t wifiRssi = 0;
@@ -109,9 +139,31 @@ uint16_t *albumArtBuffer(); // 128x128 RGB565 buffer in PSRAM
 
 void updateWeather(const WeatherSnapshot &ws);
 
+// Stopwatch & Timer state management
+void startStopwatch();
+void pauseStopwatch();
+void resetStopwatch();
+void toggleStopwatch();
+
+void startTimer(uint32_t durationSec);
+void startTimerMs(uint32_t durationMs);
+void pauseTimer();
+void resumeTimer();
+void resetTimer();
+void toggleTimer();
+
+void syncClock(StopwatchState swState, uint32_t swElapsedMs, TimerState tmState,
+               uint32_t tmDurationSec, uint32_t tmRemainingSec);
+void tickClock(uint32_t nowMs);
+uint32_t getStopwatchElapsedMs(uint32_t nowMs);
+uint32_t getTimerRemainingSec(uint32_t nowMs);
+uint32_t getTimerRemainingMs(uint32_t nowMs);
+bool isClockToolRunning();
+
 void updateWifi(bool connected, int8_t rssi, const char *ssid, const char *ip);
 void updateNtp(bool synced);
-void pushNotification(const char *app, const char *title, const char *body, uint32_t ts);
+void pushNotification(const char *app, const char *title, const char *body,
+                      uint32_t ts);
 inline void pushNotification(const char *title, const char *body, uint32_t ts) {
   pushNotification("", title, body, ts);
 }

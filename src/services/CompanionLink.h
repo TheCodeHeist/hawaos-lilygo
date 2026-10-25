@@ -14,6 +14,9 @@ void poll();
 // e.g. "play_pause", "next", "prev"
 void sendMediaCommand(const char *cmd, uint32_t posMs = 0);
 
+// Send clock command (e.g. "timer_toggle", "stopwatch_toggle")
+void sendClockCommand(const char *cmd);
+
 // Send config acknowledgement to companion
 void sendConfigAck(uint32_t version);
 

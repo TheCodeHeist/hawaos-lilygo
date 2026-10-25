@@ -136,6 +136,11 @@ pub enum OutboundAction {
         via_usb: bool,
     },
     RefreshWeather,
+    SendClockAction {
+        action: String,
+        duration_sec: u32,
+        duration_ms: u32,
+    },
 }
 
 pub struct SharedDaemonState {
@@ -161,6 +166,14 @@ pub struct SharedDaemonState {
     pub open_window_requested: bool,
     pub quit_requested: bool,
     pub weather: Option<WeatherMsg>,
+    pub stopwatch_state: String,
+    pub stopwatch_elapsed_ms: u32,
+    pub stopwatch_last_start: Option<Instant>,
+    pub timer_state: String,
+    pub timer_duration_sec: u32,
+    pub timer_remaining_sec: u32,
+    pub timer_remaining_ms: u32,
+    pub timer_target_instant: Option<Instant>,
 }
 
 impl SharedDaemonState {
@@ -194,6 +207,181 @@ impl SharedDaemonState {
             open_window_requested: false,
             quit_requested: false,
             weather: None,
+            stopwatch_state: "stopped".to_string(),
+            stopwatch_elapsed_ms: 0,
+            stopwatch_last_start: None,
+            timer_state: "stopped".to_string(),
+            timer_duration_sec: 300,
+            timer_remaining_sec: 300,
+            timer_remaining_ms: 300_000,
+            timer_target_instant: None,
+        }
+    }
+
+    pub fn start_stopwatch(&mut self) {
+        if self.stopwatch_state != "running" {
+            self.stopwatch_state = "running".to_string();
+            self.stopwatch_last_start = Some(Instant::now());
+            self.outbound_queue.push_back(OutboundAction::SendClockAction {
+                action: "stopwatch_start".to_string(),
+                duration_sec: 0,
+                duration_ms: 0,
+            });
+        }
+    }
+
+    pub fn pause_stopwatch(&mut self) {
+        if self.stopwatch_state == "running" {
+            if let Some(inst) = self.stopwatch_last_start.take() {
+                self.stopwatch_elapsed_ms = self.stopwatch_elapsed_ms.saturating_add(inst.elapsed().as_millis() as u32);
+            }
+            self.stopwatch_state = "paused".to_string();
+            self.outbound_queue.push_back(OutboundAction::SendClockAction {
+                action: "stopwatch_pause".to_string(),
+                duration_sec: 0,
+                duration_ms: 0,
+            });
+        }
+    }
+
+    pub fn reset_stopwatch(&mut self) {
+        self.stopwatch_state = "stopped".to_string();
+        self.stopwatch_elapsed_ms = 0;
+        self.stopwatch_last_start = None;
+        self.outbound_queue.push_back(OutboundAction::SendClockAction {
+            action: "stopwatch_reset".to_string(),
+            duration_sec: 0,
+            duration_ms: 0,
+        });
+    }
+
+    pub fn toggle_stopwatch(&mut self) {
+        if self.stopwatch_state == "running" {
+            self.pause_stopwatch();
+        } else {
+            self.start_stopwatch();
+        }
+    }
+
+    pub fn start_timer(&mut self, duration_sec: u32) {
+        let dur = if duration_sec > 0 { duration_sec } else { 300 };
+        self.timer_duration_sec = dur;
+        self.timer_remaining_sec = dur;
+        self.timer_remaining_ms = dur * 1000;
+        self.timer_target_instant = Some(Instant::now() + std::time::Duration::from_secs(dur as u64));
+        self.timer_state = "running".to_string();
+        self.outbound_queue.push_back(OutboundAction::SendClockAction {
+            action: "timer_start".to_string(),
+            duration_sec: dur,
+            duration_ms: dur * 1000,
+        });
+    }
+
+    pub fn start_timer_ms(&mut self, duration_ms: u32) {
+        let dur_ms = if duration_ms > 0 { duration_ms } else { 300_000 };
+        self.timer_duration_sec = (dur_ms + 999) / 1000;
+        self.timer_remaining_sec = (dur_ms + 999) / 1000;
+        self.timer_remaining_ms = dur_ms;
+        self.timer_target_instant = Some(Instant::now() + std::time::Duration::from_millis(dur_ms as u64));
+        self.timer_state = "running".to_string();
+        self.outbound_queue.push_back(OutboundAction::SendClockAction {
+            action: "timer_start".to_string(),
+            duration_sec: self.timer_duration_sec,
+            duration_ms: dur_ms,
+        });
+    }
+
+    pub fn pause_timer(&mut self) {
+        if self.timer_state == "running" {
+            if let Some(target) = self.timer_target_instant.take() {
+                let now = Instant::now();
+                if target > now {
+                    let rem = target - now;
+                    self.timer_remaining_sec = rem.as_secs() as u32;
+                    self.timer_remaining_ms = rem.as_millis() as u32;
+                } else {
+                    self.timer_remaining_sec = 0;
+                    self.timer_remaining_ms = 0;
+                }
+            }
+            self.timer_state = "paused".to_string();
+            self.outbound_queue.push_back(OutboundAction::SendClockAction {
+                action: "timer_pause".to_string(),
+                duration_sec: self.timer_duration_sec,
+                duration_ms: self.timer_remaining_ms,
+            });
+        }
+    }
+
+    pub fn resume_timer(&mut self) {
+        if self.timer_state == "paused" || self.timer_state == "stopped" {
+            let rem_s = if self.timer_remaining_sec > 0 { self.timer_remaining_sec } else { self.timer_duration_sec };
+            let rem_ms = if self.timer_remaining_ms > 0 { self.timer_remaining_ms } else { rem_s * 1000 };
+            self.timer_remaining_sec = rem_s;
+            self.timer_remaining_ms = rem_ms;
+            self.timer_target_instant = Some(Instant::now() + std::time::Duration::from_millis(rem_ms as u64));
+            self.timer_state = "running".to_string();
+            self.outbound_queue.push_back(OutboundAction::SendClockAction {
+                action: "timer_resume".to_string(),
+                duration_sec: rem_s,
+                duration_ms: rem_ms,
+            });
+        }
+    }
+
+    pub fn reset_timer(&mut self) {
+        self.timer_state = "stopped".to_string();
+        self.timer_remaining_sec = self.timer_duration_sec;
+        self.timer_remaining_ms = self.timer_duration_sec * 1000;
+        self.timer_target_instant = None;
+        self.outbound_queue.push_back(OutboundAction::SendClockAction {
+            action: "timer_reset".to_string(),
+            duration_sec: self.timer_duration_sec,
+            duration_ms: self.timer_duration_sec * 1000,
+        });
+    }
+
+    pub fn toggle_timer(&mut self) {
+        if self.timer_state == "running" {
+            self.pause_timer();
+        } else if self.timer_state == "paused" {
+            self.resume_timer();
+        } else {
+            self.start_timer(self.timer_duration_sec);
+        }
+    }
+
+    pub fn handle_clock_cmd(&mut self, cmd: &str) {
+        match cmd {
+            "timer_toggle" => self.toggle_timer(),
+            "stopwatch_toggle" => self.toggle_stopwatch(),
+            "timer_reset" => self.reset_timer(),
+            "stopwatch_reset" => self.reset_stopwatch(),
+            _ => {}
+        }
+    }
+
+    pub fn tick_clock(&mut self) {
+        if self.stopwatch_state == "running" {
+            if let Some(inst) = self.stopwatch_last_start {
+                self.stopwatch_elapsed_ms = self.stopwatch_elapsed_ms.saturating_add(inst.elapsed().as_millis() as u32);
+                self.stopwatch_last_start = Some(Instant::now());
+            }
+        }
+        if self.timer_state == "running" {
+            if let Some(target) = self.timer_target_instant {
+                let now = Instant::now();
+                if now >= target {
+                    self.timer_remaining_sec = 0;
+                    self.timer_remaining_ms = 0;
+                    self.timer_state = "finished".to_string();
+                    self.timer_target_instant = None;
+                } else {
+                    let rem = target - now;
+                    self.timer_remaining_sec = rem.as_secs() as u32;
+                    self.timer_remaining_ms = rem.as_millis() as u32;
+                }
+            }
         }
     }
 

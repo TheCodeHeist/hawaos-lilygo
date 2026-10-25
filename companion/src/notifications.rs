@@ -126,17 +126,26 @@ pub fn spawn_notification_listener(state: SharedState) {
                                         display_title, body, display_app
                                     );
                                     if let Ok(mut g) = state.lock() {
-                                        g.push_log(format!(
-                                            "[Notify] ({}): {}: {}",
-                                            display_app, display_title, body
-                                        ));
-                                        g.outbound_queue.push_back(
-                                            OutboundAction::SendNotification {
-                                                app: display_app,
-                                                title: display_title,
-                                                body,
-                                            },
-                                        );
+                                        let muted = g.stopwatch_state == "running" || g.timer_state == "running";
+                                        if muted {
+                                            g.push_log(format!(
+                                                "[Notify Muted] ({}): {}: {} (clock active)",
+                                                display_app, display_title, body
+                                            ));
+                                            eprintln!("[NotificationListener] Muting notification: timer/stopwatch is running!");
+                                        } else {
+                                            g.push_log(format!(
+                                                "[Notify] ({}): {}: {}",
+                                                display_app, display_title, body
+                                            ));
+                                            g.outbound_queue.push_back(
+                                                OutboundAction::SendNotification {
+                                                    app: display_app,
+                                                    title: display_title,
+                                                    body,
+                                                },
+                                            );
+                                        }
                                     }
                                 }
                             }
