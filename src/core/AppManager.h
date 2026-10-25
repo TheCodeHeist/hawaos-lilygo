@@ -27,19 +27,15 @@ void enterAod();
 void exitAod();
 bool isInAod();
 
-// Show full-screen notification alert (part of AOD at low brightness, or active
-// mode).
-void showNotificationAlert(const char *app, const char *title, const char *body, uint8_t count);
-inline void showNotificationAlert(const char *title, const char *body, uint8_t count) {
-  showNotificationAlert("", title, body, count);
+// Full-screen notification alert on AOD screen at low brightness
+void showAodNotificationAlert(const char *app, const char *title,
+                              const char *body, uint8_t count = 1);
+inline void showAodNotificationAlert(const char *title, const char *body,
+                                     uint8_t count = 1) {
+  showAodNotificationAlert("", title, body, count);
 }
-
-// Dismiss the notification alert immediately and resume normal rendering.
-void dismissNotificationAlert();
-
-// Returns true if notification alert is currently active (suspends other
-// rendering).
-bool isAlertActive();
+void dismissAodNotificationAlert();
+bool isAodAlertActive();
 
 // Reset idle activity timer (e.g. on notifications or user interaction).
 void resetActivity();

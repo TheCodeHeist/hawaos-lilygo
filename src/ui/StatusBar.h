@@ -25,7 +25,10 @@ void updateData(const DataSnapshot &d);
 
 // Show a floating notification popup banner on lv_layer_top() when a new
 // notification arrives (if enabled in Settings).
-void showNotificationPopup(const char *title, const char *body);
+void showNotificationPopup(const char *app, const char *title, const char *body, uint8_t count = 1);
+inline void showNotificationPopup(const char *title, const char *body) {
+  showNotificationPopup("", title, body, 1);
+}
 
 // Dismiss the notification popup banner immediately if visible.
 void dismissNotificationPopup();

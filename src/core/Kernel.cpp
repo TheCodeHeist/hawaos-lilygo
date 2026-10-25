@@ -43,10 +43,6 @@ void drainEvents() {
   while (EventBus::poll(ev)) {
     switch (ev.type) {
     case EventType::ButtonPressed:
-      if (AppManager::isAlertActive()) {
-        AppManager::dismissNotificationAlert();
-        break;
-      }
       if (StatusBar::isPopupVisible() && ev.btn.press == Press::Short) {
         StatusBar::dismissNotificationPopup();
         break;
@@ -55,26 +51,40 @@ void drainEvents() {
       break;
     case EventType::DataUpdated: {
       const DataSnapshot snap = DataStore::getSnapshot();
-      if (!AppManager::isAlertActive()) {
-        StatusBar::updateData(snap);
-      }
+      StatusBar::updateData(snap);
       AppManager::handleData(snap);
       break;
     }
     case EventType::NotificationArrived: {
       const DataSnapshot snap = DataStore::getSnapshot();
-      Serial.printf("[Kernel] NotificationArrived! notifyCount=%u, unread=%u, popupEnabled=%d\n",
-                    snap.notifyCount, snap.unreadCount, Settings::getNotifyPopupEnabled());
+      Serial.printf("[Kernel] NotificationArrived! notifyCount=%u, unread=%u, "
+                    "popupEnabled=%d\n",
+                    snap.notifyCount, snap.unreadCount,
+                    Settings::getNotifyPopupEnabled());
       StatusBar::updateData(snap);
       AppManager::handleData(snap);
       if (Settings::getNotifyPopupEnabled() && snap.notifyCount > 0) {
-        Serial.printf("[Kernel] Triggering showNotificationAlert: app='%s', title='%s' | '%s' (inAod=%d)\n",
-                      snap.notifications[0].app, snap.notifications[0].title, snap.notifications[0].body, AppManager::isInAod());
-        AppManager::showNotificationAlert(
-            snap.notifications[0].app, snap.notifications[0].title, snap.notifications[0].body,
-            snap.unreadCount > 0 ? snap.unreadCount : snap.notifyCount);
+        const uint8_t count =
+            snap.unreadCount > 0 ? snap.unreadCount : snap.notifyCount;
+        if (AppManager::isInAod()) {
+          Serial.printf(
+              "[Kernel] Showing AOD alert: app='%s', title='%s' | '%s'\n",
+              snap.notifications[0].app, snap.notifications[0].title,
+              snap.notifications[0].body);
+          AppManager::showAodNotificationAlert(
+              snap.notifications[0].app, snap.notifications[0].title,
+              snap.notifications[0].body, count);
+        } else {
+          Serial.printf(
+              "[Kernel] Showing normal popup: app='%s', title='%s' | '%s'\n",
+              snap.notifications[0].app, snap.notifications[0].title,
+              snap.notifications[0].body);
+          StatusBar::showNotificationPopup(snap.notifications[0].app,
+                                           snap.notifications[0].title,
+                                           snap.notifications[0].body, count);
+        }
       } else {
-        Serial.printf("[Kernel] Suppressed alert! popupEnabled=%d, count=%u\n",
+        Serial.printf("[Kernel] Suppressed popup! popupEnabled=%d, count=%u\n",
                       Settings::getNotifyPopupEnabled(), snap.notifyCount);
       }
       break;
@@ -116,13 +126,12 @@ void uiTaskEntry(void * /*param*/) {
 
     if (bootSplashDone) {
       drainEvents();
-      if (!AppManager::isAlertActive()) {
-        StatusBar::tick(nowMs);
-      }
+      StatusBar::tick(millis());
 
-      if (nowMs - lastAppTickMs >= Config::APP_TICK_PERIOD_MS) {
-        AppManager::tick(nowMs);
-        lastAppTickMs = nowMs;
+      const uint32_t currentMs = millis();
+      if (currentMs - lastAppTickMs >= Config::APP_TICK_PERIOD_MS) {
+        AppManager::tick(currentMs);
+        lastAppTickMs = currentMs;
       }
 
       lv_timer_handler();
@@ -135,9 +144,9 @@ void uiTaskEntry(void * /*param*/) {
 
     // DESIGN.md Section 10: 5 Hz UI timer in AOD mode, 200 Hz when active.
     // When notification alert is active, run at 50 Hz (20ms) for smooth
-    // animation:
+    // animation and text scrolling:
     const uint32_t tickDelayMs =
-        AppManager::isAlertActive()
+        (StatusBar::isPopupVisible() || AppManager::isAodAlertActive())
             ? 20
             : (AppManager::isInAod() ? Config::UI_TICK_AOD_MS
                                      : Config::UI_TICK_ACTIVE_MS);

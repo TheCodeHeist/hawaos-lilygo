@@ -1,6 +1,7 @@
 #include "ui/Theme.h"
 #include "config.h"
 #include "core/Settings.h"
+#include <string.h>
 
 namespace Theme {
 
@@ -116,6 +117,74 @@ uint32_t tintAccent(uint32_t bgTop, uint32_t fallbackRgb) {
       b = 255;
   }
   return (r << 16) | (g << 8) | b;
+}
+
+void sanitizeText(const char *in, char *out, size_t outSize) {
+  if (out == nullptr || outSize == 0)
+    return;
+  out[0] = '\0';
+  if (in == nullptr)
+    return;
+
+  size_t o = 0;
+  bool inTag = false;
+  bool lastWasSpace = false;
+
+  for (size_t i = 0; in[i] != '\0' && o + 1 < outSize; ++i) {
+    char c = in[i];
+    if (c == '<') {
+      inTag = true;
+      continue;
+    }
+    if (inTag) {
+      if (c == '>') {
+        inTag = false;
+        if (!lastWasSpace && o + 1 < outSize) {
+          out[o++] = ' ';
+          lastWasSpace = true;
+        }
+      }
+      continue;
+    }
+    // HTML entities
+    if (c == '&') {
+      if (strncmp(&in[i], "&amp;", 5) == 0) {
+        c = '&';
+        i += 4;
+      } else if (strncmp(&in[i], "&lt;", 4) == 0) {
+        c = '<';
+        i += 3;
+      } else if (strncmp(&in[i], "&gt;", 4) == 0) {
+        c = '>';
+        i += 3;
+      } else if (strncmp(&in[i], "&quot;", 6) == 0) {
+        c = '"';
+        i += 5;
+      } else if (strncmp(&in[i], "&apos;", 6) == 0 ||
+                 strncmp(&in[i], "&#39;", 5) == 0) {
+        c = '\'';
+        i += (in[i + 1] == '#') ? 4 : 5;
+      } else if (strncmp(&in[i], "&nbsp;", 6) == 0) {
+        c = ' ';
+        i += 5;
+      }
+    }
+    // Collapse newlines, carriage returns, tabs, multiple spaces
+    if (c == '\r' || c == '\n' || c == '\t' || c == ' ') {
+      if (!lastWasSpace && o > 0) {
+        out[o++] = ' ';
+        lastWasSpace = true;
+      }
+    } else {
+      out[o++] = c;
+      lastWasSpace = false;
+    }
+  }
+  // Trim trailing space if any
+  while (o > 0 && out[o - 1] == ' ') {
+    --o;
+  }
+  out[o] = '\0';
 }
 
 } // namespace Theme

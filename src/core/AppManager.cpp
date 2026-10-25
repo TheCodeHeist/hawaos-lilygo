@@ -71,14 +71,16 @@ uint32_t s_aodLastSec = 0xFFFFFFFF;
 bool s_aodWasPlaying = false;
 uint32_t s_aodPausedSinceMs = 0;
 
-// --- Notification Full-Screen Alert Layer on lv_layer_top() ---
-lv_obj_t *s_alertLayer = nullptr;
-lv_obj_t *s_alertIcon = nullptr;
-lv_obj_t *s_alertHeaderLbl = nullptr;
-lv_obj_t *s_alertBodyLbl = nullptr;
-bool s_alertActive = false;
-uint32_t s_alertStartMs = 0;
-constexpr uint32_t kAlertDurationMs = 4500;
+// --- AOD Notification Alert Elements ---
+lv_obj_t *s_aodAlertCard = nullptr;
+lv_obj_t *s_aodAlertIcon = nullptr;
+lv_obj_t *s_aodAlertHeaderLbl = nullptr;
+lv_obj_t *s_aodAlertBadgeLbl = nullptr;
+lv_obj_t *s_aodAlertTitleLbl = nullptr;
+lv_obj_t *s_aodAlertBodyLbl = nullptr;
+bool s_aodAlertActive = false;
+uint32_t s_aodAlertStartMs = 0;
+constexpr uint32_t kAodAlertDurationMs = 4500;
 
 void setLabelTextIfChanged(lv_obj_t *lbl, const char *newText) {
   if (lbl == nullptr || newText == nullptr)
@@ -114,6 +116,13 @@ void clearViewPointers() {
   s_aodTitleLbl = nullptr;
   s_aodArtistLbl = nullptr;
   s_aodProgBar = nullptr;
+  s_aodAlertCard = nullptr;
+  s_aodAlertIcon = nullptr;
+  s_aodAlertHeaderLbl = nullptr;
+  s_aodAlertBadgeLbl = nullptr;
+  s_aodAlertTitleLbl = nullptr;
+  s_aodAlertBodyLbl = nullptr;
+  s_aodAlertActive = false;
 }
 
 lv_obj_t *createAndSwapScreen(bool withWallpaper, bool forceDark = false) {
@@ -145,13 +154,14 @@ void refreshLauncherCarousel() {
     if (s_slotTiles[slot] == nullptr || s_slotIcons[slot] == nullptr)
       continue;
     const bool isCenter = (slot == 1);
-    const App *app = s_apps[indices[slot]];
+    const size_t appIdx = indices[slot];
+    App *app = s_apps[appIdx];
 
     lv_label_set_text(s_slotIcons[slot], app->icon());
-    lv_obj_set_style_text_color(s_slotIcons[slot],
-                                lv_color_hex(isCenter ? p.accent : p.text),
-                                LV_PART_MAIN);
     Theme::setFocusRing(s_slotTiles[slot], isCenter);
+    lv_obj_set_style_text_color(s_slotIcons[slot],
+                                lv_color_hex(isCenter ? p.accent : p.textDim),
+                                LV_PART_MAIN);
   }
 
   if (s_launcherNameLbl != nullptr) {
@@ -255,48 +265,49 @@ void refreshControlCenterTiles() {
     Theme::setFocusRing(s_ccTiles[i], focused);
     lv_obj_set_style_text_color(
         s_ccIcons[i], lv_color_hex(focused ? p.accent : p.text), LV_PART_MAIN);
-    lv_obj_set_style_text_color(s_ccTitleLbls[i], lv_color_hex(p.textDim),
-                                LV_PART_MAIN);
-    lv_obj_set_style_text_color(s_ccValLbls[i], lv_color_hex(p.text),
-                                LV_PART_MAIN);
   }
 }
 
 void buildControlCenterScreen(lv_obj_t *root) {
-  StatusBar::setVisible(true);
-  StatusBar::setTitle("Control Center");
+  StatusBar::setVisible(false);
 
-  // 2x2 grid in 320x148 content area: 146x64 tiles, gap 8px
-  constexpr int16_t kXs[4] = {10, 164, 10, 164};
-  constexpr int16_t kYs[4] = {26, 26, 98, 98};
+  // 2x2 grid: tiles are 144x68, x = 12, 164; y = 12, 88
+  constexpr int16_t kTileW = 144;
+  constexpr int16_t kTileH = 68;
+  constexpr int16_t kTileXs[4] = {12, 164, 12, 164};
+  constexpr int16_t kTileYs[4] = {12, 12, 88, 88};
 
   for (int i = 0; i < 4; ++i) {
-    lv_obj_t *tile =
-        Theme::createCard(root, 146, 64, kXs[i], kYs[i], Config::RADIUS_MD);
+    lv_obj_t *tile = Theme::createCard(root, kTileW, kTileH, kTileXs[i],
+                                       kTileYs[i], Config::RADIUS_MD);
 
-    lv_obj_t *icon = lv_label_create(tile);
-    lv_obj_set_style_text_font(icon, Theme::iconFont24(), LV_PART_MAIN);
-    lv_obj_align(icon, LV_ALIGN_LEFT_MID, 4, 0);
+    lv_obj_t *iconLbl = lv_label_create(tile);
+    lv_obj_set_style_text_font(iconLbl, Theme::iconFont32(), LV_PART_MAIN);
+    lv_obj_align(iconLbl, LV_ALIGN_LEFT_MID, 6, 0);
 
-    lv_obj_t *title = lv_label_create(tile);
-    lv_obj_set_style_text_font(title, Theme::fontCaption(), LV_PART_MAIN);
-    lv_obj_align(title, LV_ALIGN_TOP_LEFT, 38, 4);
+    lv_obj_t *titleLbl = lv_label_create(tile);
+    lv_obj_set_style_text_font(titleLbl, Theme::fontCaption(), LV_PART_MAIN);
+    lv_obj_set_style_text_color(titleLbl, lv_color_hex(Theme::active().textDim),
+                                LV_PART_MAIN);
+    lv_obj_align(titleLbl, LV_ALIGN_TOP_LEFT, 46, 12);
 
-    lv_obj_t *val = lv_label_create(tile);
-    lv_obj_set_style_text_font(val, Theme::fontBodySb(), LV_PART_MAIN);
-    lv_obj_align(val, LV_ALIGN_BOTTOM_LEFT, 38, -4);
+    lv_obj_t *valLbl = lv_label_create(tile);
+    lv_obj_set_style_text_font(valLbl, Theme::fontBodySb(), LV_PART_MAIN);
+    lv_obj_set_style_text_color(valLbl, lv_color_hex(Theme::active().text),
+                                LV_PART_MAIN);
+    lv_obj_align(valLbl, LV_ALIGN_TOP_LEFT, 46, 32);
 
     s_ccTiles[i] = tile;
-    s_ccIcons[i] = icon;
-    s_ccTitleLbls[i] = title;
-    s_ccValLbls[i] = val;
+    s_ccIcons[i] = iconLbl;
+    s_ccTitleLbls[i] = titleLbl;
+    s_ccValLbls[i] = valLbl;
   }
 
   refreshControlCenterTiles();
 }
 
 // =============================================================================
-// Always-On Display (AOD) State Machine & Color Tween (DESIGN.md Section 10)
+// Always-On Display (AOD) Full-Screen Ambient Clock (DESIGN.md Section 10)
 // =============================================================================
 uint32_t lerpRgb888(uint32_t fromRgb, uint32_t toRgb, uint8_t t) {
   const uint32_t inv = 255U - t;
@@ -351,7 +362,8 @@ void startAodTintTween(uint32_t toTop, uint32_t toBot, uint32_t durationMs) {
 }
 
 void refreshAodContent() {
-  if (s_viewState != ViewState::Aod || s_aodClockLbl == nullptr)
+  if (s_viewState != ViewState::Aod || s_aodClockLbl == nullptr ||
+      s_aodAlertActive)
     return;
 
   const DataSnapshot d = DataStore::getSnapshot();
@@ -424,7 +436,8 @@ void refreshAodContent() {
     const uint32_t aodTrackColor = aodLightBg ? 0x000000 : 0xFFFFFF;
     const lv_opa_t aodTrackOpa = aodLightBg ? LV_OPA_20 : LV_OPA_30;
 
-    // Media playing AOD: top bar has time (+ AM/PM) and short day/date with adaptive contrast
+    // Media playing AOD: top bar has time (+ AM/PM) and short day/date with
+    // adaptive contrast
     lv_obj_set_style_text_font(s_aodClockLbl, Theme::fontDisplay(),
                                LV_PART_MAIN);
     lv_obj_set_style_text_color(s_aodClockLbl, lv_color_hex(clockColor),
@@ -435,6 +448,7 @@ void refreshAodContent() {
       lv_label_set_text_fmt(s_aodClockLbl, "%02d:%02d", hr, mn);
     }
     lv_obj_align(s_aodClockLbl, LV_ALIGN_TOP_LEFT, 20, 8);
+    lv_obj_clear_flag(s_aodClockLbl, LV_OBJ_FLAG_HIDDEN);
 
     if (s_aodAmPmLbl != nullptr) {
       lv_obj_add_flag(s_aodAmPmLbl, LV_OBJ_FLAG_HIDDEN);
@@ -498,6 +512,7 @@ void refreshAodContent() {
 
     const int16_t clockXOffset = (!use24 && validTime) ? -16 : 0;
     lv_obj_align(s_aodClockLbl, LV_ALIGN_CENTER, clockXOffset, -14);
+    lv_obj_clear_flag(s_aodClockLbl, LV_OBJ_FLAG_HIDDEN);
 
     if (s_aodAmPmLbl != nullptr) {
       if (!use24 && validTime) {
@@ -616,6 +631,49 @@ void buildAodScreen(lv_obj_t *root) {
   lv_obj_set_style_bg_color(s_aodProgBar, lv_color_hex(p.primary),
                             LV_PART_INDICATOR);
 
+  // --- Notification Alert Card for AOD mode ---
+  s_aodAlertCard = Theme::createCard(root, 300, 140, 10, 15, Config::RADIUS_MD, true);
+  lv_obj_set_style_bg_color(s_aodAlertCard, lv_color_hex(0x0C1317), LV_PART_MAIN);
+  lv_obj_set_style_bg_opa(s_aodAlertCard, LV_OPA_COVER, LV_PART_MAIN);
+  lv_obj_set_style_border_color(s_aodAlertCard, lv_color_hex(p.accent), LV_PART_MAIN);
+  lv_obj_set_style_border_width(s_aodAlertCard, 2, LV_PART_MAIN);
+  lv_obj_set_style_pad_all(s_aodAlertCard, 8, LV_PART_MAIN);
+  lv_obj_set_style_clip_corner(s_aodAlertCard, true, LV_PART_MAIN);
+  lv_obj_add_flag(s_aodAlertCard, LV_OBJ_FLAG_HIDDEN);
+
+  s_aodAlertIcon = lv_label_create(s_aodAlertCard);
+  lv_label_set_text(s_aodAlertIcon, ICON_BELL);
+  lv_obj_set_style_text_font(s_aodAlertIcon, Theme::iconFont24(), LV_PART_MAIN);
+  lv_obj_set_style_text_color(s_aodAlertIcon, lv_color_hex(p.accent), LV_PART_MAIN);
+  lv_obj_set_pos(s_aodAlertIcon, 2, 0);
+
+  s_aodAlertHeaderLbl = lv_label_create(s_aodAlertCard);
+  lv_obj_set_style_text_font(s_aodAlertHeaderLbl, Theme::fontBodySb(), LV_PART_MAIN);
+  lv_obj_set_style_text_color(s_aodAlertHeaderLbl, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
+  lv_label_set_long_mode(s_aodAlertHeaderLbl, LV_LABEL_LONG_DOT);
+  lv_obj_set_width(s_aodAlertHeaderLbl, 206);
+  lv_obj_set_pos(s_aodAlertHeaderLbl, 34, 1);
+
+  s_aodAlertBadgeLbl = lv_label_create(s_aodAlertCard);
+  lv_obj_set_style_text_font(s_aodAlertBadgeLbl, Theme::fontCaption(), LV_PART_MAIN);
+  lv_obj_set_style_text_color(s_aodAlertBadgeLbl, lv_color_hex(p.accent), LV_PART_MAIN);
+  lv_label_set_text(s_aodAlertBadgeLbl, "NOW");
+  lv_obj_align(s_aodAlertBadgeLbl, LV_ALIGN_TOP_RIGHT, -2, 2);
+
+  s_aodAlertTitleLbl = lv_label_create(s_aodAlertCard);
+  lv_obj_set_style_text_font(s_aodAlertTitleLbl, Theme::fontBodySb(), LV_PART_MAIN);
+  lv_obj_set_style_text_color(s_aodAlertTitleLbl, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
+  lv_label_set_long_mode(s_aodAlertTitleLbl, LV_LABEL_LONG_DOT);
+  lv_obj_set_width(s_aodAlertTitleLbl, 276);
+  lv_obj_set_pos(s_aodAlertTitleLbl, 4, 30);
+
+  s_aodAlertBodyLbl = lv_label_create(s_aodAlertCard);
+  lv_obj_set_style_text_font(s_aodAlertBodyLbl, Theme::fontCaption(), LV_PART_MAIN);
+  lv_obj_set_style_text_color(s_aodAlertBodyLbl, lv_color_hex(0xD0DCE0), LV_PART_MAIN);
+  lv_label_set_long_mode(s_aodAlertBodyLbl, LV_LABEL_LONG_WRAP);
+  lv_obj_set_width(s_aodAlertBodyLbl, 276);
+  lv_obj_set_pos(s_aodAlertBodyLbl, 4, 54);
+
   s_aodLastSec = 0xFFFFFFFF;
   refreshAodContent();
 }
@@ -714,6 +772,8 @@ void enterAod() {
   if (s_viewState == ViewState::Aod)
     return;
 
+  StatusBar::dismissNotificationPopup();
+
   if (s_viewState == ViewState::InApp && s_activeAppIdx >= 0 &&
       static_cast<size_t>(s_activeAppIdx) < s_appCount) {
     s_apps[s_activeAppIdx]->onExit();
@@ -733,6 +793,7 @@ void enterAod() {
 void exitAod() {
   if (s_viewState != ViewState::Aod)
     return;
+  dismissAodNotificationAlert();
   s_lastInputMs = millis();
   Display::setBrightness(Settings::getBrightnessStep());
   Serial.println("[AppManager] Woke from AOD mode");
@@ -746,9 +807,127 @@ void exitAod() {
 
 bool isInAod() { return s_viewState == ViewState::Aod; }
 
-void resetActivity() {
-  s_lastInputMs = millis();
+void showAodNotificationAlert(const char *app, const char *title,
+                              const char *body, uint8_t count) {
+  if (s_viewState != ViewState::Aod || s_aodScreen == nullptr)
+    return;
+
+  s_aodAlertActive = true;
+  s_aodAlertStartMs = millis();
+
+  // Cancel any running background tint animation
+  lv_anim_del(s_aodScreen, aodAnimExecCb);
+
+  const ThemeTokens::Palette &p = Theme::dark();
+
+  char cleanApp[32] = {0};
+  char cleanTitle[64] = {0};
+  char cleanBody[160] = {0};
+  Theme::sanitizeText(app, cleanApp, sizeof(cleanApp));
+  Theme::sanitizeText(title, cleanTitle, sizeof(cleanTitle));
+  Theme::sanitizeText(body, cleanBody, sizeof(cleanBody));
+
+  const char *appName =
+      (cleanApp[0] != '\0')
+          ? cleanApp
+          : ((cleanTitle[0] != '\0') ? cleanTitle : "Notification");
+
+  const char *iconGlyph = ICON_BELL;
+  if ((cleanApp[0] != '\0' && (strstr(cleanApp, "Spotify") != nullptr ||
+                               strstr(cleanApp, "Music") != nullptr)) ||
+      (cleanTitle[0] != '\0' && (strstr(cleanTitle, "Spotify") != nullptr ||
+                                 strstr(cleanTitle, "Music") != nullptr))) {
+    iconGlyph = ICON_MUSIC;
+  }
+
+  if (s_aodAlertIcon != nullptr) {
+    lv_label_set_text(s_aodAlertIcon, iconGlyph);
+    lv_obj_set_style_text_color(s_aodAlertIcon, lv_color_hex(p.accent),
+                                LV_PART_MAIN);
+  }
+
+  if (s_aodAlertHeaderLbl != nullptr) {
+    char headerBuf[64];
+    snprintf(headerBuf, sizeof(headerBuf), "(%u) New Notification \"%s\"",
+             (count > 0 ? count : 1), appName);
+    lv_label_set_text(s_aodAlertHeaderLbl, headerBuf);
+  }
+
+  const bool hasDistinctTitle =
+      (cleanTitle[0] != '\0' && strcmp(cleanTitle, appName) != 0);
+
+  if (hasDistinctTitle) {
+    if (s_aodAlertTitleLbl != nullptr) {
+      lv_label_set_text(s_aodAlertTitleLbl, cleanTitle);
+      lv_obj_clear_flag(s_aodAlertTitleLbl, LV_OBJ_FLAG_HIDDEN);
+    }
+    if (s_aodAlertBodyLbl != nullptr) {
+      if (cleanBody[0] != '\0') {
+        lv_obj_set_pos(s_aodAlertBodyLbl, 4, 54);
+        lv_label_set_text(s_aodAlertBodyLbl, cleanBody);
+        lv_obj_clear_flag(s_aodAlertBodyLbl, LV_OBJ_FLAG_HIDDEN);
+      } else {
+        lv_obj_add_flag(s_aodAlertBodyLbl, LV_OBJ_FLAG_HIDDEN);
+      }
+    }
+  } else {
+    if (s_aodAlertTitleLbl != nullptr) {
+      lv_obj_add_flag(s_aodAlertTitleLbl, LV_OBJ_FLAG_HIDDEN);
+    }
+    if (s_aodAlertBodyLbl != nullptr) {
+      lv_obj_set_pos(s_aodAlertBodyLbl, 4, 32);
+      if (cleanBody[0] != '\0') {
+        lv_label_set_text(s_aodAlertBodyLbl, cleanBody);
+      } else {
+        lv_label_set_text(s_aodAlertBodyLbl, "New notification received");
+      }
+      lv_obj_clear_flag(s_aodAlertBodyLbl, LV_OBJ_FLAG_HIDDEN);
+    }
+  }
+
+  // Hide all clock & media elements on AOD screen
+  if (s_aodClockLbl != nullptr)
+    lv_obj_add_flag(s_aodClockLbl, LV_OBJ_FLAG_HIDDEN);
+  if (s_aodAmPmLbl != nullptr)
+    lv_obj_add_flag(s_aodAmPmLbl, LV_OBJ_FLAG_HIDDEN);
+  if (s_aodDateLbl != nullptr)
+    lv_obj_add_flag(s_aodDateLbl, LV_OBJ_FLAG_HIDDEN);
+  if (s_aodArtBox != nullptr)
+    lv_obj_add_flag(s_aodArtBox, LV_OBJ_FLAG_HIDDEN);
+  if (s_aodTitleLbl != nullptr)
+    lv_obj_add_flag(s_aodTitleLbl, LV_OBJ_FLAG_HIDDEN);
+  if (s_aodArtistLbl != nullptr)
+    lv_obj_add_flag(s_aodArtistLbl, LV_OBJ_FLAG_HIDDEN);
+  if (s_aodProgBar != nullptr)
+    lv_obj_add_flag(s_aodProgBar, LV_OBJ_FLAG_HIDDEN);
+
+  // Show alert card
+  if (s_aodAlertCard != nullptr) {
+    lv_obj_clear_flag(s_aodAlertCard, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_move_foreground(s_aodAlertCard);
+  }
+
+  // Maintain dim backlight for AOD
+  Display::setBrightness(Config::AOD_BRIGHTNESS_STEP);
+  lv_obj_set_style_bg_color(s_aodScreen, lv_color_hex(0x000000), LV_PART_MAIN);
+  lv_obj_set_style_bg_grad_dir(s_aodScreen, LV_GRAD_DIR_NONE, LV_PART_MAIN);
+  lv_obj_invalidate(s_aodScreen);
 }
+
+void dismissAodNotificationAlert() {
+  if (!s_aodAlertActive)
+    return;
+  s_aodAlertActive = false;
+
+  if (s_aodAlertCard != nullptr) {
+    lv_obj_add_flag(s_aodAlertCard, LV_OBJ_FLAG_HIDDEN);
+  }
+
+  refreshAodContent();
+}
+bool isAodAlertActive() { return s_aodAlertActive; }
+
+void resetActivity() { s_lastInputMs = millis(); }
 
 void applyActiveTheme() {
   StatusBar::applyTheme();
@@ -774,151 +953,13 @@ bool activeAppWantsDouble(Button b) {
   return false;
 }
 
-void createAlertLayerIfNeeded() {
-  if (s_alertLayer != nullptr)
-    return;
-
-  lv_obj_t *sys = lv_layer_sys();
-  s_alertLayer = lv_obj_create(sys);
-  lv_obj_set_size(s_alertLayer, Config::LCD_HOR_RES, Config::LCD_VER_RES);
-  lv_obj_set_pos(s_alertLayer, 0, 0);
-  lv_obj_set_style_bg_color(s_alertLayer, lv_color_hex(0x000000), LV_PART_MAIN);
-  lv_obj_set_style_bg_opa(s_alertLayer, LV_OPA_COVER, LV_PART_MAIN);
-  lv_obj_set_style_border_width(s_alertLayer, 0, LV_PART_MAIN);
-  lv_obj_set_style_radius(s_alertLayer, 0, LV_PART_MAIN);
-  lv_obj_set_style_pad_all(s_alertLayer, 0, LV_PART_MAIN);
-  lv_obj_clear_flag(s_alertLayer, LV_OBJ_FLAG_SCROLLABLE);
-  lv_obj_add_flag(s_alertLayer, LV_OBJ_FLAG_HIDDEN);
-
-  // Big app/notification icon (48px Lucide)
-  s_alertIcon = lv_label_create(s_alertLayer);
-  lv_label_set_text(s_alertIcon, ICON_BELL);
-  lv_obj_set_style_text_font(s_alertIcon, Theme::iconFont48(), LV_PART_MAIN);
-  lv_obj_set_style_text_color(s_alertIcon, lv_color_hex(Theme::dark().accent),
-                              LV_PART_MAIN);
-  lv_obj_align(s_alertIcon, LV_ALIGN_TOP_MID, 0, 18);
-
-  // Message below: "New Notification (count)" (18px SemiBold)
-  s_alertHeaderLbl = lv_label_create(s_alertLayer);
-  lv_obj_set_style_text_font(s_alertHeaderLbl, Theme::fontTitle(),
-                             LV_PART_MAIN);
-  lv_obj_set_style_text_color(s_alertHeaderLbl, lv_color_hex(0xFFFFFF),
-                              LV_PART_MAIN);
-  lv_obj_align(s_alertHeaderLbl, LV_ALIGN_TOP_MID, 0, 78);
-
-  // Title / Body snippet below that (14px regular)
-  s_alertBodyLbl = lv_label_create(s_alertLayer);
-  lv_obj_set_style_text_font(s_alertBodyLbl, Theme::fontBody(), LV_PART_MAIN);
-  lv_obj_set_style_text_color(s_alertBodyLbl, lv_color_hex(0xA0B4BA),
-                              LV_PART_MAIN);
-  lv_label_set_long_mode(s_alertBodyLbl, LV_LABEL_LONG_SCROLL_CIRCULAR);
-  lv_obj_set_style_anim_speed(s_alertBodyLbl, 28, LV_PART_MAIN);
-  lv_obj_set_width(s_alertBodyLbl, 280);
-  lv_obj_set_style_text_align(s_alertBodyLbl, LV_TEXT_ALIGN_CENTER,
-                              LV_PART_MAIN);
-  lv_obj_align(s_alertBodyLbl, LV_ALIGN_TOP_MID, 0, 112);
-}
-
-void showNotificationAlert(const char *app, const char *title, const char *body, uint8_t count) {
-  createAlertLayerIfNeeded();
-  if (s_alertLayer == nullptr) {
-    Serial.println("[AppManager] ERROR: s_alertLayer is NULL!");
-    return;
-  }
-
-  const char *appName = (app != nullptr && app[0] != '\0')
-                            ? app
-                            : ((title != nullptr && title[0] != '\0') ? title : "Notification");
-
-  Serial.printf("[AppManager] showNotificationAlert START: app='%s', title='%s', body='%s', count=%u\n",
-                appName, title ? title : "", body ? body : "", count);
-
-  const ThemeTokens::Palette &p = Theme::dark();
-  const char *iconGlyph = ICON_BELL;
-  if ((app != nullptr && (strstr(app, "Spotify") != nullptr || strstr(app, "Music") != nullptr)) ||
-      (title != nullptr && (strstr(title, "Spotify") != nullptr || strstr(title, "Music") != nullptr))) {
-    iconGlyph = ICON_MUSIC;
-  }
-  lv_label_set_text(s_alertIcon, iconGlyph);
-  lv_obj_set_style_text_color(s_alertIcon, lv_color_hex(p.accent), LV_PART_MAIN);
-
-  // Format: (`count`) New Notification "`app_name`"
-  char headerBuf[64];
-  snprintf(headerBuf, sizeof(headerBuf), "(%u) New Notification \"%s\"",
-           (count > 0 ? count : 1), appName);
-  lv_label_set_text(s_alertHeaderLbl, headerBuf);
-  lv_obj_align(s_alertHeaderLbl, LV_ALIGN_TOP_MID, 0, 78);
-
-  char bodyBuf[160] = {0};
-  if (title != nullptr && title[0] != '\0' && strcmp(title, appName) != 0) {
-    if (body != nullptr && body[0] != '\0') {
-      snprintf(bodyBuf, sizeof(bodyBuf), "%s: %s", title, body);
-    } else {
-      snprintf(bodyBuf, sizeof(bodyBuf), "%s", title);
-    }
-  } else if (body != nullptr && body[0] != '\0') {
-    snprintf(bodyBuf, sizeof(bodyBuf), "%s", body);
-  } else {
-    snprintf(bodyBuf, sizeof(bodyBuf), "New desktop alert received");
-  }
-  lv_label_set_text(s_alertBodyLbl, bodyBuf);
-  lv_obj_align(s_alertBodyLbl, LV_ALIGN_TOP_MID, 0, 112);
-
-  s_alertActive = true;
-  s_alertStartMs = millis();
-
-  if (s_viewState == ViewState::Aod) {
-    Display::setBrightness(Config::AOD_BRIGHTNESS_STEP);
-  }
-
-  lv_obj_clear_flag(s_alertLayer, LV_OBJ_FLAG_HIDDEN);
-  lv_obj_move_foreground(s_alertLayer);
-  lv_obj_invalidate(s_alertLayer);
-}
-
-void dismissNotificationAlert() {
-  if (!s_alertActive)
-    return;
-  s_alertActive = false;
-
-  if (s_alertLayer != nullptr) {
-    lv_obj_add_flag(s_alertLayer, LV_OBJ_FLAG_HIDDEN);
-  }
-
-  // Resume rendering:
-  if (s_viewState == ViewState::Aod) {
-    s_aodLastSec = 0xFFFFFFFF;
-    if (s_aodScreen != nullptr) {
-      refreshAodContent();
-      lv_obj_invalidate(s_aodScreen);
-    }
-  } else if (s_viewState == ViewState::Launcher) {
-    refreshLauncherCarousel();
-  } else if (s_viewState == ViewState::InApp && s_activeAppIdx >= 0 &&
-             static_cast<size_t>(s_activeAppIdx) < s_appCount) {
-    // Normal app ticks resume
-  }
-}
-
-bool isAlertActive() {
-  return s_alertActive;
-}
-
 void tick(uint32_t nowMs) {
-  // If notification alert is currently active, stop ALL normal rendering
-  // until alert duration expires!
-  if (s_alertActive) {
-    if (nowMs - s_alertStartMs >= kAlertDurationMs) {
-      dismissNotificationAlert();
-    }
-    return; // STOP ALL RENDERING DURING ALERT!
-  }
   if (s_lastInputMs == 0 || nowMs < s_lastInputMs) {
     s_lastInputMs = nowMs;
   }
 
   // Keep idle timer awake while notification popup is actively displayed
-  if (StatusBar::isPopupVisible()) {
+  if (StatusBar::isPopupVisible() || s_aodAlertActive) {
     s_lastInputMs = nowMs;
   }
 
@@ -933,6 +974,14 @@ void tick(uint32_t nowMs) {
   }
 
   if (s_viewState == ViewState::Aod) {
+    if (s_aodAlertActive) {
+      if (nowMs >= s_aodAlertStartMs &&
+          (nowMs - s_aodAlertStartMs >= kAodAlertDurationMs)) {
+        dismissAodNotificationAlert();
+      }
+      return; // Suspend clock/media rendering while notification alert is
+              // displayed
+    }
     const uint32_t nowSec = nowMs / 1000;
     if (nowSec != s_aodLastSec) {
       s_aodLastSec = nowSec;
@@ -950,14 +999,13 @@ void tick(uint32_t nowMs) {
 void handleButton(Button b, Press p) {
   s_lastInputMs = millis();
 
-  // If notification alert is currently active, any button press dismisses it immediately
-  if (s_alertActive) {
-    dismissNotificationAlert();
-    return;
-  }
-
-  // 1. Any press in AOD wakes and is consumed (DESIGN.md Section 8)
+  // 1. Any press in AOD: if notification alert is active, dismiss alert;
+  // otherwise exit AOD
   if (s_viewState == ViewState::Aod) {
+    if (s_aodAlertActive) {
+      dismissAodNotificationAlert();
+      return;
+    }
     exitAod();
     return;
   }
@@ -1045,16 +1093,15 @@ void handleButton(Button b, Press p) {
 }
 
 void handleData(const DataSnapshot &d) {
-  // If notification alert is currently active, do not re-render background views
-  if (s_alertActive) {
-    return;
-  }
   if (s_viewState == ViewState::InApp && s_activeAppIdx >= 0 &&
       static_cast<size_t>(s_activeAppIdx) < s_appCount) {
     s_apps[s_activeAppIdx]->onData(d);
   } else if (s_viewState == ViewState::ControlCenter) {
     refreshControlCenterTiles();
   } else if (s_viewState == ViewState::Aod) {
+    if (s_aodAlertActive) {
+      return; // Do not overwrite alert with incoming data snapshots
+    }
     refreshAodContent();
   }
 }

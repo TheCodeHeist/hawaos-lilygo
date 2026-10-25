@@ -38,6 +38,10 @@ uint8_t luminance(uint32_t rgb888);
 bool isColorLight(uint32_t rgb888);
 uint32_t tintAccent(uint32_t bgTop, uint32_t fallbackRgb);
 
+// String sanitizer for incoming notifications / metadata (strips HTML tags and
+// entities, collapses newlines)
+void sanitizeText(const char *in, char *out, size_t outSize);
+
 // Typography role helpers (DESIGN.md Section 4)
 inline const lv_font_t *fontCaption() { return &font_inter_12_reg; }
 inline const lv_font_t *fontBody() { return &font_inter_14_reg; }

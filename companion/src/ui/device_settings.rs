@@ -1,16 +1,16 @@
 use crate::config::save_config;
-use gpui_kit::gpui::prelude::*;
-use gpui_kit::gpui::*;
-use gpui_kit::component::button::{Button, ButtonVariants};
 use gpui_kit::assets::IconName;
+use gpui_kit::component::button::{Button, ButtonVariants};
 use gpui_kit::component::input::Input;
 use gpui_kit::component::switch::Switch;
-use gpui_kit::component::{h_flex, v_flex, Sizable, StyledExt};
+use gpui_kit::component::{Sizable, StyledExt, h_flex, v_flex};
+use gpui_kit::gpui::prelude::*;
+use gpui_kit::gpui::*;
 use gpui_kit::prelude::FluentBuilder as _;
 
 use crate::models::{CompanionConfig, OutboundAction};
-use crate::ui::theme::HawaPalette;
 use crate::ui::CompanionWindowView;
+use crate::ui::theme::HawaPalette;
 
 impl CompanionWindowView {
     pub(crate) fn render_device_settings(
@@ -49,7 +49,7 @@ impl CompanionWindowView {
                                 div()
                                     .text_sm()
                                     .text_color(pal.text_dim)
-                                    .child("Configure your LilyGo T-Display-S3 in real time (persisted to ESP32-S3 NVS Flash)"),
+                                    .child("Configure your LilyGo T-Display-S3 in real time\n (persisted to ESP32-S3 NVS Flash)"),
                             ),
                     )
                     .child(

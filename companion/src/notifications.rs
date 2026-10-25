@@ -5,6 +5,31 @@ use std::time::Duration;
 
 use crate::models::{OutboundAction, SharedState};
 
+fn strip_html_tags(input: &str) -> String {
+    let mut out = String::with_capacity(input.len());
+    let mut in_tag = false;
+    for ch in input.chars() {
+        if ch == '<' {
+            in_tag = true;
+            continue;
+        }
+        if ch == '>' {
+            in_tag = false;
+            continue;
+        }
+        if !in_tag {
+            if ch == '\n' || ch == '\r' || ch == '\t' {
+                if !out.ends_with(' ') {
+                    out.push(' ');
+                }
+            } else {
+                out.push(ch);
+            }
+        }
+    }
+    out.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
 pub fn spawn_notification_listener(state: SharedState) {
     thread::spawn(move || {
         loop {
@@ -58,9 +83,9 @@ pub fn spawn_notification_listener(state: SharedState) {
 
                     if line.contains("array [") {
                         if strings.len() >= 4 {
-                            let app_name = strings[0].trim().to_string();
-                            let summary = strings[2].trim().to_string();
-                            let body = strings[3].trim().to_string();
+                            let app_name = strip_html_tags(strings[0].trim());
+                            let summary = strip_html_tags(strings[2].trim());
+                            let body = strip_html_tags(strings[3].trim());
 
                             if !app_name.to_lowercase().contains("hawaos") {
                                 let title = if !summary.is_empty() {
@@ -72,17 +97,21 @@ pub fn spawn_notification_listener(state: SharedState) {
                                 };
 
                                 if !title.is_empty() || !body.is_empty() {
-                                    let display_app = if !app_name.is_empty() && app_name != "notify-send" {
-                                        app_name.clone()
-                                    } else if !summary.is_empty() && !body.is_empty() {
-                                        summary.clone()
-                                    } else if !app_name.is_empty() {
-                                        app_name.clone()
-                                    } else {
-                                        "Notification".to_string()
-                                    };
+                                    let display_app =
+                                        if !app_name.is_empty() && app_name != "notify-send" {
+                                            app_name.clone()
+                                        } else if !summary.is_empty() && !body.is_empty() {
+                                            summary.clone()
+                                        } else if !app_name.is_empty() {
+                                            app_name.clone()
+                                        } else {
+                                            "Notification".to_string()
+                                        };
 
-                                    let display_title = if app_name == "notify-send" && !summary.is_empty() && !body.is_empty() {
+                                    let display_title = if app_name == "notify-send"
+                                        && !summary.is_empty()
+                                        && !body.is_empty()
+                                    {
                                         summary.clone()
                                     } else if !summary.is_empty() {
                                         summary.clone()
@@ -92,14 +121,22 @@ pub fn spawn_notification_listener(state: SharedState) {
                                         "Notification".to_string()
                                     };
 
-                                    eprintln!("[NotificationListener] Captured notification: '{}' | '{}' (app: {})", display_title, body, display_app);
+                                    eprintln!(
+                                        "[NotificationListener] Captured notification: '{}' | '{}' (app: {})",
+                                        display_title, body, display_app
+                                    );
                                     if let Ok(mut g) = state.lock() {
-                                        g.push_log(format!("[Notify] ({}): {}: {}", display_app, display_title, body));
-                                        g.outbound_queue.push_back(OutboundAction::SendNotification {
-                                            app: display_app,
-                                            title: display_title,
-                                            body,
-                                        });
+                                        g.push_log(format!(
+                                            "[Notify] ({}): {}: {}",
+                                            display_app, display_title, body
+                                        ));
+                                        g.outbound_queue.push_back(
+                                            OutboundAction::SendNotification {
+                                                app: display_app,
+                                                title: display_title,
+                                                body,
+                                            },
+                                        );
                                     }
                                 }
                             }
@@ -110,7 +147,10 @@ pub fn spawn_notification_listener(state: SharedState) {
                     }
 
                     let trimmed = line.trim();
-                    if trimmed.starts_with("string \"") && trimmed.ends_with('"') && trimmed.len() >= 9 {
+                    if trimmed.starts_with("string \"")
+                        && trimmed.ends_with('"')
+                        && trimmed.len() >= 9
+                    {
                         let val = &trimmed[8..trimmed.len() - 1];
                         strings.push(val.to_string());
                     } else if trimmed.starts_with("string \"") {

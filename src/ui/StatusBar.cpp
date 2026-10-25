@@ -131,7 +131,7 @@ void begin() {
   lv_obj_set_style_text_font(s_popupTitleLbl, Theme::fontBodySb(),
                              LV_PART_MAIN);
   lv_label_set_long_mode(s_popupTitleLbl, LV_LABEL_LONG_DOT);
-  lv_obj_set_width(s_popupTitleLbl, 196);
+  lv_obj_set_width(s_popupTitleLbl, 216);
   lv_obj_align(s_popupTitleLbl, LV_ALIGN_TOP_LEFT, 34, 0);
 
   s_popupBadgeLbl = lv_label_create(s_popupCard);
@@ -145,7 +145,7 @@ void begin() {
                              LV_PART_MAIN);
   lv_label_set_long_mode(s_popupBodyLbl, LV_LABEL_LONG_SCROLL_CIRCULAR);
   lv_obj_set_style_anim_speed(s_popupBodyLbl, 28, LV_PART_MAIN);
-  lv_obj_set_width(s_popupBodyLbl, 244);
+  lv_obj_set_width(s_popupBodyLbl, 256);
   lv_obj_align(s_popupBodyLbl, LV_ALIGN_BOTTOM_LEFT, 34, 0);
 
   applyTheme();
@@ -224,15 +224,55 @@ void updateData(const DataSnapshot &d) {
   }
 }
 
-void showNotificationPopup(const char *title, const char *body) {
-  if (s_popupCard == nullptr || title == nullptr || title[0] == '\0')
+void showNotificationPopup(const char *app, const char *title, const char *body,
+                           uint8_t count) {
+  if (s_popupCard == nullptr)
     return;
 
   stylePopupCard();
-  lv_label_set_text(s_popupTitleLbl, title);
-  lv_label_set_text(s_popupBodyLbl, (body != nullptr && body[0] != '\0')
-                                        ? body
-                                        : "New notification received");
+
+  char cleanApp[32] = {0};
+  char cleanTitle[64] = {0};
+  char cleanBody[160] = {0};
+  Theme::sanitizeText(app, cleanApp, sizeof(cleanApp));
+  Theme::sanitizeText(title, cleanTitle, sizeof(cleanTitle));
+  Theme::sanitizeText(body, cleanBody, sizeof(cleanBody));
+
+  const char *appName =
+      (cleanApp[0] != '\0')
+          ? cleanApp
+          : ((cleanTitle[0] != '\0') ? cleanTitle : "Notification");
+
+  const char *iconGlyph = ICON_BELL;
+  if ((cleanApp[0] != '\0' && (strstr(cleanApp, "Spotify") != nullptr ||
+                               strstr(cleanApp, "Music") != nullptr)) ||
+      (cleanTitle[0] != '\0' && (strstr(cleanTitle, "Spotify") != nullptr ||
+                                 strstr(cleanTitle, "Music") != nullptr))) {
+    iconGlyph = ICON_MUSIC;
+  }
+  if (s_popupIcon != nullptr) {
+    lv_label_set_text(s_popupIcon, iconGlyph);
+  }
+
+  // Heading format: ({count}) New Notification "{app_name}"
+  char headerBuf[64];
+  snprintf(headerBuf, sizeof(headerBuf), "(%u) New Notification \"%s\"",
+           (count > 0 ? count : 1), appName);
+  lv_label_set_text(s_popupTitleLbl, headerBuf);
+
+  char bodyBuf[160] = {0};
+  if (cleanTitle[0] != '\0' && strcmp(cleanTitle, appName) != 0) {
+    if (cleanBody[0] != '\0') {
+      snprintf(bodyBuf, sizeof(bodyBuf), "%s: %s", cleanTitle, cleanBody);
+    } else {
+      snprintf(bodyBuf, sizeof(bodyBuf), "%s", cleanTitle);
+    }
+  } else if (cleanBody[0] != '\0') {
+    snprintf(bodyBuf, sizeof(bodyBuf), "%s", cleanBody);
+  } else {
+    snprintf(bodyBuf, sizeof(bodyBuf), "New notification received");
+  }
+  lv_label_set_text(s_popupBodyLbl, bodyBuf);
 
   s_popupVisible = true;
   s_popupShownAtMs = millis();
@@ -250,7 +290,7 @@ void showNotificationPopup(const char *title, const char *body) {
   lv_anim_t a;
   lv_anim_init(&a);
   lv_anim_set_var(&a, s_popupCard);
-  lv_anim_set_values(&a, kPopupHiddenY, kPopupVisibleY);
+  lv_anim_set_values(&a, lv_obj_get_y(s_popupCard), kPopupVisibleY);
   lv_anim_set_time(&a, dur);
   lv_anim_set_path_cb(&a, lv_anim_path_ease_out);
   lv_anim_set_exec_cb(&a, popupAnimYCb);
@@ -290,8 +330,13 @@ void dismissNotificationPopup() {
 bool isPopupVisible() { return s_popupVisible; }
 
 void tick(uint32_t nowMs) {
-  if (s_popupVisible && (nowMs - s_popupShownAtMs >= kPopupDurationMs)) {
-    dismissNotificationPopup();
+  if (s_popupVisible) {
+    if (nowMs < s_popupShownAtMs) {
+      return;
+    }
+    if (nowMs - s_popupShownAtMs >= kPopupDurationMs) {
+      dismissNotificationPopup();
+    }
   }
 }
 
