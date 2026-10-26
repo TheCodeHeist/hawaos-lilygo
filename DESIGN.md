@@ -82,7 +82,7 @@ Rules:
 - `tools/gen_theme.py` is the single source. It emits every accent's palettes into `include/theme_tokens.h` (`kPalettes[accent][dark/light]`, in flash) and the same table into `companion/src/ui/accents.rs`. Switching accents only changes an index; nothing is mutated mid-frame.
 - One setting drives both UIs. The companion picks it with gradient swatches (500 into 700, top-left to bottom-right) or from the tray. The device can cycle it in Settings. Changes sync both ways through `config` / `config_ack`, persisted by id (`accent` in `Preferences`).
 - **Companion only:** fills (`primary`/`pressed`) use 70% of the Tailwind chroma at the same lightness to cut glare on large glass fills; `accent` and the swatches stay full strength. Button ink takes whichever contrasts more. The window backdrop is tinted with the accent hue (dark `oklch(26% 0.05 h)` → `oklch(13% 0.015 h)`, light `oklch(98% 0.012 h)` → `oklch(92% 0.03 h)`, same glass alphas). Selected options in button groups are tinted chips, not solid fills. The device keeps full-strength accents.
-- Media and AOD backgrounds still follow album art. A track without artwork uses the accent's 600 shade into the accent-tinted `bg` instead of the old fixed cyan and slate.
+- Media and AOD backgrounds still follow album art. A track without artwork (or with grayscale art) uses a deep tint of the accent, `oklch(34% 0.11 h)` (`kMediaTint`), into the accent-tinted `bg`; the companion signals this by sending the legacy defaults `#008DA6` / `#071115`.
 
 ## 4. Typography
 
@@ -187,7 +187,7 @@ Left column: two stacked cards, **CPU** and **RAM**: label (caption), value (dis
 ### 9.5 Notifications
 Vertical list of solid cards, newest first: icon (24), title (body SemiBold), 2-line body (caption), relative time. Next scrolls, Select dismisses the focused item, Select long goes back. Empty state: `bell-off` icon + "All clear".
 
-### 9.6 Media (Spotify-style Now Playing)
+### 9.6 Media (Now Playing, Spotify-inspired)
 Always dark. Background: the **tinted gradient** from the companion (`bg_top` to `bg_bottom`, section 11); falls back to the dark `bg` if none.
 ```
  +----------+   Title (title 18, 1 line, scroll if long)

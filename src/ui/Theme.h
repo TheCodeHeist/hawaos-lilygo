@@ -20,8 +20,12 @@ bool isDark();
 constexpr uint32_t kLegacyMediaTint = 0x008DA6;
 constexpr uint32_t kLegacyMediaBottom = 0x071115;
 
+// Deep accent tint used as the media/AOD background top when a track has no
+// artwork.
+uint32_t mediaTint();
+
 // Media background top color: an untinted value (0 or the legacy defaults)
-// becomes the active accent's deep shade.
+// becomes mediaTint().
 uint32_t resolveMediaTint(uint32_t bgTop);
 
 // Media background bottom color: an untinted value becomes the accent-tinted

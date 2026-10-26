@@ -1122,6 +1122,27 @@ constexpr Palette kPalettes[kAccentCount][2] = {
     },
 };
 
+// Media/AOD background top when a track has no artwork (dark only)
+constexpr uint32_t kMediaTint[kAccentCount] = {
+    0x651818, // red: oklch(34.0% 0.11 25.331)
+    0x5D2500, // orange: oklch(34.0% 0.11 47.604)
+    0x503000, // amber: oklch(34.0% 0.11 70.08)
+    0x483500, // yellow: oklch(34.0% 0.11 86.047)
+    0x264100, // lime: oklch(34.0% 0.11 130.85)
+    0x00451A, // green: oklch(34.0% 0.11 149.579)
+    0x00432C, // emerald: oklch(34.0% 0.11 162.48)
+    0x00423B, // teal: oklch(34.0% 0.11 182.503)
+    0x003F4B, // cyan: oklch(34.0% 0.11 215.221)
+    0x003D59, // sky: oklch(34.0% 0.11 237.323)
+    0x113570, // blue: oklch(34.0% 0.11 259.815)
+    0x2C2E6F, // indigo: oklch(34.0% 0.11 277.117)
+    0x3B296B, // violet: oklch(34.0% 0.11 292.717)
+    0x452565, // purple: oklch(34.0% 0.11 303.9)
+    0x511F59, // fuchsia: oklch(34.0% 0.11 322.15)
+    0x60183B, // pink: oklch(34.0% 0.11 354.308)
+    0x651723, // rose: oklch(34.0% 0.11 16.439)
+};
+
 // Default (brand cyan) palettes
 static constexpr const Palette &kDarkPalette = kPalettes[kDefaultAccent][0];
 static constexpr const Palette &kLightPalette = kPalettes[kDefaultAccent][1];

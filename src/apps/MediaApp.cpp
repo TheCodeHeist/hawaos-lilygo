@@ -323,7 +323,7 @@ void MediaApp::refreshMedia(const DataSnapshot &d) {
   } else {
     setLabelTextIfChanged(m_titleLbl, "Nothing playing");
     setLabelTextIfChanged(m_artistLbl, "Play music on your PC");
-    setLabelTextIfChanged(m_kickerLbl, "SPOTIFY PLAYER");
+    setLabelTextIfChanged(m_kickerLbl, "MEDIA PLAYER");
   }
 
   // Show pause icon when playing, play icon when paused/stopped

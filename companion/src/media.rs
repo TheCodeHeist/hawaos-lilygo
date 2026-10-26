@@ -76,9 +76,11 @@ pub fn compute_tinted_palette(img: &image::DynamicImage) -> (String, String, Str
     }
 
     if total_w <= 0.0001 {
+        // Grayscale art: send the "no artwork" defaults so the device uses
+        // the accent's deep tint instead of a fixed color.
         return (
-            "#0f3a44".to_string(),
-            "#05090b".to_string(),
+            "#008da6".to_string(),
+            "#071115".to_string(),
             "light".to_string(),
         );
     }

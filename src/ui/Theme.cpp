@@ -19,12 +19,14 @@ const ThemeTokens::Palette &active() {
 
 const ThemeTokens::Palette &dark() { return palette(true); }
 
+uint32_t mediaTint() { return ThemeTokens::kMediaTint[Settings::getAccent()]; }
+
 uint32_t resolveMediaTint(uint32_t bgTop) {
   // 0 = no tint yet; kLegacyMediaTint = the companion's "no artwork" default,
   // which predates accents and is always cyan; kLegacyMediaBottom = the
   // DataStore boot default. All of them follow the accent instead.
   if (bgTop == 0 || bgTop == kLegacyMediaTint || bgTop == kLegacyMediaBottom) {
-    return dark().pressed;
+    return mediaTint();
   }
   return bgTop;
 }
@@ -119,7 +121,7 @@ bool isColorLight(uint32_t rgb888) { return luminance(rgb888) > 118U; }
 
 uint32_t tintAccent(uint32_t bgTop, uint32_t fallbackRgb) {
   if (bgTop == 0 || bgTop == kLegacyMediaBottom || bgTop == 0x05090B ||
-      bgTop == kLegacyMediaTint || bgTop == dark().pressed ||
+      bgTop == kLegacyMediaTint || bgTop == mediaTint() ||
       bgTop == dark().bg) {
     return fallbackRgb;
   }

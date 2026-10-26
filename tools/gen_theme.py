@@ -234,6 +234,16 @@ LIGHT_TOKENS = {
 }
 
 
+# Media/AOD background top for a track without artwork (always dark): a deep
+# tint of the accent, as rich as the companion's album-art tints (HSV v=0.42),
+# fading into the dark `bg`.
+MEDIA_TINT = (34.0, 0.110)
+
+
+def media_tint(name: str):
+    return (*MEDIA_TINT, accent_step(name, 500)[2])
+
+
 def resolved_tokens(name: str, mode: str):
     base = DARK_TOKENS if mode == "dark" else LIGHT_TOKENS
     roles = accent_roles(name, mode)
@@ -327,6 +337,19 @@ def generate_header(repo_root: Path):
             lines.extend(palette_lines(resolved_tokens(name, mode), " " * 12))
             lines.append("        },")
         lines.append("    },")
+    lines.extend(
+        [
+            "};",
+            "",
+            "// Media/AOD background top when a track has no artwork (dark only)",
+            "constexpr uint32_t kMediaTint[kAccentCount] = {",
+        ]
+    )
+    for name in names:
+        token = media_tint(name)
+        lines.append(
+            f"    0x{rgb888_hex(*oklch_to_srgb8(*token)):06X}, // {name}: oklch({token[0]}% {token[1]} {token[2]})"
+        )
     lines.extend(
         [
             "};",
