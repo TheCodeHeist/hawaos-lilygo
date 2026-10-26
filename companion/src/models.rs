@@ -100,6 +100,10 @@ pub struct IncomingPacket {
     pub ssid: Option<String>,
     pub id: Option<String>,
     pub setup: Option<bool>,
+    pub fw: Option<String>,
+    pub state: Option<String>,
+    pub pct: Option<u8>,
+    pub error: Option<String>,
     pub theme: Option<String>,
     pub accent: Option<String>,
     pub brightness: Option<u8>,
@@ -139,6 +143,10 @@ pub enum OutboundAction {
         via_usb: bool,
     },
     RefreshWeather,
+    /// Send a firmware image (path to firmware.bin) to the device.
+    StartOta {
+        path: std::path::PathBuf,
+    },
     SendClockAction {
         action: String,
         duration_sec: u32,
@@ -185,6 +193,29 @@ pub struct SharedDaemonState {
     pub wizard_active: bool,
     /// A device on our link reports it still needs first-run setup.
     pub device_needs_setup: bool,
+    /// Firmware version the device reports (`fw` in config_ack).
+    pub device_fw: Option<String>,
+    pub ota: Option<OtaProgress>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct OtaProgress {
+    /// "starting" | "downloading" | "verifying" | "done" | "failed"
+    pub state: String,
+    pub pct: u8,
+    pub error: Option<String>,
+    /// When this state was last reported, to time out a silent device.
+    pub at: std::time::Instant,
+}
+
+impl OtaProgress {
+    pub fn new(state: &str, pct: u8, error: Option<String>) -> Self {
+        Self { state: state.into(), pct, error, at: std::time::Instant::now() }
+    }
+
+    pub fn busy(&self) -> bool {
+        matches!(self.state.as_str(), "starting" | "downloading" | "verifying")
+    }
 }
 
 impl SharedDaemonState {
@@ -230,6 +261,8 @@ impl SharedDaemonState {
             setup_holds_usb: false,
             wizard_active: false,
             device_needs_setup: false,
+            device_fw: None,
+            ota: None,
         }
     }
 

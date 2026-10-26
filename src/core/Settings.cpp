@@ -335,4 +335,17 @@ void setSetupDone(bool done) {
   s_prefs.putBool("setup_done", s_setupDone);
 }
 
+void getCompanionToken(char *outBuf, size_t maxLen) {
+  if (outBuf == nullptr || maxLen == 0)
+    return;
+  outBuf[0] = '\0';
+  if (s_prefs.isKey("cmp_token")) {
+    s_prefs.getString("cmp_token", outBuf, maxLen);
+  }
+}
+
+void setCompanionToken(const char *hex) {
+  s_prefs.putString("cmp_token", hex != nullptr ? hex : "");
+}
+
 } // namespace Settings

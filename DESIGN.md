@@ -298,6 +298,26 @@ BLE is just another JSON-lines transport: service `48415741-4f53-4000-8000-00000
 
 **Companion wizard** (Add device page; opens automatically when no device is known; tray "Add Device..."): Connect (USB or Bluetooth discovery) -> Pair (BLE only, code entry) -> Wi-Fi (device's network list, password, or "Skip, use USB only") -> Personalize (accent, theme, clock; pushed live) -> Done. While it runs, the daemon stays off the USB port.
 
+**Companion token.** `setup {stage:"done"}` carries a fresh 128-bit token (32 hex): `token` over USB, `token_nonce`/`token_ct` sealed with the pairing key over BLE. The device stores it in `Preferences` (`cmp_token`), the companion in `device_token`. It authorizes firmware updates over the network (11.5).
+
+### 11.5 Firmware updates (OTA)
+The device always pulls the image itself over WiFi; the companion only serves it. Installed from the Firmware card on the companion's Device page ("Install update..." -> pick a PlatformIO `firmware.bin`).
+
+1. The companion checks the file starts with the ESP32 image magic `0xE9` and fits an app slot (6.25 MiB, `default_16MB.csv`), then serves it from the art HTTP server at `http://<lan ip>:7778/fw/<id>.bin` (`id` = first 16 hex of its SHA-256).
+2. It sends `{"type":"ota","url","size","sha256"}`. Over **USB** that is enough (physical access). Over **UDP** it adds `mac` = HMAC-SHA256(token, `"<sha256>:<size>"`); a missing or wrong MAC is answered `failed`/`unauthorized`. BLE never accepts `ota`.
+3. The device streams the download into the inactive app slot (`Update`), hashing as it goes. Only if all `size` bytes arrive **and** the SHA-256 matches **and** `Update.end()` accepts the image does it mark the new slot bootable and restart. Any failure aborts the write; the running firmware is untouched.
+
+| Message | Direction | Notes |
+|---|---|---|
+| `ota {url, size, sha256, mac?}` | companion -> device | `mac` required over UDP |
+| `ota_status {state, pct, error?}` | device -> companion | `downloading` (every 5%), `verifying`, `done` (restarts ~1 s later), `failed` |
+
+Errors: `unauthorized`, `rejected` (malformed, or an update already running), `no_wifi`, `bad_url`, `http_error`, `size_mismatch`, `no_space`, `flash_write` (also a bad image header on the first block), `incomplete`, `checksum`, `bad_image`. The companion shows each as a plain sentence and gives up with `no_response` after 20 s without a status (the device rebooted mid-download into its old firmware).
+
+Device UI: while an update runs, a full-screen overlay on `lv_layer_top` shows the progress and keeps the screen awake (leaves AOD, no AOD timeout); a failure stays on screen 4 s, and a new request may start straight away. The companion clears its "done" status when the device answers again after restarting; the `fw` in `config_ack` shows the new version.
+
+Known limits: a signed request can be replayed to reinstall that same image (the MAC covers the image, not a nonce), so it can't install anything the companion didn't sign. The download is plain HTTP on the LAN, protected by the hash. There is no automatic rollback if the new firmware boots but misbehaves; reflash over USB.
+
 ## 12. Boot logo
 
 Sequence (target: logo visible as soon as the Arduino core hands over control):

@@ -87,6 +87,12 @@ pub fn handle_incoming_json_line(line: &str, state: &SharedState) {
                     ));
                 }
             }
+        } else if pkt.msg_type == "ota_status" {
+            if let Ok(mut g) = state.lock() {
+                let st = pkt.state.unwrap_or_default();
+                g.push_log(format!("Firmware update: {st} {}%", pkt.pct.unwrap_or(0)));
+                g.ota = Some(crate::models::OtaProgress::new(&st, pkt.pct.unwrap_or(0), pkt.error));
+            }
         } else if pkt.msg_type == "config_ack" {
             if let Ok(mut g) = state.lock() {
                 g.last_ack_version = pkt.v;
@@ -116,6 +122,18 @@ pub fn handle_incoming_json_line(line: &str, state: &SharedState) {
                     }
                 }
                 g.device_needs_setup = pkt.setup.unwrap_or(false);
+                if let Some(fw) = pkt.fw.filter(|s| !s.is_empty()) {
+                    // The device answering again after "done" (a new version, or
+                    // past its restart delay) means the update went through.
+                    if g.ota.as_ref().is_some_and(|o| {
+                        o.state == "done"
+                            && (g.device_fw.as_deref() != Some(fw.as_str())
+                                || o.at.elapsed() > std::time::Duration::from_secs(3))
+                    }) {
+                        g.ota = None;
+                    }
+                    g.device_fw = Some(fw);
+                }
                 if let Some(th) = pkt.theme {
                     g.config.device_theme = th;
                 }

@@ -52,6 +52,8 @@ pub struct CompanionConfig {
     /// Device added with the setup wizard ("" until one is).
     pub device_id: String,
     pub device_name: String,
+    /// Secret given to the device at setup; signs network firmware updates.
+    pub device_token: String,
 }
 
 impl Default for CompanionConfig {
@@ -82,6 +84,7 @@ impl Default for CompanionConfig {
             orientation: "normal".to_string(),
             device_id: String::new(),
             device_name: String::new(),
+            device_token: String::new(),
         }
     }
 }

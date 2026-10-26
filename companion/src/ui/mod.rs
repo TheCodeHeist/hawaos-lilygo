@@ -2,6 +2,7 @@ pub mod accents;
 pub mod components;
 pub mod daemon_settings;
 pub mod device_settings;
+pub mod firmware;
 pub mod initial_setup;
 pub mod overview;
 pub mod setup_wizard;

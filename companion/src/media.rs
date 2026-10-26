@@ -376,6 +376,17 @@ pub fn spawn_art_http_server(cache: SharedArtCache) {
                         }
                     }
                 }
+                if parts.len() >= 2 && parts[0] == "GET" {
+                    if let Some(bytes) = crate::ota::served(parts[1]) {
+                        let header = format!(
+                            "HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                            bytes.len()
+                        );
+                        let _ = stream.write_all(header.as_bytes());
+                        let _ = stream.write_all(&bytes);
+                        return;
+                    }
+                }
                 let _ = stream.write_all(
                     b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
                 );

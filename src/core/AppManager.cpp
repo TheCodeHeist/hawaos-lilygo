@@ -6,6 +6,7 @@
 #include "drivers/Display.h"
 #include "services/WifiService.h"
 #include "services/CompanionLink.h"
+#include "services/OtaService.h"
 #include "services/SetupService.h"
 #include "ui/StatusBar.h"
 #include "ui/Theme.h"
@@ -97,6 +98,29 @@ lv_obj_t *s_aodAlertBodyLbl = nullptr;
 bool s_aodAlertActive = false;
 uint32_t s_aodAlertStartMs = 0;
 constexpr uint32_t kAodAlertDurationMs = 4500;
+
+// --- Firmware update overlay (on lv_layer_top, above every view) ---
+lv_obj_t *s_otaOverlay = nullptr;
+lv_obj_t *s_otaIcon = nullptr;
+lv_obj_t *s_otaTitleLbl = nullptr;
+lv_obj_t *s_otaSubLbl = nullptr;
+lv_obj_t *s_otaBar = nullptr;
+lv_obj_t *s_otaPctLbl = nullptr;
+
+const char *otaErrorText(const char *code) {
+  if (strcmp(code, "no_wifi") == 0)
+    return "The device isn't on WiFi.";
+  if (strcmp(code, "http_error") == 0 || strcmp(code, "bad_url") == 0)
+    return "Couldn't reach the companion.";
+  if (strcmp(code, "checksum") == 0 || strcmp(code, "incomplete") == 0 ||
+      strcmp(code, "size_mismatch") == 0)
+    return "The download was damaged.";
+  if (strcmp(code, "bad_image") == 0)
+    return "That file isn't HawaOS firmware.";
+  if (strcmp(code, "no_space") == 0)
+    return "Not enough room for this firmware.";
+  return "Something went wrong. Nothing changed.";
+}
 
 void setLabelTextIfChanged(lv_obj_t *lbl, const char *newText) {
   if (lbl == nullptr || newText == nullptr)
@@ -1247,8 +1271,95 @@ bool activeAppWantsDouble(Button b) {
   return false;
 }
 
+void refreshOtaOverlay() {
+  const OtaService::Progress pr = OtaService::progress();
+  if (pr.state == OtaService::State::Idle) {
+    if (s_otaOverlay != nullptr) {
+      lv_obj_del(s_otaOverlay);
+      s_otaOverlay = nullptr;
+    }
+    return;
+  }
+
+  const ThemeTokens::Palette &p = Theme::active();
+  if (s_otaOverlay == nullptr) {
+    if (s_viewState == ViewState::Aod) {
+      exitAod(); // full brightness while flashing
+    }
+    s_otaOverlay = lv_obj_create(lv_layer_top());
+    lv_obj_set_size(s_otaOverlay, Config::LCD_HOR_RES, Config::LCD_VER_RES);
+    lv_obj_set_pos(s_otaOverlay, 0, 0);
+    lv_obj_set_style_bg_color(s_otaOverlay, lv_color_hex(p.bg), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(s_otaOverlay, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_style_border_width(s_otaOverlay, 0, LV_PART_MAIN);
+    lv_obj_set_style_radius(s_otaOverlay, 0, LV_PART_MAIN);
+    lv_obj_clear_flag(s_otaOverlay, LV_OBJ_FLAG_SCROLLABLE);
+
+    s_otaIcon = lv_label_create(s_otaOverlay);
+    lv_obj_set_style_text_font(s_otaIcon, Theme::iconFont32(), LV_PART_MAIN);
+    lv_obj_align(s_otaIcon, LV_ALIGN_TOP_MID, 0, 6);
+
+    s_otaTitleLbl = lv_label_create(s_otaOverlay);
+    lv_obj_set_style_text_font(s_otaTitleLbl, Theme::fontTitle(), LV_PART_MAIN);
+    lv_obj_set_style_text_color(s_otaTitleLbl, lv_color_hex(p.text), LV_PART_MAIN);
+    lv_obj_align(s_otaTitleLbl, LV_ALIGN_TOP_MID, 0, 46);
+
+    s_otaBar = lv_bar_create(s_otaOverlay);
+    lv_obj_set_size(s_otaBar, 220, 8);
+    lv_obj_align(s_otaBar, LV_ALIGN_TOP_MID, -18, 86);
+    lv_bar_set_range(s_otaBar, 0, 100);
+    lv_obj_set_style_bg_color(s_otaBar, lv_color_hex(p.surface2), LV_PART_MAIN);
+    lv_obj_set_style_bg_color(s_otaBar, lv_color_hex(p.primary), LV_PART_INDICATOR);
+
+    s_otaPctLbl = lv_label_create(s_otaOverlay);
+    lv_obj_set_style_text_font(s_otaPctLbl, Theme::fontBodySb(), LV_PART_MAIN);
+    lv_obj_set_style_text_color(s_otaPctLbl, lv_color_hex(p.accent), LV_PART_MAIN);
+    lv_obj_align_to(s_otaPctLbl, s_otaBar, LV_ALIGN_OUT_RIGHT_MID, 10, 0);
+
+    s_otaSubLbl = lv_label_create(s_otaOverlay);
+    lv_obj_set_style_text_font(s_otaSubLbl, Theme::fontCaption(), LV_PART_MAIN);
+    lv_obj_set_style_text_color(s_otaSubLbl, lv_color_hex(p.textDim), LV_PART_MAIN);
+    lv_obj_align(s_otaSubLbl, LV_ALIGN_TOP_MID, 0, 112);
+  }
+
+  const bool failed = (pr.state == OtaService::State::Failed);
+  const char *title = "Updating HawaOS";
+  const char *sub = "Keep it powered. It restarts by itself.";
+  if (pr.state == OtaService::State::Verifying) {
+    title = "Checking the update";
+  } else if (pr.state == OtaService::State::Done) {
+    title = "Restarting...";
+    sub = "Almost there.";
+  } else if (failed) {
+    title = "Update failed";
+    sub = otaErrorText(pr.error);
+  }
+  setLabelTextIfChanged(s_otaIcon, failed ? ICON_CIRCLE_ALERT : ICON_REFRESH_CW);
+  lv_obj_set_style_text_color(s_otaIcon, lv_color_hex(failed ? p.err : p.accent),
+                              LV_PART_MAIN);
+  setLabelTextIfChanged(s_otaTitleLbl, title);
+  setLabelTextIfChanged(s_otaSubLbl, sub);
+  lv_obj_align(s_otaTitleLbl, LV_ALIGN_TOP_MID, 0, 46);
+  lv_obj_align(s_otaSubLbl, LV_ALIGN_TOP_MID, 0, failed ? 86 : 112);
+  if (failed) {
+    lv_obj_add_flag(s_otaBar, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(s_otaPctLbl, LV_OBJ_FLAG_HIDDEN);
+  } else {
+    lv_obj_clear_flag(s_otaBar, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_clear_flag(s_otaPctLbl, LV_OBJ_FLAG_HIDDEN);
+    lv_bar_set_value(s_otaBar, pr.pct, LV_ANIM_OFF);
+    char pct[8];
+    snprintf(pct, sizeof(pct), "%u%%", static_cast<unsigned>(pr.pct));
+    setLabelTextIfChanged(s_otaPctLbl, pct);
+  }
+}
+
 void tick(uint32_t nowMs) {
   DataStore::tickClock(nowMs);
+  refreshOtaOverlay();
+  if (s_otaOverlay != nullptr) {
+    s_lastInputMs = nowMs; // no AOD mid-update
+  }
   if (s_lastInputMs == 0 || nowMs < s_lastInputMs) {
     s_lastInputMs = nowMs;
   }

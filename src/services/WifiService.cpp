@@ -6,6 +6,7 @@
 #include "services/CompanionLink.h"
 #include "services/BleLink.h"
 #include "services/NtpService.h"
+#include "services/OtaService.h"
 #include "services/SetupService.h"
 
 #include <ArduinoJson.h>
@@ -279,6 +280,7 @@ void wifiTaskEntry(void * /*param*/) {
 
     CompanionLink::poll();
     SetupService::poll();
+    OtaService::poll();
     vTaskDelay(pdMS_TO_TICKS(25));
   }
 }

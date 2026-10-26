@@ -415,5 +415,6 @@ impl CompanionWindowView {
                             ),
                     )),
             )
+            .child(self.render_firmware_card(pal, cx))
     }
 }

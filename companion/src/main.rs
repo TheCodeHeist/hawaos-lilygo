@@ -2,6 +2,7 @@ mod config;
 mod media;
 mod models;
 mod notifications;
+mod ota;
 mod protocol;
 mod setup;
 mod tray;

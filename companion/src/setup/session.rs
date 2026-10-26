@@ -322,7 +322,17 @@ async fn request_scan(cx: &mut Ctx) {
 }
 
 async fn finish(cx: &mut Ctx) {
-    cx.send(json!({"type": "setup", "stage": "done"})).await;
+    // Token that authorizes later firmware updates over WiFi; sealed with the
+    // pairing key over BLE, plain over USB (physical access).
+    let token = crate::ota::new_token();
+    let done = match (&cx.link, &cx.session) {
+        (Some(Link::Ble(_)), Some(s)) => {
+            let (nonce, ct) = s.seal(&token);
+            json!({"type": "setup", "stage": "done", "token_nonce": nonce, "token_ct": ct})
+        }
+        _ => json!({"type": "setup", "stage": "done", "token": token}),
+    };
+    cx.send(done).await;
     // The device answers with a config_ack (setup: false); give it a moment.
     let _ = tokio::time::timeout(Duration::from_secs(2), async {
         while let Some(l) = next_line(&mut cx.link).await {
@@ -343,6 +353,7 @@ async fn finish(cx: &mut Ctx) {
             g.config.usb_port = port.clone();
         }
         g.config.stream_via_usb = w.usb_only;
+        g.config.device_token = token;
         if let Some(ip) = &w.device_ip {
             g.config.target_ip = ip.clone();
             g.device_reported_ip = Some(ip.clone());

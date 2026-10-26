@@ -8,7 +8,7 @@ use crate::config::CompanionConfig;
 use crate::media::query_mpris_media;
 use crate::config::{get_local_lan_ip, ART_HTTP_PORT, DEFAULT_DEVICE_IP, UDP_PORT, USB_BAUD};
 use crate::models::{
-    MediaMsg, OutboundAction, SharedArtCache, SharedState, StatsMsg, WeatherMsg,
+    MediaMsg, OtaProgress, OutboundAction, SharedArtCache, SharedState, StatsMsg, WeatherMsg,
 };
 use crate::config::sanitize_ip_str;
 use crate::protocol::{
@@ -175,6 +175,18 @@ pub fn spawn_daemon_worker(state: SharedState, art_cache: SharedArtCache) {
                     }
                     OutboundAction::RefreshWeather => {
                         trigger_weather_update(&state);
+                    }
+                    OutboundAction::StartOta { path } => {
+                        let res = start_ota(&path, &cfg, target_addr, &udp, &state);
+                        if let Ok(mut g) = state.lock() {
+                            g.ota = Some(match res {
+                                Ok(via) => {
+                                    g.push_log(format!("Firmware update sent over {via}"));
+                                    OtaProgress::new("starting", 0, None)
+                                }
+                                Err(e) => OtaProgress::new("failed", 0, Some(e)),
+                            });
+                        }
                     }
                     OutboundAction::SendClockAction { action, duration_sec, duration_ms } => {
                         let pkt = serde_json::json!({
@@ -371,4 +383,38 @@ pub fn spawn_daemon_worker(state: SharedState, art_cache: SharedArtCache) {
             thread::sleep(Duration::from_millis(50));
         }
     });
+}
+
+/// Stages `path` and asks the device to fetch it. Over USB physical access is
+/// the authorization; over WiFi the request is signed with the setup token.
+fn start_ota(
+    path: &std::path::Path,
+    cfg: &CompanionConfig,
+    target: Option<SocketAddr>,
+    udp: &UdpSocket,
+    state: &SharedState,
+) -> Result<&'static str, String> {
+    let wifi = state.lock().ok().and_then(|g| g.device_wifi_connected);
+    if wifi == Some(false) {
+        return Err("The device needs WiFi to download updates.".into());
+    }
+    let bytes = std::fs::read(path).map_err(|e| format!("Couldn't read {}: {e}", path.display()))?;
+    let (id, sha256, size) = crate::ota::stage(bytes)?;
+    let url = format!("http://{}:{ART_HTTP_PORT}/fw/{id}.bin", get_local_lan_ip());
+    let mut msg = serde_json::json!({"type": "ota", "url": url, "size": size, "sha256": sha256});
+
+    if std::path::Path::new(&cfg.usb_port).exists()
+        && send_usb_line(&cfg.usb_port, &msg.to_string(), state)
+    {
+        return Ok("USB");
+    }
+    if cfg.device_token.is_empty() {
+        return Err("Wireless updates need a device added with Add device. Plug it in over USB, or run the wizard again.".into());
+    }
+    let mac = crate::ota::sign(&cfg.device_token, &sha256, size).ok_or("Bad device token.")?;
+    msg["mac"] = serde_json::Value::String(mac);
+    let addr = target.ok_or("No device address.")?;
+    udp.send_to(msg.to_string().as_bytes(), addr)
+        .map_err(|e| format!("Couldn't reach the device: {e}"))?;
+    Ok("WiFi")
 }

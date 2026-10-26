@@ -5,6 +5,7 @@
 #include "core/Settings.h"
 #include "services/BleLink.h"
 #include "services/NtpService.h"
+#include "services/OtaService.h"
 #include "services/SetupService.h"
 #include "services/WifiService.h"
 #include "ui/Theme.h"
@@ -132,6 +133,19 @@ bool handleSetupMessage(const char *type, JsonDocument &doc, Link link) {
     if (strcmp(stage, "begin") == 0) {
       SetupService::onCompanionAttached(link, doc["host"] | "");
     } else if (strcmp(stage, "done") == 0) {
+      // The companion's secret for authorizing network firmware updates:
+      // plain over USB, sealed with the pairing key over BLE.
+      char token[48] = {0};
+      if (link == Link::Ble) {
+        SetupService::decrypt(doc["token_nonce"] | "", doc["token_ct"] | "",
+                              token, sizeof(token));
+      } else {
+        strncpy(token, doc["token"] | "", sizeof(token) - 1);
+      }
+      if (strlen(token) == 32) {
+        Settings::setCompanionToken(token);
+      }
+      memset(token, 0, sizeof(token));
       SetupService::finish();
       sendConfigAck(Settings::getConfigVersion());
     }
@@ -179,6 +193,26 @@ bool handleSetupMessage(const char *type, JsonDocument &doc, Link link) {
       reply(out);
     }
     memset(plain, 0, sizeof(plain));
+    return true;
+  }
+  if (strcmp(type, "ota") == 0 && link != Link::Ble) {
+    const char *sha = doc["sha256"] | "";
+    const uint32_t size = doc["size"] | 0U;
+    const char *err = nullptr;
+    // USB means someone is physically here; over the network the request
+    // must be signed with the token from setup.
+    if (link == Link::Udp && !OtaService::checkMac(sha, size, doc["mac"] | "")) {
+      err = "unauthorized";
+    } else if (!OtaService::start(doc["url"] | "", size, sha)) {
+      err = "rejected";
+    }
+    if (err != nullptr) {
+      JsonDocument out;
+      out["type"] = "ota_status";
+      out["state"] = "failed";
+      out["error"] = err;
+      reply(out);
+    }
     return true;
   }
   if (strcmp(type, "wifi_join") == 0 && link != Link::Ble) {

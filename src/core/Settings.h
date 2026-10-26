@@ -76,4 +76,9 @@ void setOrientationInverted(bool inverted);
 bool isSetupDone();
 void setSetupDone(bool done);
 
+// Secret shared with the companion at setup (32 hex chars, "" if none).
+// Authorizes firmware updates sent over the network.
+void getCompanionToken(char *outBuf, size_t maxLen);
+void setCompanionToken(const char *hex);
+
 } // namespace Settings
