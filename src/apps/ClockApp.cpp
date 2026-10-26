@@ -251,7 +251,7 @@ void ClockApp::onData(const DataSnapshot &d) {
   refreshStopwatch(d);
   refreshTimer(d);
   if (m_syncLbl != nullptr) {
-    setLabelTextIfChanged(m_syncLbl, d.ntpSynced ? "NTP Synced" : "Local Time");
+    setLabelTextIfChanged(m_syncLbl, d.ntpSynced ? "Clock synced" : "Local Time");
   }
 }
 

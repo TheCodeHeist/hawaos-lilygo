@@ -209,21 +209,19 @@ DARK_TOKENS = {
     "err": (66.0, 0.200, 25.0),
 }
 
-# Tuned for 16-bit RGB565 ST7789V LCD gamma so pure white cards (`surface`),
-# cool ice-cyan backgrounds (`bg` / `bgGradEnd`), progress tracks (`surface2`),
-# and borders (`border`) have crisp separation without washing out.
+# Tuned for 16-bit RGB565 ST7789V LCD gamma so near-white cards (`surface`),
+# tinted backgrounds (`bg` / `bgGradEnd`), progress tracks (`surface2`) and
+# borders (`border`) separate cleanly without washing out. Like the dark
+# neutrals they take the accent's hue: a pale wash of the accent (rose ->
+# blush, amber -> cream) with ink that carries the same undertone.
 LIGHT_TOKENS = {
-    "bg": (90.5, 0.032, 212.0),
-    "bgGradEnd": (
-        84.5,
-        0.048,
-        212.0,
-    ),  # Crisp sky-cyan vertical wallpaper gradient bottom
-    "surface": (99.5, 0.002, 215.0),  # Pure white cards
-    "surface2": (83.0, 0.038, 214.0),  # Distinct cool cyan-slate track/chip fill
-    "border": (68.0, 0.055, 216.0),  # Crisp card border on 16-bit RGB565
-    "text": (18.0, 0.035, 228.0),  # Deep ink
-    "textDim": (40.0, 0.042, 222.0),  # High-contrast secondary ink
+    "bg": AccentHue((92.0, 0.026)),
+    "bgGradEnd": AccentHue((86.5, 0.044)),  # Deeper tinted wallpaper bottom
+    "surface": AccentHue((99.4, 0.003)),  # Near-white cards
+    "surface2": AccentHue((84.5, 0.034)),  # Track / chip fill
+    "border": AccentHue((70.0, 0.045)),  # Crisp card border on 16-bit RGB565
+    "text": AccentHue((19.0, 0.030)),  # Deep ink
+    "textDim": AccentHue((42.0, 0.036)),  # High-contrast secondary ink
     "primary": None,
     "accent": None,
     "pressed": None,
@@ -465,9 +463,11 @@ if __name__ == "__main__":
     generate_all(root)
 else:
     # Invoked by PlatformIO SCons `extra_scripts = pre:tools/gen_theme.py`
+    # Only the missing SCons `Import` is expected here; a generator error must
+    # fail the build rather than silently ship stale tokens.
     try:
         Import("env")  # type: ignore
-        project_dir = Path(env.subst("$PROJECT_DIR"))  # type: ignore
-        generate_all(project_dir)
-    except Exception:
+    except NameError:
         pass
+    else:
+        generate_all(Path(env.subst("$PROJECT_DIR")))  # type: ignore

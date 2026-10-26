@@ -44,13 +44,13 @@ Roles: **primary** = 500 (fills, active toggles, progress). **accent** = 400 on 
 
 | Token | Dark | Light |
 |---|---|---|
-| `bg` | `oklch(13.5% 0.03 h)` | `oklch(97.5% 0.006 215)` |
-| `bgGradEnd` (wallpaper bottom) | `oklch(21% 0.072 h)` | `oklch(84.5% 0.048 212)` |
-| `surface` | `oklch(23% 0.034 h)` | `oklch(99% 0.003 215)` |
-| `surface2` (raised/pressed) | `oklch(28.5% 0.04 h)` | `oklch(95% 0.01 215)` |
-| `border` | `oklch(34% 0.036 h)` | `oklch(90% 0.012 215)` |
-| `text` | `oklch(96.5% 0.008 h)` | `oklch(22% 0.03 230)` |
-| `textDim` | `oklch(73% 0.03 h)` | `oklch(48% 0.03 225)` |
+| `bg` | `oklch(13.5% 0.03 h)` | `oklch(92% 0.026 h)` |
+| `bgGradEnd` (wallpaper bottom) | `oklch(21% 0.072 h)` | `oklch(86.5% 0.044 h)` |
+| `surface` | `oklch(23% 0.034 h)` | `oklch(99.4% 0.003 h)` |
+| `surface2` (raised/pressed) | `oklch(28.5% 0.04 h)` | `oklch(84.5% 0.034 h)` |
+| `border` | `oklch(34% 0.036 h)` | `oklch(70% 0.045 h)` |
+| `text` | `oklch(96.5% 0.008 h)` | `oklch(19% 0.03 h)` |
+| `textDim` | `oklch(73% 0.03 h)` | `oklch(42% 0.036 h)` |
 | `primary` | cyan-500 | cyan-500 |
 | `accent` | cyan-400 | cyan-700 |
 | `onPrimary` | `oklch(20% 0.03 225)` | `oklch(20% 0.03 225)` |
@@ -77,7 +77,7 @@ Rules:
 ### 3.4 Accent themes
 
 - The user picks the accent from the **17 vibrant Tailwind v4 scales** (red, orange, amber, yellow, lime, green, emerald, teal, **cyan** (default, brand), sky, blue, indigo, violet, purple, fuchsia, pink, rose). Tailwind's neutrals are not offered.
-- The accent swaps `primary`, `accent`, `pressed` and `onPrimary`, using the same steps as cyan (3.1). In dark mode the neutrals (`bg` through `textDim`) take the accent's hue at fixed lightness and chroma, so the wallpaper falls from a near-black of the accent into a deep, concentrated tint of it (rose gives wine, amber gives espresso, indigo gives midnight). Light neutrals and status colors stay the same for every accent.
+- The accent swaps `primary`, `accent`, `pressed` and `onPrimary`, using the same steps as cyan (3.1). The neutrals (`bg` through `textDim`) take the accent's hue at fixed lightness and chroma in both modes. Dark: the wallpaper falls from a near-black of the accent into a deep, concentrated tint of it (rose gives wine, amber gives espresso, indigo gives midnight). Light: a pale wash of it (rose gives blush, amber cream, emerald mint), with ink in the same undertone. Status colors stay the same for every accent.
 - `onPrimary` is a hue-tinted near-black or white, whichever contrasts more in dark mode. Light mode keeps white unless it drops under 3:1 (yellow, amber, lime fills).
 - `tools/gen_theme.py` is the single source. It emits every accent's palettes into `include/theme_tokens.h` (`kPalettes[accent][dark/light]`, in flash) and the same table into `companion/src/ui/accents.rs`. Switching accents only changes an index; nothing is mutated mid-frame.
 - One setting drives both UIs. The companion picks it with gradient swatches (500 into 700, top-left to bottom-right) or from the tray. The device can cycle it in Settings. Changes sync both ways through `config` / `config_ack`, persisted by id (`accent` in `Preferences`).

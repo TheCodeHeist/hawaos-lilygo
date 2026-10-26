@@ -205,7 +205,7 @@ if __name__ == "__main__":
 else:
     try:
         Import("env")  # type: ignore
-        project_dir = Path(env.subst("$PROJECT_DIR"))  # type: ignore
-        generate_logo_header(project_dir)
-    except Exception:
+    except NameError:
         pass
+    else:
+        generate_logo_header(Path(env.subst("$PROJECT_DIR")))  # type: ignore

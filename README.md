@@ -52,7 +52,7 @@
 
 ## Make it yours
 
-Pick one of **17 Tailwind accents** from the companion, its tray menu or on-device Settings. The choice syncs both ways. In dark mode the whole UI takes on the accent: the wallpaper falls from a near-black of the accent into a deep tint of it (rose turns wine, amber turns espresso), and cards and dim text share the same undertone.
+Pick one of **17 Tailwind accents** from the companion, its tray menu or on-device Settings. The choice syncs both ways. The whole UI takes on the accent in both themes. In dark mode the wallpaper falls from a near-black of the accent into a deep tint of it (rose turns wine, amber turns espresso). In light mode it's a pale wash (blush, cream, mint), and cards, text and borders share the same undertone.
 
 <p align="center">
   <img src="docs/media/accent-swatches.png" width="640" alt="The 17 accent colors">

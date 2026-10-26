@@ -14,11 +14,25 @@ namespace NtpService {
 namespace {
 bool s_configured = false;
 bool s_synced = false;
+
+// The RTC keeps the time across resets, but not TZ: set it from the saved
+// offset so the clock is local before NTP (or the companion) runs.
+void applyTimezone() {
+  const long off = Settings::getGmtOffsetSec();
+  const long absOff = labs(off);
+  char tz[16];
+  // POSIX TZ offsets are inverted: UTC+6 is "UTC-6".
+  snprintf(tz, sizeof(tz), "UTC%c%ld:%02ld", off >= 0 ? '-' : '+', absOff / 3600,
+           (absOff % 3600) / 60);
+  setenv("TZ", tz, 1);
+  tzset();
+}
 } // namespace
 
 void begin() {
   s_configured = false;
   s_synced = false;
+  applyTimezone();
 }
 
 void onWifiConnected() { requestSync(); }
@@ -64,16 +78,7 @@ void setFromCompanion(uint32_t epochSec) {
   if (s_synced || epochSec < 1700000000UL)
     return; // NTP (or an earlier stamp) already set the clock
 
-  // configTime() normally installs the timezone; without WiFi it never runs.
-  const long off = Settings::getGmtOffsetSec();
-  const long absOff = labs(off);
-  char tz[16];
-  // POSIX TZ offsets are inverted: UTC+6 is "UTC-6".
-  snprintf(tz, sizeof(tz), "UTC%c%ld:%02ld", off >= 0 ? '-' : '+', absOff / 3600,
-           (absOff % 3600) / 60);
-  setenv("TZ", tz, 1);
-  tzset();
-
+  applyTimezone();
   const timeval tv{static_cast<time_t>(epochSec), 0};
   settimeofday(&tv, nullptr);
   s_synced = true;
@@ -81,7 +86,7 @@ void setFromCompanion(uint32_t epochSec) {
   Event ev{};
   ev.type = EventType::DataUpdated;
   EventBus::post(ev);
-  Serial.printf("[NtpService] Clock set from companion (TZ=%s)\n", tz);
+  Serial.println("[NtpService] Clock set from companion");
 }
 
 } // namespace NtpService
