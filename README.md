@@ -81,7 +81,7 @@ flowchart LR
     NT["D-Bus<br>notifications"]
     WX["Open-Meteo<br>weather"]
     SY["sysinfo<br>CPU · RAM · net"]
-    UI["Window + tray<br>settings, accent, Wi-Fi setup"]
+    UI["Window + tray<br>settings, accent, Wi-Fi setup,<br>firmware updates"]
   end
 
   subgraph DEV["T-Display-S3: HawaOS firmware"]
@@ -92,7 +92,7 @@ flowchart LR
 
   PC -- "JSON lines over USB serial, UDP :7777<br>or Bluetooth during setup" --> CL
   CL -- "config_ack, media and clock commands" --> PC
-  DEV -. "album art over HTTP :7778" .-> PC
+  DEV -. "album art and firmware over HTTP :7778" .-> PC
 ```
 
 - **One UI owner.** Only the UI task on Core 1 touches LVGL. Services on Core 0 write to the `DataStore` and post events.
@@ -141,6 +141,15 @@ A new HawaOS boots into a **Setup** screen showing its Bluetooth name and a 6-di
 4. **Personalize**: accent, theme and clock format, previewed live on the device.
 
 Bluetooth only runs while the device is in setup, so it uses no memory afterwards. To set a device up again, use **Settings > Set Up Again** on the device.
+
+### Updating firmware
+
+After the first USB flash, updates can go over Wi-Fi. Build with `pio run`, then in the companion open **Device > Firmware > Install update...** and pick `.pio/build/tdisplay-s3/firmware.bin`.
+
+The device downloads the image from the companion into its spare app slot, with progress shown on both screens. It only switches to the new firmware if the whole file arrived and its SHA-256 matches; any failure leaves the running firmware untouched. Over Wi-Fi, the request has to be signed with a secret the companion gave the device during **Add device**, so other machines on your network can't push firmware to it. Details are in [`DESIGN.md`](DESIGN.md) §11.5.
+
+> [!NOTE]
+> While the device is plugged in, updates are sent over USB and need no secret. A device set up before this feature has none, so run **Add device** again once to enable Wi-Fi updates. The device downloads from port 7778 on your PC, so allow it through your firewall.
 
 ## Controls
 
@@ -197,7 +206,7 @@ hawaos-lilygo/
 - [x] Always-on display, Control Center, on-device Settings
 - [x] 17 synced accent themes with accent-tinted dark mode
 - [x] First-run setup wizard over USB or Bluetooth, with encrypted Wi-Fi provisioning
-- [ ] OTA firmware updates
+- [x] Firmware updates over Wi-Fi, checksum-verified and signed
 - [ ] Bluetooth for everyday data (today it's used for setup only)
 - [ ] Image wallpapers pushed from the companion
 
