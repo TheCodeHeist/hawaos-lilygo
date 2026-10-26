@@ -183,20 +183,23 @@ def accent_roles(name: str, mode: str):
 
 
 # Semantic tokens from DESIGN.md Section 3.2 & Section 6 (vertical gradient bottom tint).
-# Accent roles (primary/accent/pressed/onPrimary) come from the chosen accent;
-# the neutrals stay the same for every accent.
+# Accent roles (primary/accent/pressed/onPrimary) come from the chosen accent.
+# Dark neutrals are (L%, C) pairs that take the accent's hue (`AccentHue`): the
+# wallpaper falls from a near-black of the accent into a deep, concentrated
+# tint of it (rose -> wine, amber -> espresso), and cards, tracks and dim text
+# carry the same undertone so nothing reads as off-hue slate.
+class AccentHue(tuple):
+    """(L%, C) resolved at the accent's 500 hue."""
+
+
 DARK_TOKENS = {
-    "bg": (17.0, 0.018, 225.0),
-    "bgGradEnd": (
-        20.5,
-        0.028,
-        220.0,
-    ),  # Subtle tinted vertical wallpaper gradient bottom
-    "surface": (22.0, 0.020, 225.0),
-    "surface2": (27.0, 0.022, 225.0),
-    "border": (32.0, 0.020, 225.0),
-    "text": (96.0, 0.010, 215.0),
-    "textDim": (72.0, 0.020, 220.0),
+    "bg": AccentHue((13.5, 0.030)),
+    "bgGradEnd": AccentHue((21.0, 0.072)),  # Concentrated accent-tinted bottom
+    "surface": AccentHue((23.0, 0.034)),
+    "surface2": AccentHue((28.5, 0.040)),
+    "border": AccentHue((34.0, 0.036)),
+    "text": AccentHue((96.5, 0.008)),
+    "textDim": AccentHue((73.0, 0.030)),
     "primary": None,
     "accent": None,
     "pressed": None,
@@ -234,7 +237,16 @@ LIGHT_TOKENS = {
 def resolved_tokens(name: str, mode: str):
     base = DARK_TOKENS if mode == "dark" else LIGHT_TOKENS
     roles = accent_roles(name, mode)
-    return {k: (roles[k] if v is None else v) for k, v in base.items()}
+    hue = accent_step(name, 500)[2]
+
+    def resolve(k, v):
+        if v is None:
+            return roles[k]
+        if isinstance(v, AccentHue):
+            return (v[0], v[1], hue)
+        return v
+
+    return {k: resolve(k, v) for k, v in base.items()}
 
 
 def palette_lines(tokens, indent: str):

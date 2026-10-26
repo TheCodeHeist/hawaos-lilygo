@@ -15,12 +15,22 @@ const ThemeTokens::Palette &dark();
 
 bool isDark();
 
-// Companion media tint sent when a track has no artwork (cyan, pre-accents).
+// Companion media tint sent when a track has no artwork (cyan, pre-accents),
+// and the slate bottom paired with it (also the pre-accent dark `bg`).
 constexpr uint32_t kLegacyMediaTint = 0x008DA6;
+constexpr uint32_t kLegacyMediaBottom = 0x071115;
 
-// Media background top color: an untinted value (0 or the legacy default)
+// Media background top color: an untinted value (0 or the legacy defaults)
 // becomes the active accent's deep shade.
 uint32_t resolveMediaTint(uint32_t bgTop);
+
+// Media background bottom color: an untinted value becomes the accent-tinted
+// dark `bg`.
+uint32_t resolveMediaTintBottom(uint32_t bgBottom);
+
+// Deep accent tints sit below one RGB565 step per channel and would band (or
+// lose their hue) without dithering; error diffusion hides both.
+constexpr lv_dither_mode_t kGradientDither = LV_DITHER_ERR_DIFF;
 
 // Apply theme to root screen (solid `bg` or vertical gradient wallpaper if
 // `withWallpaper` is true)

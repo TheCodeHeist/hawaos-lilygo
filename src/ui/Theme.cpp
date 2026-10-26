@@ -21,11 +21,19 @@ const ThemeTokens::Palette &dark() { return palette(true); }
 
 uint32_t resolveMediaTint(uint32_t bgTop) {
   // 0 = no tint yet; kLegacyMediaTint = the companion's "no artwork" default,
-  // which predates accents and is always cyan. Both follow the accent instead.
-  if (bgTop == 0 || bgTop == kLegacyMediaTint) {
+  // which predates accents and is always cyan; kLegacyMediaBottom = the
+  // DataStore boot default. All of them follow the accent instead.
+  if (bgTop == 0 || bgTop == kLegacyMediaTint || bgTop == kLegacyMediaBottom) {
     return dark().pressed;
   }
   return bgTop;
+}
+
+uint32_t resolveMediaTintBottom(uint32_t bgBottom) {
+  if (bgBottom == 0 || bgBottom == kLegacyMediaBottom) {
+    return dark().bg;
+  }
+  return bgBottom;
 }
 
 bool isDark() { return Settings::isDarkThemeEffective(); }
@@ -41,6 +49,7 @@ void styleScreen(lv_obj_t *scr, bool withWallpaper, bool forceDark) {
     lv_obj_set_style_bg_grad_color(scr, lv_color_hex(p.bgGradEnd),
                                    LV_PART_MAIN);
     lv_obj_set_style_bg_grad_dir(scr, LV_GRAD_DIR_VER, LV_PART_MAIN);
+    lv_obj_set_style_bg_dither_mode(scr, kGradientDither, LV_PART_MAIN);
   } else {
     lv_obj_set_style_bg_grad_dir(scr, LV_GRAD_DIR_NONE, LV_PART_MAIN);
   }
@@ -109,8 +118,9 @@ uint8_t luminance(uint32_t rgb888) {
 bool isColorLight(uint32_t rgb888) { return luminance(rgb888) > 118U; }
 
 uint32_t tintAccent(uint32_t bgTop, uint32_t fallbackRgb) {
-  if (bgTop == 0 || bgTop == 0x071115 || bgTop == 0x05090B ||
-      bgTop == kLegacyMediaTint || bgTop == dark().pressed) {
+  if (bgTop == 0 || bgTop == kLegacyMediaBottom || bgTop == 0x05090B ||
+      bgTop == kLegacyMediaTint || bgTop == dark().pressed ||
+      bgTop == dark().bg) {
     return fallbackRgb;
   }
   uint32_t r = (bgTop >> 16) & 0xFF;

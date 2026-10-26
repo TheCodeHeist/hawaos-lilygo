@@ -425,11 +425,12 @@ void refreshAodContent() {
   // Dynamic background gradient tween: keep tinted gradient if media is active
   const uint32_t targetTop =
       showMedia ? Theme::resolveMediaTint(d.mediaBgTop) : 0x000000;
-  const uint32_t targetBot = showMedia ? d.mediaBgBottom : 0x000000;
+  const uint32_t targetBot =
+      showMedia ? Theme::resolveMediaTintBottom(d.mediaBgBottom) : 0x000000;
   startAodTintTween(targetTop, targetBot, Config::ANIM_AOD_ENTER_MS);
 
   const uint32_t aodBgTop =
-      showMedia ? Theme::resolveMediaTint(d.mediaBgTop) : 0x071115;
+      showMedia ? Theme::resolveMediaTint(d.mediaBgTop) : Theme::dark().bg;
   const bool aodLightBg = Theme::isColorLight(aodBgTop) || (!d.mediaInkLight && showMedia);
   const uint32_t clockColor = aodLightBg ? 0x0A1014 : 0xFFFFFF;
   const uint32_t dateColor = aodLightBg ? 0x2D3E45 : 0xA0B4BA;
@@ -757,6 +758,8 @@ void buildAodScreen(lv_obj_t *root, bool keepBackdrop = false) {
   s_aodPausedSinceMs = (d.mediaState == MediaPlayState::Paused) ? millis() : 0;
 
   lv_obj_set_style_bg_grad_dir(s_aodScreen, LV_GRAD_DIR_VER, LV_PART_MAIN);
+  lv_obj_set_style_bg_dither_mode(s_aodScreen, Theme::kGradientDither,
+                                  LV_PART_MAIN);
 
   s_aodClockLbl = lv_label_create(root);
   lv_obj_set_style_text_color(s_aodClockLbl, lv_color_hex(p.text),

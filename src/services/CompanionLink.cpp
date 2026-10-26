@@ -181,7 +181,7 @@ void handleJsonMessage(const char *payload, size_t len, bool viaUsb) {
                                ? doc["bg_bottom"].as<const char *>()
                                : nullptr;
     const uint32_t bgTop = parseHexColor(bgTopStr, Theme::kLegacyMediaTint);
-    const uint32_t bgBot = parseHexColor(bgBotStr, 0x071115);
+    const uint32_t bgBot = parseHexColor(bgBotStr, Theme::kLegacyMediaBottom);
 
     Serial.printf(
         "[CompanionLink] Media RX: '%s' | bgTop=0x%06lX (raw='%s') | "

@@ -12,7 +12,6 @@
 
 namespace {
 
-constexpr uint32_t kDefaultBgBot = 0x071115;
 constexpr uint32_t kTextWhite = 0xFFFFFF;
 constexpr uint32_t kTextSilver = 0xD0DCE0;
 constexpr uint32_t kTextDimSilver = 0xA0B4BA;
@@ -47,6 +46,7 @@ void MediaApp::onEnter(lv_obj_t *root) {
   // -> bg_bottom
   lv_obj_set_style_bg_opa(root, LV_OPA_COVER, LV_PART_MAIN);
   lv_obj_set_style_bg_grad_dir(root, LV_GRAD_DIR_VER, LV_PART_MAIN);
+  lv_obj_set_style_bg_dither_mode(root, Theme::kGradientDither, LV_PART_MAIN);
 
   // Album Art Card: 120x120 at x=12, y=25 (centered vertically on 170px height)
   // Subtle 1px translucent border with rounded corners (radius 10)
@@ -239,8 +239,7 @@ void MediaApp::refreshMedia(const DataSnapshot &d) {
 
   // Background gradient: Uses bg_top and bg_bottom parsed from CompanionLink
   const uint32_t bgTop = Theme::resolveMediaTint(d.mediaBgTop);
-  const uint32_t bgBot =
-      (d.mediaBgBottom != 0) ? d.mediaBgBottom : kDefaultBgBot;
+  const uint32_t bgBot = Theme::resolveMediaTintBottom(d.mediaBgBottom);
 
   const ThemeTokens::Palette &p = Theme::dark();
   const bool lightBg =

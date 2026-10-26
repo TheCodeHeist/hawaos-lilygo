@@ -38,18 +38,19 @@ Cyan scale (starting values, Tailwind v4 cyan, approximate, VERIFY by eye on the
 | 700 | `oklch(52% 0.105 223)` |
 | 800 | `oklch(45% 0.085 224)` |
 
-Roles: **primary** = 500 (fills, active toggles, progress). **accent** = 400 on dark, 700 on light (focus ring, icons, links, small text). **secondary** = low-chroma cyan-tinted neutrals (surfaces and dim text below). Use 600/800 for pressed states.
+Roles: **primary** = 500 (fills, active toggles, progress). **accent** = 400 on dark, 700 on light (focus ring, icons, links, small text). **secondary** = low-chroma accent-tinted neutrals (surfaces and dim text below). Use 600/800 for pressed states.
 
 ### 3.2 Theme tokens (starting values)
 
 | Token | Dark | Light |
 |---|---|---|
-| `bg` | `oklch(17% 0.018 225)` | `oklch(97.5% 0.006 215)` |
-| `surface` | `oklch(22% 0.02 225)` | `oklch(99% 0.003 215)` |
-| `surface2` (raised/pressed) | `oklch(27% 0.022 225)` | `oklch(95% 0.01 215)` |
-| `border` | `oklch(32% 0.02 225)` | `oklch(90% 0.012 215)` |
-| `text` | `oklch(96% 0.01 215)` | `oklch(22% 0.03 230)` |
-| `textDim` | `oklch(72% 0.02 220)` | `oklch(48% 0.03 225)` |
+| `bg` | `oklch(13.5% 0.03 h)` | `oklch(97.5% 0.006 215)` |
+| `bgGradEnd` (wallpaper bottom) | `oklch(21% 0.072 h)` | `oklch(84.5% 0.048 212)` |
+| `surface` | `oklch(23% 0.034 h)` | `oklch(99% 0.003 215)` |
+| `surface2` (raised/pressed) | `oklch(28.5% 0.04 h)` | `oklch(95% 0.01 215)` |
+| `border` | `oklch(34% 0.036 h)` | `oklch(90% 0.012 215)` |
+| `text` | `oklch(96.5% 0.008 h)` | `oklch(22% 0.03 230)` |
+| `textDim` | `oklch(73% 0.03 h)` | `oklch(48% 0.03 225)` |
 | `primary` | cyan-500 | cyan-500 |
 | `accent` | cyan-400 | cyan-700 |
 | `onPrimary` | `oklch(20% 0.03 225)` | `oklch(20% 0.03 225)` |
@@ -57,12 +58,14 @@ Roles: **primary** = 500 (fills, active toggles, progress). **accent** = 400 on 
 | `warn` | `oklch(80% 0.15 80)` | `oklch(62% 0.15 70)` |
 | `err` | `oklch(66% 0.20 25)` | `oklch(55% 0.20 25)` |
 
+`h` = the hue of the active accent's 500 shade (3.4); cyan gives 215.
+
 Rules:
-- **Dark bg is deep slate, not pure black** (this is an IPS LCD, so true black looks flat grey).
+- **Dark bg is a near-black of the accent, not pure black** (this is an IPS LCD, so true black looks flat grey).
 - **cyan-500 is too low-contrast for text or thin icons on light backgrounds.** Use `accent` (cyan-700) there.
 - **Text on primary fills is near-black** (`onPrimary`), never white.
 - Body text contrast at least 4.5:1, icons and large text at least 3:1.
-- RGB565 bands in gradients: enable LVGL gradient dithering if the chosen LVGL version offers it, and check gradients on the device.
+- RGB565 bands in gradients: every gradient sets `bg_dither_mode` to `Theme::kGradientDither` (error diffusion). `LV_DITHER_GRADIENT` alone does nothing, and the deep tints sit below one RGB565 step, so undithered they band and lose their hue.
 - ST7789 panels shift colors; compare on hardware and adjust tokens, not code.
 
 ### 3.3 Theme switching
@@ -74,12 +77,12 @@ Rules:
 ### 3.4 Accent themes
 
 - The user picks the accent from the **17 vibrant Tailwind v4 scales** (red, orange, amber, yellow, lime, green, emerald, teal, **cyan** (default, brand), sky, blue, indigo, violet, purple, fuchsia, pink, rose). Tailwind's neutrals are not offered.
-- The accent swaps only `primary`, `accent`, `pressed` and `onPrimary`, using the same steps as cyan (3.1). Neutrals, text and status colors stay the same for every accent.
+- The accent swaps `primary`, `accent`, `pressed` and `onPrimary`, using the same steps as cyan (3.1). In dark mode the neutrals (`bg` through `textDim`) take the accent's hue at fixed lightness and chroma, so the wallpaper falls from a near-black of the accent into a deep, concentrated tint of it (rose gives wine, amber gives espresso, indigo gives midnight). Light neutrals and status colors stay the same for every accent.
 - `onPrimary` is a hue-tinted near-black or white, whichever contrasts more in dark mode. Light mode keeps white unless it drops under 3:1 (yellow, amber, lime fills).
 - `tools/gen_theme.py` is the single source. It emits every accent's palettes into `include/theme_tokens.h` (`kPalettes[accent][dark/light]`, in flash) and the same table into `companion/src/ui/accents.rs`. Switching accents only changes an index; nothing is mutated mid-frame.
 - One setting drives both UIs. The companion picks it with gradient swatches (500 into 700, top-left to bottom-right) or from the tray. The device can cycle it in Settings. Changes sync both ways through `config` / `config_ack`, persisted by id (`accent` in `Preferences`).
-- **Companion only:** fills (`primary`/`pressed`) use 70% of the Tailwind chroma at the same lightness to cut glare on large glass fills; `accent` and the swatches stay full strength. Button ink takes whichever contrasts more. The window backdrop is tinted with the accent hue (dark `oklch(26% 0.05 h)` → `oklch(13% 0.015 h)`, light `oklch(98% 0.012 h)` → `oklch(92% 0.03 h)`, same glass alphas). Selected options in button groups are tinted chips, not solid fills. The device keeps its neutral backgrounds and full-strength accents.
-- Media and AOD backgrounds still follow album art. A track without artwork uses the accent's 600 shade instead of the old fixed cyan.
+- **Companion only:** fills (`primary`/`pressed`) use 70% of the Tailwind chroma at the same lightness to cut glare on large glass fills; `accent` and the swatches stay full strength. Button ink takes whichever contrasts more. The window backdrop is tinted with the accent hue (dark `oklch(26% 0.05 h)` → `oklch(13% 0.015 h)`, light `oklch(98% 0.012 h)` → `oklch(92% 0.03 h)`, same glass alphas). Selected options in button groups are tinted chips, not solid fills. The device keeps full-strength accents.
+- Media and AOD backgrounds still follow album art. A track without artwork uses the accent's 600 shade into the accent-tinted `bg` instead of the old fixed cyan and slate.
 
 ## 4. Typography
 
@@ -110,7 +113,7 @@ Subset (Lucide names; trim or extend as needed):
 
 Used **only on Home and Launcher**; apps use solid `bg`. Cards on top are solid.
 Options, cheapest first (default = 1):
-1. **LVGL vertical gradient** between `bg` and a slightly tinted `bg` (zero memory).
+1. **LVGL vertical gradient** from `bg` to `bgGradEnd` (zero memory, dithered). In dark mode both follow the accent hue.
 2. **Static image from flash**, 320x170 RGB565 (about 109 KB), one per theme. Loaded straight from flash or copied once into PSRAM.
 3. **Companion-pushed wallpaper**, saved to LittleFS and selected in companion settings (same format and size).
 
@@ -264,7 +267,7 @@ Companion to device (persisted in `Preferences`, acknowledged with `config_ack`)
 ## 12. Boot logo
 
 Sequence (target: logo visible as soon as the Arduino core hands over control):
-1. First thing in `setup()`: keep the **backlight off**, init the panel, fill with the saved theme's `bg` (read `theme` from `Preferences` first; default dark), draw the logo centered.
+1. First thing in `setup()`: keep the **backlight off**, init the panel, fill with the saved theme's `bg` (read `theme` and `accent` from `Preferences` first; default dark cyan), draw the logo centered, alpha-blended over that `bg` (`gen_logo.py` emits RGB565 + A8).
 2. **Ramp backlight** from 0 to the user level over about 300 ms (PWM fade, no redraws; hides the white power-on flash).
 3. Initialize the rest of the system behind it. **Do not block on WiFi or the companion.**
 4. Show the logo for at least about **600 ms**, then go to Home. The status bar shows "connecting" until a transport is up.
