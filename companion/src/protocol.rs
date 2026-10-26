@@ -21,6 +21,20 @@ pub fn scan_serial_ports() -> Vec<String> {
     list
 }
 
+/// Cuts `s` to at most `max_bytes` on a char boundary: the device's field
+/// size (DataStore.h, minus the terminator). Keeps signed packets in one
+/// datagram however long a notification is.
+pub fn fit_bytes(mut s: String, max_bytes: usize) -> String {
+    if s.len() > max_bytes {
+        let mut end = max_bytes;
+        while !s.is_char_boundary(end) {
+            end -= 1;
+        }
+        s.truncate(end);
+    }
+    s
+}
+
 pub fn sanitize_for_font(input: &str) -> String {
     let mut out = String::with_capacity(input.len());
     for ch in input.chars() {
@@ -95,12 +109,17 @@ pub fn handle_incoming_json_line(line: &str, state: &SharedState) {
             }
         } else if pkt.msg_type == "auth_error" {
             if let Ok(mut g) = state.lock() {
-                let reason = pkt.reason.unwrap_or_default();
-                g.push_log(format!("Device refused a network message: {reason}"));
-                g.notice = Some(match reason.as_str() {
-                    "stale" => "The device ignored an old settings message. Try again.".into(),
-                    _ => "The device didn't accept settings from this computer. Run Add device again to re-pair it, or use USB.".into(),
-                });
+                // Stats go out every second; one log line and banner a minute is plenty.
+                let quiet = g.last_auth_notice.is_some_and(|t| t.elapsed() < std::time::Duration::from_secs(60));
+                if !quiet {
+                    let reason = pkt.reason.unwrap_or_default();
+                    g.push_log(format!("Device refused a network message: {reason}"));
+                    g.last_auth_notice = Some(std::time::Instant::now());
+                    g.notice = Some(match reason.as_str() {
+                        "stale" => "The device ignored an old message. Try again.".into(),
+                        _ => "The device didn't accept this computer. Run Add device again to re-pair it, or use USB.".into(),
+                    });
+                }
             }
         } else if pkt.msg_type == "config_ack" {
             if let Ok(mut g) = state.lock() {
@@ -286,5 +305,17 @@ mod tests {
         assert_eq!(accent(&state), "green");
 
         let _ = std::fs::remove_dir_all(home);
+    }
+}
+
+#[cfg(test)]
+mod fit_tests {
+    use super::fit_bytes;
+
+    #[test]
+    fn cuts_on_char_boundary() {
+        assert_eq!(fit_bytes("héllo".into(), 2), "h"); // 'é' is 2 bytes
+        assert_eq!(fit_bytes("hello".into(), 10), "hello");
+        assert_eq!(fit_bytes("x".repeat(500), 95).len(), 95);
     }
 }

@@ -12,7 +12,7 @@ use crate::models::{
 };
 use crate::config::sanitize_ip_str;
 use crate::protocol::{
-    handle_incoming_json_line, sanitize_for_font, send_usb_line,
+    fit_bytes, handle_incoming_json_line, sanitize_for_font, send_usb_line,
 };
 use crate::weather::trigger_weather_update;
 
@@ -130,15 +130,7 @@ pub fn spawn_daemon_worker(state: SharedState, art_cache: SharedArtCache) {
                                 }
                             }
                             if let Some(addr) = target_addr {
-                                // Signed once the device has a token (DESIGN.md 11.6).
-                                let pkt = if cfg.device_token.is_empty() {
-                                    Some(json_str)
-                                } else {
-                                    crate::auth::seal(&cfg.device_token, &json_str)
-                                };
-                                if let Some(pkt) = pkt {
-                                    let _ = udp.send_to(pkt.as_bytes(), addr);
-                                }
+                                let _ = send_udp(&udp, addr, &json_str, &cfg.device_token);
                             }
                         }
                     }
@@ -158,15 +150,15 @@ pub fn spawn_daemon_worker(state: SharedState, art_cache: SharedArtCache) {
                             .as_secs();
                         let pkt = serde_json::json!({
                             "type": "notify",
-                            "app": sanitize_for_font(&app),
-                            "title": sanitize_for_font(&title),
-                            "body": sanitize_for_font(&body),
+                            "app": fit_bytes(sanitize_for_font(&app), 31),
+                            "title": fit_bytes(sanitize_for_font(&title), 47),
+                            "body": fit_bytes(sanitize_for_font(&body), 95),
                             "ts": ts
                         });
                         if let Ok(json_str) = serde_json::to_string(&pkt) {
                             eprintln!("[Daemon] Dispatching notification to {:?}: {}", target_addr, json_str);
                             if let Some(addr) = target_addr {
-                                let _ = udp.send_to(json_str.as_bytes(), addr);
+                                let _ = send_udp(&udp, addr, &json_str, &cfg.device_token);
                             }
                             if cfg.stream_via_usb {
                                 let _ = send_usb_line(&cfg.usb_port, &json_str, &state);
@@ -178,7 +170,7 @@ pub fn spawn_daemon_worker(state: SharedState, art_cache: SharedArtCache) {
                         if via_usb {
                             let _ = send_usb_line(&cfg.usb_port, pkt, &state);
                         } else if let Some(addr) = target_addr {
-                            let _ = udp.send_to(pkt.as_bytes(), addr);
+                            let _ = send_udp(&udp, addr, pkt, &cfg.device_token);
                         }
                     }
                     OutboundAction::RefreshWeather => {
@@ -206,7 +198,7 @@ pub fn spawn_daemon_worker(state: SharedState, art_cache: SharedArtCache) {
                         if let Ok(json_str) = serde_json::to_string(&pkt) {
                             eprintln!("[Daemon] Dispatching clock action to {:?}: {}", target_addr, json_str);
                             if let Some(addr) = target_addr {
-                                let _ = udp.send_to(json_str.as_bytes(), addr);
+                                let _ = send_udp(&udp, addr, &json_str, &cfg.device_token);
                             }
                             if cfg.stream_via_usb {
                                 let _ = send_usb_line(&cfg.usb_port, &json_str, &state);
@@ -265,7 +257,7 @@ pub fn spawn_daemon_worker(state: SharedState, art_cache: SharedArtCache) {
 
                 let (cur_media, cur_art_img, cur_player) = query_mpris_media(&art_cache);
 
-                let (target_ip, stream_usb, usb_port) = if let Ok(mut g) = state.lock() {
+                let (target_ip, stream_usb, usb_port, token) = if let Ok(mut g) = state.lock() {
                     g.cpu_pct = cpu_pct;
                     g.ram_pct = ram_pct;
                     g.used_ram_gb = (used_mem as f32) / (1024.0 * 1024.0 * 1024.0);
@@ -283,9 +275,10 @@ pub fn spawn_daemon_worker(state: SharedState, art_cache: SharedArtCache) {
                         g.config.target_ip.clone(),
                         g.config.stream_via_usb,
                         g.config.usb_port.clone(),
+                        g.config.device_token.clone(),
                     )
                 } else {
-                    (DEFAULT_DEVICE_IP.to_string(), false, String::new())
+                    (DEFAULT_DEVICE_IP.to_string(), false, String::new(), String::new())
                 };
 
                 let clean_ip = sanitize_ip_str(&target_ip);
@@ -309,7 +302,7 @@ pub fn spawn_daemon_worker(state: SharedState, art_cache: SharedArtCache) {
 
                 if let Ok(json_str) = serde_json::to_string(&stats_msg) {
                     if let Some(addr) = target_addr {
-                        let _ = udp.send_to(json_str.as_bytes(), addr);
+                        let _ = send_udp(&udp, addr, &json_str, &token);
                     }
                     if stream_usb {
                         let _ = send_usb_line(&usb_port, &json_str, &state);
@@ -329,7 +322,7 @@ pub fn spawn_daemon_worker(state: SharedState, art_cache: SharedArtCache) {
                 if changed || last_media_heartbeat.elapsed() >= Duration::from_secs(5) {
                     if let Ok(json_str) = serde_json::to_string(&cur_media) {
                         if let Some(addr) = target_addr {
-                            let _ = udp.send_to(json_str.as_bytes(), addr);
+                            let _ = send_udp(&udp, addr, &json_str, &token);
                         }
                         if stream_usb {
                             let _ = send_usb_line(&usb_port, &json_str, &state);
@@ -359,7 +352,7 @@ pub fn spawn_daemon_worker(state: SharedState, art_cache: SharedArtCache) {
                 if let Some(pkt) = clock_pkt {
                     if let Ok(json_str) = serde_json::to_string(&pkt) {
                         if let Some(addr) = target_addr {
-                            let _ = udp.send_to(json_str.as_bytes(), addr);
+                            let _ = send_udp(&udp, addr, &json_str, &token);
                         }
                         if stream_usb {
                             let _ = send_usb_line(&usb_port, &json_str, &state);
@@ -386,7 +379,7 @@ pub fn spawn_daemon_worker(state: SharedState, art_cache: SharedArtCache) {
                     if weather_changed || last_weather_send.elapsed() >= Duration::from_secs(60) {
                         if let Ok(json_str) = serde_json::to_string(&w) {
                             if let Some(addr) = target_addr {
-                                let _ = udp.send_to(json_str.as_bytes(), addr);
+                                let _ = send_udp(&udp, addr, &json_str, &token);
                             }
                             if stream_usb {
                                 let _ = send_usb_line(&usb_port, &json_str, &state);
@@ -432,7 +425,21 @@ fn start_ota(
     let mac = crate::ota::sign(&cfg.device_token, &sha256, size).ok_or("Bad device token.")?;
     msg["mac"] = serde_json::Value::String(mac);
     let addr = target.ok_or("No device address.")?;
-    udp.send_to(msg.to_string().as_bytes(), addr)
+    send_udp(udp, addr, &msg.to_string(), &cfg.device_token)
         .map_err(|e| format!("Couldn't reach the device: {e}"))?;
     Ok("WiFi")
+}
+
+/// Sends a JSON message over UDP, signed once the device has a token
+/// (DESIGN.md Section 11.6).
+fn send_udp(udp: &UdpSocket, addr: SocketAddr, json: &str, token: &str) -> std::io::Result<()> {
+    let sealed;
+    let pkt = if token.is_empty() {
+        json
+    } else {
+        sealed = crate::auth::seal(token, json)
+            .ok_or_else(|| std::io::Error::other("bad device token"))?;
+        sealed.as_str()
+    };
+    udp.send_to(pkt.as_bytes(), addr).map(|_| ())
 }

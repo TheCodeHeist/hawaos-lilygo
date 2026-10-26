@@ -9,6 +9,11 @@ namespace CompanionAuth {
 
 namespace {
 
+bool s_loaded = false;
+bool s_hasKey = false;
+uint8_t s_key[16];
+uint64_t s_lastN = 0;
+
 bool isHex(const char *s, size_t len) {
   if (s == nullptr || strlen(s) != len)
     return false;
@@ -19,39 +24,46 @@ bool isHex(const char *s, size_t len) {
   return true;
 }
 
-bool loadKey(uint8_t key[16]) {
+void load() {
+  if (s_loaded)
+    return;
+  s_loaded = true;
   char tokenHex[33] = {0};
   Settings::getCompanionToken(tokenHex, sizeof(tokenHex));
-  if (!isHex(tokenHex, 32))
-    return false;
-  for (int i = 0; i < 16; ++i) {
-    char byte[3] = {tokenHex[i * 2], tokenHex[i * 2 + 1], 0};
-    key[i] = static_cast<uint8_t>(strtoul(byte, nullptr, 16));
+  s_hasKey = isHex(tokenHex, 32);
+  if (s_hasKey) {
+    for (int i = 0; i < 16; ++i) {
+      char byte[3] = {tokenHex[i * 2], tokenHex[i * 2 + 1], 0};
+      s_key[i] = static_cast<uint8_t>(strtoul(byte, nullptr, 16));
+    }
   }
-  return true;
+  memset(tokenHex, 0, sizeof(tokenHex));
+  s_lastN = Settings::getAuthCounter();
 }
 
 } // namespace
 
 bool hasToken() {
-  uint8_t key[16];
-  const bool ok = loadKey(key);
-  memset(key, 0, sizeof(key));
-  return ok;
+  load();
+  return s_hasKey;
+}
+
+void setToken(const char *hex) {
+  Settings::setCompanionToken(hex); // also clears the stored counter
+  s_loaded = false;
+  load();
 }
 
 bool verify(const char *msg, size_t len, const char *macHex) {
-  uint8_t key[16];
-  if (msg == nullptr || !isHex(macHex, 64) || !loadKey(key))
+  load();
+  if (msg == nullptr || !s_hasKey || !isHex(macHex, 64))
     return false;
   uint8_t mac[32];
-  const int rc =
-      mbedtls_md_hmac(mbedtls_md_info_from_type(MBEDTLS_MD_SHA256), key,
-                      sizeof(key), reinterpret_cast<const uint8_t *>(msg), len,
-                      mac);
-  memset(key, 0, sizeof(key));
-  if (rc != 0)
+  if (mbedtls_md_hmac(mbedtls_md_info_from_type(MBEDTLS_MD_SHA256), s_key,
+                      sizeof(s_key), reinterpret_cast<const uint8_t *>(msg),
+                      len, mac) != 0) {
     return false;
+  }
   static const char *kDigits = "0123456789abcdef";
   // Constant-time compare.
   uint8_t diff = 0;
@@ -80,10 +92,17 @@ Result accept(uint64_t n, const char *body, const char *macHex) {
   free(msg);
   if (!ok)
     return Result::BadMac;
-  if (n <= Settings::getAuthCounter())
+  if (n <= s_lastN)
     return Result::Stale;
-  Settings::setAuthCounter(n);
+  s_lastN = n;
   return Result::Ok;
+}
+
+void persist() {
+  load();
+  if (s_lastN > Settings::getAuthCounter()) {
+    Settings::setAuthCounter(s_lastN);
+  }
 }
 
 } // namespace CompanionAuth

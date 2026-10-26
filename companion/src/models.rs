@@ -199,6 +199,7 @@ pub struct SharedDaemonState {
     pub ota: Option<OtaProgress>,
     /// One-shot message for the window's banner (taken when shown).
     pub notice: Option<String>,
+    pub last_auth_notice: Option<std::time::Instant>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -267,6 +268,7 @@ impl SharedDaemonState {
             device_fw: None,
             ota: None,
             notice: None,
+            last_auth_notice: None,
         }
     }
 

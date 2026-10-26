@@ -31,6 +31,10 @@ IPAddress s_companionIp;
 uint16_t s_companionPort = Config::COMPANION_UDP_PORT;
 bool s_hasCompanionPeer = false;
 bool s_lastRxViaUsb = false;
+// Sender of the UDP packet being handled; becomes the peer only once
+// trusted (signed, or no token yet).
+IPAddress s_rxIp;
+uint16_t s_rxPort = 0;
 
 char s_rxBuf[1460] = {0};
 char s_serialLine[1024] = {0};
@@ -135,19 +139,25 @@ bool setupOnly(const char *type) {
   return false;
 }
 
-// Messages that change the device must be signed over UDP once it has a
-// token (DESIGN.md Section 11.6). ota carries its own MAC.
-bool needsSignature(const char *type) {
-  return strcmp(type, "config") == 0 || strcmp(type, "wifi_join") == 0;
+// Signed messages that change the device save the replay counter to flash.
+bool changesDevice(const char *type) {
+  return strcmp(type, "config") == 0 || strcmp(type, "wifi_join") == 0 ||
+         strcmp(type, "ota") == 0;
 }
 
+// Answered to the sender, not the trusted peer, so junk from elsewhere on
+// the LAN can't flood the companion with errors.
 void replyAuthError(const char *reason, const char *forType) {
   Serial.printf("[CompanionLink] UDP: refused '%s' (%s)\n", forType, reason);
   JsonDocument out;
   out["type"] = "auth_error";
   out["reason"] = reason;
   out["for"] = forType;
-  reply(out);
+  char buf[128];
+  const size_t n = serializeJson(out, buf, sizeof(buf));
+  s_udp.beginPacket(s_rxIp, s_rxPort);
+  s_udp.write(reinterpret_cast<const uint8_t *>(buf), n);
+  s_udp.endPacket();
 }
 
 // First-run setup messages (DESIGN.md Section 11.4). Returns true if handled.
@@ -171,7 +181,7 @@ bool handleSetupMessage(const char *type, JsonDocument &doc, Link link) {
         strncpy(token, doc["token"] | "", sizeof(token) - 1);
       }
       if (strlen(token) == 32) {
-        Settings::setCompanionToken(token);
+        CompanionAuth::setToken(token);
       }
       memset(token, 0, sizeof(token));
       SetupService::finish();
@@ -262,6 +272,47 @@ void handleJsonMessage(const char *payload, size_t len, Link link,
     return;
   }
 
+  const char *type = doc["type"] | "";
+  if (link == Link::Ble && !allowedOverBle(type)) {
+    Serial.printf("[CompanionLink] BLE: ignored '%s' (not paired)\n", type);
+    return;
+  }
+  if (link == Link::Udp) {
+    // With a token, everything over UDP is signed (DESIGN.md Section 11.6).
+    if (strcmp(type, "signed") == 0) {
+      if (signedMsg)
+        return; // no nesting
+      const char *body = doc["body"] | "";
+      switch (CompanionAuth::accept(doc["n"] | 0ULL, body, doc["mac"] | "")) {
+      case CompanionAuth::Result::Ok:
+        handleJsonMessage(body, strlen(body), Link::Udp, true);
+        break;
+      case CompanionAuth::Result::Stale:
+        replyAuthError("stale", type);
+        break;
+      case CompanionAuth::Result::BadMac:
+        replyAuthError("bad_mac", type);
+        break;
+      }
+      return;
+    }
+    if (setupOnly(type)) {
+      replyAuthError("setup_only", type);
+      return;
+    }
+    if (!signedMsg && CompanionAuth::hasToken()) {
+      replyAuthError("unsigned", type);
+      return;
+    }
+    if (signedMsg && changesDevice(type)) {
+      CompanionAuth::persist();
+    }
+    // Trusted from here: this is where replies and media commands go.
+    s_companionIp = s_rxIp;
+    s_companionPort = s_rxPort;
+    s_hasCompanionPeer = true;
+  }
+
   s_lastRxViaUsb = viaUsb;
 
   const char *hostIpStr = doc["host_ip"] | "";
@@ -273,39 +324,6 @@ void handleJsonMessage(const char *payload, size_t len, Link link,
     }
   }
 
-  const char *type = doc["type"] | "";
-  if (link == Link::Ble && !allowedOverBle(type)) {
-    Serial.printf("[CompanionLink] BLE: ignored '%s' (not paired)\n", type);
-    return;
-  }
-  if (link == Link::Udp) {
-    if (strcmp(type, "signed") == 0) {
-      if (signedMsg)
-        return; // no nesting
-      const char *body = doc["body"] | "";
-      const char *inner = "signed";
-      switch (CompanionAuth::accept(doc["n"] | 0ULL, body, doc["mac"] | "")) {
-      case CompanionAuth::Result::Ok:
-        handleJsonMessage(body, strlen(body), Link::Udp, true);
-        break;
-      case CompanionAuth::Result::Stale:
-        replyAuthError("stale", inner);
-        break;
-      case CompanionAuth::Result::BadMac:
-        replyAuthError("bad_mac", inner);
-        break;
-      }
-      return;
-    }
-    if (setupOnly(type)) {
-      replyAuthError("setup_only", type);
-      return;
-    }
-    if (!signedMsg && needsSignature(type) && CompanionAuth::hasToken()) {
-      replyAuthError("unsigned", type);
-      return;
-    }
-  }
   if (handleSetupMessage(type, doc, link)) {
     return;
   }
@@ -802,9 +820,8 @@ void poll() {
     if (s_udpStarted) {
       int pktSize = s_udp.parsePacket();
       while (pktSize > 0) {
-        s_companionIp = s_udp.remoteIP();
-        s_companionPort = s_udp.remotePort();
-        s_hasCompanionPeer = true;
+        s_rxIp = s_udp.remoteIP();
+        s_rxPort = s_udp.remotePort();
 
         const int readLen =
             s_udp.read(s_rxBuf, static_cast<int>(sizeof(s_rxBuf) - 1));
