@@ -69,7 +69,10 @@ void ClockApp::onEnter(lv_obj_t *root) {
   // --- Right Column Card 1: STOPWATCH (154x65) ---
   m_swCard = Theme::createCard(root, 154, 65, 156, Config::CONTENT_Y_START + 6,
                                Config::RADIUS_MD);
-  lv_obj_set_style_pad_all(m_swCard, 8, LV_PART_MAIN);
+  // Three rows (header, digits, hint): the hint is too wide to share the
+  // digits row, so the vertical padding is tighter than the horizontal.
+  lv_obj_set_style_pad_hor(m_swCard, 8, LV_PART_MAIN);
+  lv_obj_set_style_pad_ver(m_swCard, 6, LV_PART_MAIN);
 
   m_swIcon = lv_label_create(m_swCard);
   lv_label_set_text(m_swIcon, ICON_CLOCK);
@@ -89,7 +92,7 @@ void ClockApp::onEnter(lv_obj_t *root) {
   lv_obj_set_style_text_font(m_swDigitsLbl, Theme::fontBodySb(), LV_PART_MAIN);
   lv_obj_set_style_text_color(m_swDigitsLbl, lv_color_hex(p.text),
                               LV_PART_MAIN);
-  lv_obj_align(m_swDigitsLbl, LV_ALIGN_TOP_LEFT, 0, 24);
+  lv_obj_align(m_swDigitsLbl, LV_ALIGN_TOP_LEFT, 0, 17);
 
   m_swMsLbl = lv_label_create(m_swCard);
   lv_label_set_text(m_swMsLbl, ".000");
@@ -108,7 +111,8 @@ void ClockApp::onEnter(lv_obj_t *root) {
   // --- Right Column Card 2: TIMER (154x65) ---
   m_tmCard = Theme::createCard(root, 154, 65, 156, Config::CONTENT_Y_START + 77,
                                Config::RADIUS_MD);
-  lv_obj_set_style_pad_all(m_tmCard, 8, LV_PART_MAIN);
+  lv_obj_set_style_pad_hor(m_tmCard, 8, LV_PART_MAIN);
+  lv_obj_set_style_pad_ver(m_tmCard, 6, LV_PART_MAIN);
 
   m_tmIcon = lv_label_create(m_tmCard);
   lv_label_set_text(m_tmIcon, ICON_CLOCK);
@@ -128,7 +132,7 @@ void ClockApp::onEnter(lv_obj_t *root) {
   lv_obj_set_style_text_font(m_tmDigitsLbl, Theme::fontBodySb(), LV_PART_MAIN);
   lv_obj_set_style_text_color(m_tmDigitsLbl, lv_color_hex(p.text),
                               LV_PART_MAIN);
-  lv_obj_align(m_tmDigitsLbl, LV_ALIGN_TOP_LEFT, 0, 24);
+  lv_obj_align(m_tmDigitsLbl, LV_ALIGN_TOP_LEFT, 0, 17);
 
   m_tmMsLbl = lv_label_create(m_tmCard);
   lv_label_set_text(m_tmMsLbl, ".000");
@@ -146,7 +150,7 @@ void ClockApp::onEnter(lv_obj_t *root) {
 
   m_tmProgBar = lv_bar_create(m_tmCard);
   lv_obj_set_size(m_tmProgBar, 138, 2);
-  lv_obj_align(m_tmProgBar, LV_ALIGN_BOTTOM_MID, 0, 2);
+  lv_obj_align(m_tmProgBar, LV_ALIGN_BOTTOM_MID, 0, 4);
   lv_bar_set_range(m_tmProgBar, 0, 100);
   lv_obj_set_style_bg_color(m_tmProgBar, lv_color_hex(p.border), LV_PART_MAIN);
   lv_obj_set_style_bg_color(m_tmProgBar, lv_color_hex(p.accent),
