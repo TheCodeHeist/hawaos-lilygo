@@ -90,13 +90,14 @@ flowchart LR
     DS --> EB["EventBus"] --> AM["AppManager + LVGL<br>(UI task, Core 1)"]
   end
 
-  PC -- "JSON lines over USB serial, UDP :7777<br>or Bluetooth during setup" --> CL
+  PC -- "JSON lines over USB serial, encrypted UDP :7777<br>or Bluetooth during setup" --> CL
   CL -- "config_ack, media and clock commands" --> PC
-  DEV -. "album art and firmware over HTTP :7778" .-> PC
+  DEV -. "encrypted album art and firmware<br>over HTTP :7778" .-> PC
 ```
 
 - **One UI owner.** Only the UI task on Core 1 touches LVGL. Services on Core 0 write to the `DataStore` and post events.
 - **Either link works.** USB serial when plugged in, UDP over Wi-Fi otherwise; a USB-only device takes its clock from the companion. Wi-Fi credentials arrive over USB or encrypted Bluetooth during setup.
+- **Private on your network.** Once paired, everything over Wi-Fi is encrypted and authenticated (AES-256-GCM), so other machines on the LAN can neither read nor fake it. See [Security and privacy](#security-and-privacy).
 - **No leaks.** Screens are torn down synchronously on every switch; a built-in stress test (`t` on the serial console) runs 200 switches and reports heap drift.
 
 ## Getting started
@@ -237,6 +238,12 @@ Media comes from MPRIS through `playerctl`. Check that `playerctl -l` lists your
 </details>
 
 <details>
+<summary><b>"The device didn't accept this computer"</b></summary>
+
+The device and companion no longer share the same pairing secret: the companion's config was reset, or the device was set up from another computer. Run **Add device** again, or plug the device in over USB, which works without the secret.
+</details>
+
+<details>
 <summary><b>Serial console</b></summary>
 
 `pio device monitor` shows the boot log. Type `t` + Enter to run the 200-switch leak test, or `r` + Enter to force a Wi-Fi reconnect.
@@ -244,11 +251,29 @@ Media comes from MPRIS through `playerctl`. Check that `playerctl -l` lists your
 
 ## Security and privacy
 
-- **Wi-Fi password:** over Bluetooth it is encrypted (X25519 + AES-256-GCM, keyed by the 6-digit code on the screen). Over USB it goes over the cable in plain text.
-- **Everything over Wi-Fi is encrypted.** Traffic in both directions uses AES-256-GCM with keys derived from the secret the companion gave the device during setup. Other machines on your network can't read your stats, track titles, album art, notifications or Wi-Fi password, and can't change settings, show fake messages, replay old ones, redirect the device, or take over its pairing.
-- **Firmware updates** are also signed, and each image is checked against its SHA-256 before the device switches to it.
-- **Not covered:** firmware images are downloaded over plain HTTP, since they're hash-checked and contain no secrets. USB is trusted as it is: whoever holds the cable holds the device.
-- **Outside services:** the companion asks [Open-Meteo](https://open-meteo.com) for weather and, with automatic location on, [ip-api.com](https://ip-api.com) for your rough location. Pick a city to turn that off. The device itself only talks to the companion and an NTP server.
+**Pairing.** During **Add device** the companion gives the device a random 128-bit secret. It is only accepted over the USB cable or a Bluetooth link paired with the code on the device's screen, never over Wi-Fi, so nobody on your network can replace it. Over Bluetooth the Wi-Fi password and the secret travel encrypted (X25519 key exchange + AES-256-GCM, keyed by the 6-digit code).
+
+**On your network.** Everything the companion and device exchange over Wi-Fi is encrypted and authenticated with AES-256-GCM, using a separate key for each direction derived from that secret:
+
+| | Protected |
+|---|---|
+| Stats, media, weather, notifications, clock | encrypted; can't be read or faked |
+| Settings and Wi-Fi changes | encrypted; can't be read, faked or replayed, even after a reboot |
+| Album art | encrypted and tied to its track, so it can't be read or swapped |
+| Button presses and replies from the device | encrypted; stale or replayed ones are rejected |
+| Firmware updates | request encrypted and signed; image checked against its SHA-256 before switching |
+
+Every message carries a counter, so a captured one can't be sent again, and the device sends its replies and button presses only to a companion that has proved it holds the secret, so they can't be redirected. Anyone else only gets told their message was refused.
+
+**Not covered.**
+- Firmware images download over plain HTTP: they're hash-checked and contain no secrets.
+- Message sizes and timing are visible on the network.
+- USB is trusted as it is: whoever holds the cable holds the device, and setup over USB sends the Wi-Fi password over the cable unencrypted.
+- A device set up before encryption existed has no secret and keeps talking in plain text until you run **Add device** again.
+
+**Outside services.** The companion asks [Open-Meteo](https://open-meteo.com) for weather and, with automatic location on, [ip-api.com](https://ip-api.com) for your rough location; pick a city to turn that off. The device itself only talks to the companion and an NTP server.
+
+The full protocol, key derivation and replay rules are in [`DESIGN.md`](DESIGN.md) §11.4–11.6.
 
 ## Roadmap
 
