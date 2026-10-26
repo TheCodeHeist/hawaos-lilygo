@@ -366,7 +366,7 @@ impl CompanionWindowView {
                     ),
             )
             .child(section_label(pal, "Accent"))
-            .child(h_flex().flex_wrap().gap_2().children(ACCENTS.iter().map(|a| {
+            .child(h_flex().flex_wrap().gap(px(6.)).children(ACCENTS.iter().map(|a| {
                 let (t, h) = (theme.clone(), use_24h);
                 accent_swatch(pal, a, a.id == accent).on_click(cx.listener(move |this, _, _, cx| {
                     send(this, a.id.to_string(), t.clone(), h);

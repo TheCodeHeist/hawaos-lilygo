@@ -50,6 +50,17 @@
 
 <sub>Every image above is a real framebuffer capture from the device.</sub>
 
+## Companion
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/media/companion-device.png" alt="Device settings in the companion"><br><b>Device</b>: theme, accent, brightness, always-on display, pushed live</td>
+    <td width="50%"><img src="docs/media/companion-personalize.png" alt="Personalize step of the setup wizard"><br><b>Add device</b>: the wizard's Personalize step</td>
+  </tr>
+</table>
+
+A frosted-glass Rust app (gpui) that lives in your tray. It streams stats, media, weather and notifications to the device, and every device setting can be changed from it.
+
 ## Make it yours
 
 Pick one of **17 Tailwind accents** from the companion, its tray menu or on-device Settings. The choice syncs both ways. The whole UI takes on the accent in both themes. In dark mode the wallpaper falls from a near-black of the accent into a deep tint of it (rose turns wine, amber turns espresso). In light mode it's a pale wash (blush, cream, mint), and cards, text and borders share the same undertone.
@@ -114,6 +125,13 @@ cargo build --release
 ```
 
 ### Adding a device
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/media/screen-setup.png" alt="Device Setup screen"><br><b>On the device</b>: Bluetooth name and pairing code</td>
+    <td width="50%"><img src="docs/media/companion-add-device.png" alt="Add device wizard"><br><b>In the companion</b>: connect over USB or Bluetooth</td>
+  </tr>
+</table>
 
 A new HawaOS boots into a **Setup** screen showing its Bluetooth name and a 6-digit pairing code. The companion opens its **Add device** wizard on first run (or from the tray: *Add Device...*):
 

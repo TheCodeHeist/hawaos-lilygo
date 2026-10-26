@@ -200,7 +200,7 @@ impl CompanionWindowView {
                         div()
                             .text_xs()
                             .text_color(pal.text_dim)
-                            .child("Recolors the device and this app. Backgrounds and text stay the same."),
+                            .child("Recolors the device and this app, backgrounds included."),
                     ),
             )
             // Brightness

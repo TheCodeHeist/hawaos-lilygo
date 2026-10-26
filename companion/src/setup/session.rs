@@ -122,10 +122,11 @@ pub async fn run(daemon: SharedState, wiz: SharedWizard, mut cmds: UnboundedRece
     };
     let mut tick = tokio::time::interval(SEARCH_EVERY);
 
-    // Dev aid for screenshots: `HAWAOS_DEV_WIZARD=usb|ble[:choose]` starts
-    // discovery (and picks the first device found).
+    // Dev aid for screenshots: `HAWAOS_DEV_WIZARD=usb|ble[:choose[:skip]]`
+    // starts discovery, picks the first device, and skips Wi-Fi (USB).
     let dev = std::env::var("HAWAOS_DEV_WIZARD").unwrap_or_default();
-    let mut auto_choose = dev.ends_with(":choose");
+    let mut auto_choose = dev.contains(":choose");
+    let mut auto_skip = dev.ends_with(":skip");
     match dev.split(':').next() {
         Some("usb") => on_cmd(&mut cx, Cmd::Search(Method::Usb)).await,
         Some("ble") => on_cmd(&mut cx, Cmd::Search(Method::Ble)).await,
@@ -136,6 +137,10 @@ pub async fn run(daemon: SharedState, wiz: SharedWizard, mut cmds: UnboundedRece
         if auto_choose && cx.wiz.lock().map(|w| !w.found.is_empty()).unwrap_or(false) {
             auto_choose = false;
             on_cmd(&mut cx, Cmd::Choose(0)).await;
+        }
+        if auto_skip && cx.wiz.lock().map(|w| w.step == Step::Wifi).unwrap_or(false) {
+            auto_skip = false;
+            on_cmd(&mut cx, Cmd::SkipWifi).await;
         }
         tokio::select! {
             cmd = cmds.recv() => match cmd {
