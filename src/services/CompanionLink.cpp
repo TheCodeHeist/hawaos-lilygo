@@ -32,7 +32,7 @@ uint16_t s_companionPort = Config::COMPANION_UDP_PORT;
 bool s_hasCompanionPeer = false;
 bool s_lastRxViaUsb = false;
 // Sender of the UDP packet being handled; becomes the peer only once
-// trusted (signed, or no token yet).
+// trusted (sealed, or no token yet).
 IPAddress s_rxIp;
 uint16_t s_rxPort = 0;
 
@@ -47,6 +47,9 @@ uint32_t s_lastArtAttemptMs = 0;
 
 SemaphoreHandle_t s_txMutex = nullptr;
 char s_pendingCmd[24] = {0};
+// Clock commands come from the UI task; queued so only the WiFi task sends.
+char s_pendingClockCmd[24] = {0};
+bool s_hasPendingClockCmd = false;
 uint32_t s_pendingCmdPosMs = 0;
 bool s_hasPendingCmd = false;
 uint32_t s_pendingAckVer = 0;
@@ -96,9 +99,18 @@ void sendJsonPacket(const char *jsonStr) {
   if (jsonStr == nullptr)
     return;
   if (s_hasCompanionPeer && WiFi.status() == WL_CONNECTED) {
-    s_udp.beginPacket(s_companionIp, s_companionPort);
-    s_udp.write(reinterpret_cast<const uint8_t *>(jsonStr), strlen(jsonStr));
-    s_udp.endPacket();
+    // Encrypted once paired (DESIGN.md Section 11.6); USB and BLE stay plain.
+    static char sealed[1460];
+    const char *pkt = jsonStr;
+    if (CompanionAuth::hasToken()) {
+      pkt = CompanionAuth::seal(jsonStr, sealed, sizeof(sealed)) ? sealed
+                                                                 : nullptr;
+    }
+    if (pkt != nullptr) {
+      s_udp.beginPacket(s_companionIp, s_companionPort);
+      s_udp.write(reinterpret_cast<const uint8_t *>(pkt), strlen(pkt));
+      s_udp.endPacket();
+    }
   }
   Serial.println(jsonStr);
   if (BleLink::isConnected()) {
@@ -139,7 +151,7 @@ bool setupOnly(const char *type) {
   return false;
 }
 
-// Signed messages that change the device save the replay counter to flash.
+// Sealed messages that change the device save the replay counter to flash.
 bool changesDevice(const char *type) {
   return strcmp(type, "config") == 0 || strcmp(type, "wifi_join") == 0 ||
          strcmp(type, "ota") == 0;
@@ -264,7 +276,7 @@ bool handleSetupMessage(const char *type, JsonDocument &doc, Link link) {
 }
 
 void handleJsonMessage(const char *payload, size_t len, Link link,
-                       bool signedMsg = false) {
+                       bool trusted = false) {
   const bool viaUsb = (link == Link::Usb);
   JsonDocument doc;
   const DeserializationError err = deserializeJson(doc, payload, len);
@@ -278,14 +290,15 @@ void handleJsonMessage(const char *payload, size_t len, Link link,
     return;
   }
   if (link == Link::Udp) {
-    // With a token, everything over UDP is signed (DESIGN.md Section 11.6).
-    if (strcmp(type, "signed") == 0) {
-      if (signedMsg)
+    // With a token, everything over UDP is encrypted (DESIGN.md Section 11.6).
+    if (strcmp(type, "sealed") == 0) {
+      if (trusted)
         return; // no nesting
-      const char *body = doc["body"] | "";
-      switch (CompanionAuth::accept(doc["n"] | 0ULL, body, doc["mac"] | "")) {
+      static char plain[1200];
+      switch (CompanionAuth::open(doc["n"] | 0ULL, doc["iv"] | "",
+                                  doc["ct"] | "", plain, sizeof(plain))) {
       case CompanionAuth::Result::Ok:
-        handleJsonMessage(body, strlen(body), Link::Udp, true);
+        handleJsonMessage(plain, strlen(plain), Link::Udp, true);
         break;
       case CompanionAuth::Result::Stale:
         replyAuthError("stale", type);
@@ -300,11 +313,11 @@ void handleJsonMessage(const char *payload, size_t len, Link link,
       replyAuthError("setup_only", type);
       return;
     }
-    if (!signedMsg && CompanionAuth::hasToken()) {
-      replyAuthError("unsigned", type);
+    if (!trusted && CompanionAuth::hasToken()) {
+      replyAuthError("plaintext", type);
       return;
     }
-    if (signedMsg && changesDevice(type)) {
+    if (trusted && changesDevice(type)) {
       CompanionAuth::persist();
     }
     // Trusted from here: this is where replies and media commands go.
@@ -695,6 +708,8 @@ void flushPendingOutbound() {
   bool sendCmd = false;
   uint32_t ackVer = 0;
   bool sendAck = false;
+  char clockLocal[24] = {0};
+  bool sendClock = false;
 
   if (s_txMutex != nullptr &&
       xSemaphoreTake(s_txMutex, pdMS_TO_TICKS(10)) == pdTRUE) {
@@ -709,7 +724,19 @@ void flushPendingOutbound() {
       s_hasPendingAck = false;
       sendAck = true;
     }
+    if (s_hasPendingClockCmd) {
+      strncpy(clockLocal, s_pendingClockCmd, sizeof(clockLocal) - 1);
+      s_hasPendingClockCmd = false;
+      sendClock = true;
+    }
     xSemaphoreGive(s_txMutex);
+  }
+
+  if (sendClock) {
+    char buf[96];
+    snprintf(buf, sizeof(buf), "{\"type\":\"clock_cmd\",\"cmd\":\"%s\"}",
+             clockLocal);
+    sendJsonPacket(buf);
   }
 
   if (sendCmd) {
@@ -847,11 +874,14 @@ void poll() {
 void sendJson(const char *json) { sendJsonPacket(json); }
 
 void sendClockCommand(const char *cmd) {
-  if (cmd == nullptr)
+  if (cmd == nullptr || s_txMutex == nullptr)
     return;
-  char buf[96];
-  snprintf(buf, sizeof(buf), "{\"type\":\"clock_cmd\",\"cmd\":\"%s\"}", cmd);
-  sendJsonPacket(buf);
+  if (xSemaphoreTake(s_txMutex, pdMS_TO_TICKS(10)) == pdTRUE) {
+    strncpy(s_pendingClockCmd, cmd, sizeof(s_pendingClockCmd) - 1);
+    s_pendingClockCmd[sizeof(s_pendingClockCmd) - 1] = '\0';
+    s_hasPendingClockCmd = true;
+    xSemaphoreGive(s_txMutex);
+  }
 }
 
 void sendMediaCommand(const char *cmd, uint32_t posMs) {

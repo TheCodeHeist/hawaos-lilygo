@@ -46,13 +46,13 @@ pub fn spawn_daemon_worker(state: SharedState, art_cache: SharedArtCache) {
         loop {
             // 1. Poll incoming UDP packets from T-Display-S3
             while let Ok((len, src)) = udp.recv_from(&mut rx_buf) {
-                if let Ok(s) = std::str::from_utf8(&rx_buf[..len]) {
+                if let Some(s) = std::str::from_utf8(&rx_buf[..len]).ok().and_then(|s| open_udp(s, &state)) {
                     if let Ok(mut g) = state.lock() {
                         if g.device_reported_ip.is_none() {
                             g.device_reported_ip = Some(src.ip().to_string());
                         }
                     }
-                    handle_incoming_json_line(s, &state);
+                    handle_incoming_json_line(&s, &state);
                 }
             }
 
@@ -320,7 +320,14 @@ pub fn spawn_daemon_worker(state: SharedState, art_cache: SharedArtCache) {
                 };
 
                 if changed || last_media_heartbeat.elapsed() >= Duration::from_secs(5) {
-                    if let Ok(json_str) = serde_json::to_string(&cur_media) {
+                    // Device field sizes (DataStore.h); the window keeps full text.
+                    let wire = MediaMsg {
+                        title: fit_bytes(cur_media.title.clone(), 63),
+                        artist: fit_bytes(cur_media.artist.clone(), 47),
+                        album: fit_bytes(cur_media.album.clone(), 47),
+                        ..cur_media.clone()
+                    };
+                    if let Ok(json_str) = serde_json::to_string(&wire) {
                         if let Some(addr) = target_addr {
                             let _ = send_udp(&udp, addr, &json_str, &token);
                         }
@@ -430,7 +437,7 @@ fn start_ota(
     Ok("WiFi")
 }
 
-/// Sends a JSON message over UDP, signed once the device has a token
+/// Sends a JSON message over UDP, encrypted once the device has a token
 /// (DESIGN.md Section 11.6).
 fn send_udp(udp: &UdpSocket, addr: SocketAddr, json: &str, token: &str) -> std::io::Result<()> {
     let sealed;
@@ -442,4 +449,20 @@ fn send_udp(udp: &UdpSocket, addr: SocketAddr, json: &str, token: &str) -> std::
         sealed.as_str()
     };
     udp.send_to(pkt.as_bytes(), addr).map(|_| ())
+}
+
+/// A datagram from the device, decrypted once it has a token (DESIGN.md
+/// Section 11.6). Plaintext is only taken for `auth_error`: the device sends
+/// those to senders it can't trust, so they carry nothing secret.
+fn open_udp(raw: &str, state: &SharedState) -> Option<String> {
+    let token = state.lock().ok()?.config.device_token.clone();
+    if token.is_empty() {
+        return Some(raw.to_string());
+    }
+    let v: serde_json::Value = serde_json::from_str(raw.trim()).ok()?;
+    match v["type"].as_str()? {
+        "sealed" => crate::auth::open_from_device(&token, &v),
+        "auth_error" => Some(raw.to_string()),
+        _ => None,
+    }
 }
