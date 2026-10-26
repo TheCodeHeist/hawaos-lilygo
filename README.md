@@ -1,148 +1,177 @@
-# HawaOS (`hawaos-lilygo`)
+<p align="center">
+  <img src="assets/logo.png" width="96" alt="HawaOS logo">
+</p>
 
-**HawaOS** is a lightweight desktop dashboard "OS" for the **LilyGo T-Display-S3** (`ESP32-S3R8`), built on **Arduino-ESP32 + FreeRTOS + LVGL 8**, and designed to pair with a **Rust companion daemon** running on a Linux/desktop PC.
+<h1 align="center">HawaOS</h1>
+
+<p align="center">
+  <em>Breezy Elegance, Materialised.</em><br>
+  A tiny desktop-dashboard OS for the LilyGo T-Display-S3, paired with a Rust companion on your PC.
+</p>
+
+<p align="center">
+  <img alt="ESP32-S3" src="https://img.shields.io/badge/ESP32--S3-T--Display-E7352C?style=flat-square&logo=espressif&logoColor=white">
+  <img alt="LVGL 8.4" src="https://img.shields.io/badge/LVGL-8.4-343839?style=flat-square">
+  <img alt="PlatformIO" src="https://img.shields.io/badge/PlatformIO-Arduino-F5822A?style=flat-square&logo=platformio&logoColor=white">
+  <img alt="Rust companion" src="https://img.shields.io/badge/companion-Rust-B7410E?style=flat-square&logo=rust&logoColor=white">
+  <img alt="MIT License" src="https://img.shields.io/badge/license-MIT-3DA639?style=flat-square">
+</p>
+
+<p align="center">
+  <img src="docs/media/accents.gif" width="820" alt="Home and Now Playing screens cycling through accent themes">
+</p>
 
 ---
 
-## Features & Architecture
+## Screens
 
-HawaOS provides an event-driven application framework over FreeRTOS tailored for the constrained internal SRAM and 8 MB OPI PSRAM of the ESP32-S3:
+<table>
+  <tr>
+    <td width="50%"><img src="docs/media/screen-home.png" alt="Home"><br><b>Home</b>: big clock, CPU and RAM at a glance, the current track</td>
+    <td width="50%"><img src="docs/media/screen-media.png" alt="Now Playing"><br><b>Now Playing</b>: album-art tinted background, transport controls</td>
+  </tr>
+  <tr>
+    <td><img src="docs/media/screen-weather.png" alt="Weather"><br><b>Weather</b>: current conditions and a 3-day forecast</td>
+    <td><img src="docs/media/screen-stats.png" alt="Stats"><br><b>Stats</b>: PC CPU, RAM and a live network sparkline</td>
+  </tr>
+  <tr>
+    <td><img src="docs/media/screen-clock.png" alt="Clock"><br><b>Clock</b>: NTP time, stopwatch and timer, synced with the companion</td>
+    <td><img src="docs/media/screen-notifications.png" alt="Notifications"><br><b>Notifications</b>: your desktop notifications, mirrored</td>
+  </tr>
+  <tr>
+    <td><img src="docs/media/screen-launcher.png" alt="Launcher"><br><b>Launcher</b>: carousel of every app</td>
+    <td valign="top"><br><b>Also on board</b><br>
+      Always-on display that dims to a clock and shifts to the album's tint while music plays<br>
+      Control Center (press both buttons): brightness, theme, Wi-Fi, AOD<br>
+      On-device Settings: accent, theme, orientation, AOD timeout, clock format
+    </td>
+  </tr>
+</table>
 
-- **Strict Single-Core UI Ownership:** Only the `ui_task` pinned to **Core 1** touches LVGL widgets. Background services run on **Core 0**, update a mutex-guarded [`DataStore`](src/core/DataStore.h), and post events to a lock-free FreeRTOS [`EventBus`](src/core/EventBus.h).
-- **PSRAM Framebuffer:** Full `320×170` 16-bit RGB565 LVGL draw buffer (`108,800` bytes) allocated directly in **OPI PSRAM** (`MALLOC_CAP_SPIRAM`), leaving >230 KB of internal SRAM free for WiFi and BLE stacks.
-- **Zero-Leak App Lifecycle ([`AppManager`](src/core/AppManager.h)):** Static boot-time app registration with synchronous screen teardown (`onExit()` → `lv_scr_load(newScr)` → `lv_obj_del(oldScr)` → `onEnter(newScr)`), verified across 200+ rapid app switches with `0 B` heap drift.
-- **Persistent Top [`StatusBar`](src/ui/StatusBar.h):** Rendered on `lv_layer_top()` so WiFi RSSI, mini clock, battery state, and active view title persist across screen transitions without flicker.
-- **Two-Button Navigation ([`Buttons`](src/drivers/Buttons.h)):** 100 Hz hardware button sampler with 25 ms debounce and finite-state classification into `Short`, `Long` (≥ 600 ms), and `Double` (≤ 250 ms) presses.
-- **NVS Settings ([`Settings`](src/core/Settings.h)):** Persists WiFi credentials, 16-level hardware backlight brightness, timezone offset, and clock format in ESP32 NVS `Preferences`.
+<sub>Every image above is a real framebuffer capture from the device.</sub>
 
----
+## Make it yours
 
-## Hardware Target: LilyGo T-Display-S3
+Pick one of **17 Tailwind accents** from the companion, its tray menu or on-device Settings. The choice syncs both ways. In dark mode the whole UI takes on the accent: the wallpaper falls from a near-black of the accent into a deep tint of it (rose turns wine, amber turns espresso), and cards and dim text share the same undertone.
 
-| Component | Specification |
+<p align="center">
+  <img src="docs/media/accent-swatches.png" width="640" alt="The 17 accent colors">
+</p>
+
+All colors come from one generator, [`tools/gen_theme.py`](tools/gen_theme.py). It converts OKLCH tokens to sRGB with gamut clipping and emits both [`include/theme_tokens.h`](include/theme_tokens.h) for the firmware and [`companion/src/ui/accents.rs`](companion/src/ui/accents.rs) for the companion. Gradients are dithered, so the deep tints stay smooth on the 16-bit panel. The full design system lives in [`DESIGN.md`](DESIGN.md).
+
+## How it fits together
+
+```mermaid
+flowchart LR
+  subgraph PC["Your PC: hawaos-companion (Rust)"]
+    direction TB
+    MP["playerctl / MPRIS<br>now playing + art"]
+    NT["D-Bus<br>notifications"]
+    WX["Open-Meteo<br>weather"]
+    SY["sysinfo<br>CPU · RAM · net"]
+    UI["Window + tray<br>settings, accent, Wi-Fi setup"]
+  end
+
+  subgraph DEV["T-Display-S3: HawaOS firmware"]
+    direction TB
+    CL["CompanionLink<br>(Core 0)"] --> DS["DataStore<br>mutex-guarded snapshot"]
+    DS --> EB["EventBus"] --> AM["AppManager + LVGL<br>(UI task, Core 1)"]
+  end
+
+  PC -- "JSON lines over USB serial<br>or UDP :7777" --> CL
+  CL -- "config_ack, media and clock commands" --> PC
+  DEV -. "album art over HTTP :7778" .-> PC
+```
+
+- **One UI owner.** Only the UI task on Core 1 touches LVGL. Services on Core 0 write to the `DataStore` and post events.
+- **Either link works.** USB serial when plugged in, UDP over Wi-Fi otherwise. Wi-Fi credentials are provisioned from the companion over USB.
+- **No leaks.** Screens are torn down synchronously on every switch; a built-in stress test (`t` on the serial console) runs 200 switches and reports heap drift.
+
+## Getting started
+
+### Firmware
+
+Requires [PlatformIO Core](https://docs.platformio.org/en/latest/core/installation/index.html).
+
+```bash
+pio run -t upload        # build and flash (generators run automatically)
+pio device monitor       # serial log at 115200 baud
+```
+
+> [!TIP]
+> If the board won't enter download mode, hold **BOOT**, tap **RST**, release **BOOT**, then upload again. On Fedora, add yourself to `dialout`; if uploads still fail intermittently, stop `ModemManager`.
+
+### Companion (Linux)
+
+Requires a recent Rust toolchain (edition 2024), a Vulkan-capable GPU, `playerctl`, `dbus-monitor`, and a StatusNotifier tray (KDE has one built in; GNOME needs the AppIndicator extension).
+
+```bash
+cd companion
+cargo build --release
+./target/release/hawaos-companion              # opens the window
+./target/release/hawaos-companion --minimized  # starts in the tray
+```
+
+On first run, plug the device in over USB and use the **Setup & WiFi** page to detect it and send it your Wi-Fi credentials.
+
+## Controls
+
+Two buttons: **Next** (`GPIO 14`) and **Select** (`GPIO 0`, BOOT).
+
+| Where | Press | Does |
+|---|---|---|
+| Any app | Next | Next app |
+| Any app | Next, hold | Launcher |
+| Any app | Select, hold | Back to Home |
+| Anywhere | Both buttons | Control Center |
+| Home | Select | Open Now Playing if music is on, else toggle 12/24 h |
+| Now Playing | Select / Select, hold / Next, double | Play-pause / next track / previous track |
+| Clock | Next / Select / Select, hold | Focus stopwatch or timer / start-pause / reset |
+| Stats | Select | Switch between PC stats and on-device memory |
+| Notifications | Next / Select | Next item / dismiss |
+| Always-on display | Select | Pause or resume a running timer or stopwatch |
+
+## Hardware
+
+| | |
 |---|---|
-| **MCU** | ESP32-S3R8 Dual-Core Xtensa LX7 @ 240 MHz |
-| **Memory** | 16 MB QIO Flash, 8 MB OPI PSRAM, 320 KB Internal SRAM |
-| **Display** | 1.9" IPS TFT (ST7789V), `170×320` (`320×170` Landscape), 8-bit Parallel (i8080) |
-| **Power & Backlight** | `GPIO 15` (`PIN_POWER_ON`), `GPIO 38` (`PIN_LCD_BL`, 16-step pulse dimming) |
-| **LCD Parallel Bus** | `CS=6`, `DC=7`, `RST=5`, `WR=8`, `RD=9`, `D0..D7 = {39,40,41,42,45,46,47,48}` |
-| **User Buttons** | `GPIO 14` (`Button::Next`), `GPIO 0 / BOOT` (`Button::Select`) — Active `LOW` |
-| **Battery ADC** | `GPIO 4` (`PIN_BAT_VOLT`) |
+| **Board** | LilyGo T-Display-S3 (non-touch), ESP32-S3R8 dual-core @ 240 MHz |
+| **Memory** | 16 MB flash, 8 MB OPI PSRAM (holds the full-screen LVGL buffer) |
+| **Display** | 1.9" ST7789V IPS, 320×170 landscape, 8-bit parallel bus |
+| **Pins** | Pins and bus setup are in [`include/config.h`](include/config.h) and [`platformio.ini`](platformio.ini) |
 
----
-
-## Repository Structure
+<details>
+<summary><b>Repository layout</b></summary>
 
 ```text
 hawaos-lilygo/
-├── platformio.ini            # PlatformIO config (espressif32@6.5.0, Setup206 flags)
-├── .clangd                   # Strips Xtensa compiler flags for clangd / Zed LSP
-├── .zed/tasks.json           # Zed build, upload, monitor, and compiledb tasks
-├── include/
-│   ├── config.h              # Verified hardware pins, task stacks, timing constants
-│   ├── lv_conf.h             # LVGL 8.x configuration
-│   └── secrets.h             # (Gitignored) Local WiFi credentials for initial NVS seed
 ├── src/
-│   ├── main.cpp              # Entry point: Kernel::begin(), deletes Arduino loopTask
-│   ├── core/
-│   │   ├── Kernel.h/.cpp     # Boot sequence, UI task, periodic memory diagnostics
-│   │   ├── App.h             # Base App interface (onEnter/onExit/onTick/onButton/onData)
-│   │   ├── AppManager.h/.cpp # App registry, Launcher, screen lifecycle, 200x leak test
-│   │   ├── EventBus.h/.cpp   # FreeRTOS event queue
-│   │   ├── DataStore.h/.cpp  # Mutex-guarded DataSnapshot
-│   │   └── Settings.h/.cpp   # NVS Preferences wrapper
-│   ├── drivers/
-│   │   ├── Display.h/.cpp    # TFT_eSPI 8-bit parallel init, LVGL PSRAM buffer, backlight
-│   │   └── Buttons.h/.cpp    # Debounce + Short/Long/Double press FSM
-│   ├── services/
-│   │   ├── WifiService.h/.cpp# Core 0 WiFi station manager & auto-reconnect
-│   │   └── NtpService.h/.cpp # SNTP time synchronization
-│   ├── ui/
-│   │   ├── Theme.h/.cpp      # Shared dark dashboard palette & card helpers
-│   │   └── StatusBar.h/.cpp  # Persistent top status bar on lv_layer_top()
-│   └── apps/
-│       └── ClockApp.h/.cpp   # Digital NTP clock, date, and network status app
-└── companion/                # (Upcoming) Rust desktop daemon sending UDP stats & notifications
+│   ├── core/         Kernel (boot, UI task), AppManager, EventBus, DataStore, Settings
+│   ├── apps/         Home, Clock, Weather, Media, Stats, Notify, Settings
+│   ├── services/     CompanionLink (USB + UDP JSON), WifiService, NtpService
+│   ├── drivers/      Display (TFT_eSPI + LVGL, boot logo), Buttons
+│   └── ui/           Theme helpers, StatusBar, fonts, icons
+├── include/          config.h, lv_conf.h, generated theme_tokens.h and boot_logo.h
+├── tools/            gen_theme.py, gen_logo.py, gen_icons.py
+├── companion/        Rust desktop companion (gpui window, tray, worker)
+├── assets/           logo, Inter and Lucide fonts
+└── DESIGN.md         Design system: tokens, layouts, motion, protocol
 ```
 
----
-
-## Getting Started
-
-### 1. Prerequisites
-- **PlatformIO CLI** (`pipx install platformio`)
-- **Zed Editor** (optional, preconfigured via `.zed/tasks.json` and `.clangd`)
-- On Fedora/Linux: ensure your user is in the `dialout` group:
-  ```bash
-  sudo usermod -aG dialout $USER
-  ```
-  *(If uploads fail intermittently on Fedora, stop `ModemManager` with `sudo systemctl stop ModemManager`.)*
-
-### 2. Configure WiFi (First Boot)
-Create `include/secrets.h` (gitignored) to seed your WiFi credentials into NVS on first boot:
-
-```cpp
-#pragma once
-
-#define SECRET_WIFI_SSID "YourNetworkSSID"
-#define SECRET_WIFI_PASS "YourNetworkPassword"
-```
-
-Once flashed once, credentials are saved in ESP32 NVS `Preferences` under the `"hawaos"` namespace.
-
-### 3. Build, Flash & Monitor
-
-```bash
-# Build firmware
-pio run
-
-# Generate compile_commands.json for clangd / Zed
-pio run -t compiledb
-
-# Flash to LilyGo T-Display-S3
-pio run -t upload
-
-# Open serial monitor (115200 baud)
-pio device monitor
-```
-
-> **Download Mode Tip:** If the board does not enter bootloader mode automatically, hold **BOOT (`GPIO 0`)**, tap **RST**, then release **BOOT** and run `pio run -t upload`.
-
----
-
-## Controls & Serial Shortcuts
-
-### Physical Buttons
-- **In Launcher:**
-  - `NEXT (GPIO 14)` **Short**: Highlight next app
-  - `SELECT (GPIO 0)` **Short**: Launch highlighted app
-  - `SELECT (GPIO 0)` **Long**: Run 200× app-switch heap leak stress test
-- **Inside Apps (Global Gestures when unconsumed by app):**
-  - `NEXT (GPIO 14)` **Short**: Cycle to next app
-  - `NEXT (GPIO 14)` **Long**: Return to Launcher
-- **Inside `ClockApp`:**
-  - `SELECT (GPIO 0)` **Short**: Toggle `12H (AM/PM)` / `24H` mode (persisted in NVS)
-  - `SELECT (GPIO 0)` **Double**: Force immediate NTP resync
-  - `SELECT (GPIO 0)` **Long**: Force WiFi disconnect/reconnect test
-
-### USB Serial Diagnostic Commands (`115200` baud)
-- `t`: Run 200× app-switch heap leak stress test and print SRAM/PSRAM delta
-- `r`: Force WiFi disconnect & automatic reconnect cycle
-- `n` / `l` / `s` / `d`: Inject simulated button events (`Next Short`, `Next Long`, `Select Short`, `Select Double`)
-
----
+</details>
 
 ## Roadmap
 
-- [x] **Milestone 1:** Display bring-up (8-bit parallel ST7789V, PSRAM LVGL buffer, splash, memory telemetry)
-- [x] **Milestone 2:** Button classifier (`Short`/`Long`/`Double`), `EventBus`, `AppManager`, Launcher, 200× zero-leak test
-- [x] **Milestone 3:** NVS `Settings`, Core 0 `WifiService` + `NtpService`, persistent `StatusBar`, `ClockApp`
-- [ ] **Milestone 4:** `CompanionLink` (UDP JSON receiver on port `7777`), `StatsApp` (CPU/RAM/Net), Rust companion daemon (`companion/`)
-- [ ] **Milestone 5:** `NotifyApp` (desktop notifications) & `SettingsApp` (on-device brightness/preferences UI)
-- [ ] **Milestone 6:** OTA firmware updates & `NimBLE-Arduino` BLE service
-
----
+- [x] Display, LVGL in PSRAM, app framework, launcher, zero-leak app switching
+- [x] Wi-Fi, NTP, status bar, Clock with stopwatch and timer
+- [x] Rust companion: stats, media with album art, weather, notifications, tray
+- [x] Always-on display, Control Center, on-device Settings
+- [x] 17 synced accent themes with accent-tinted dark mode
+- [ ] OTA firmware updates
+- [ ] BLE link (NimBLE)
+- [ ] Image wallpapers pushed from the companion
 
 ## License
 
-This project is licensed under the [MIT License](LICENSE).
+[MIT](LICENSE)
