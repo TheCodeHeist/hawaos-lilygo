@@ -32,6 +32,7 @@ uint32_t s_configVersion = 0;
 int32_t s_gmtOffsetSec = Config::DEFAULT_GMT_OFFSET_SEC;
 bool s_use24Hour = false;
 bool s_orientationInverted = false;
+bool s_setupDone = false;
 
 int8_t accentIndexOf(const char *id) {
   if (id == nullptr)
@@ -106,6 +107,9 @@ void begin() {
   s_gmtOffsetSec = s_prefs.getInt("gmt_offset", Config::DEFAULT_GMT_OFFSET_SEC);
   s_use24Hour = s_prefs.getBool("use_24h", false);
   s_orientationInverted = s_prefs.getBool("orient_inv", false);
+  // Devices provisioned before the setup wizard existed count as set up.
+  s_setupDone = s_prefs.isKey("setup_done") ? s_prefs.getBool("setup_done", false)
+                                            : (s_wifiSsid[0] != '\0');
 
   Serial.printf("[Settings] Loaded: SSID='%s', bright=%u%%, theme=%u, "
                 "accent=%s, aod=%d(%us), redMotion=%d, notifyPopup=%d, v=%lu\n",
@@ -322,6 +326,13 @@ void setOrientationInverted(bool inverted) {
   Display::setRotation(s_orientationInverted ? 1 : 3);
   Buttons::setOrientationInverted(s_orientationInverted);
   bumpLocalConfigVersion();
+}
+
+bool isSetupDone() { return s_setupDone; }
+
+void setSetupDone(bool done) {
+  s_setupDone = done;
+  s_prefs.putBool("setup_done", s_setupDone);
 }
 
 } // namespace Settings

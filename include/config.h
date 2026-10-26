@@ -89,6 +89,19 @@ constexpr uint32_t SPLASH_MIN_DURATION_MS =
 // bytes)
 constexpr uint32_t LVGL_BUF_PIXELS = (LCD_HOR_RES * LCD_VER_RES);
 
+// --- Firmware identity (reported to the companion in config_ack) ---
+constexpr const char *FW_VERSION = "0.5.0";
+constexpr const char *DEVICE_MODEL = "T-Display-S3";
+
+// --- First-run setup (BLE provisioning, DESIGN.md Section 11.4) ---
+// "HAWAOS" in the first 6 bytes. RX = companion writes, TX = device notifies;
+// both carry the same newline-delimited JSON as USB and UDP.
+constexpr const char *BLE_SERVICE_UUID = "48415741-4f53-4000-8000-000000000001";
+constexpr const char *BLE_RX_UUID = "48415741-4f53-4000-8000-000000000002";
+constexpr const char *BLE_TX_UUID = "48415741-4f53-4000-8000-000000000003";
+constexpr uint32_t WIFI_JOIN_TIMEOUT_MS = 20000; // give up on a join attempt
+constexpr uint32_t SETUP_DONE_HOLD_MS = 2500;    // "All set" before Home
+
 // --- Network, Companion & Time Defaults ---
 constexpr uint16_t COMPANION_UDP_PORT = 7777;
 // USB serial RX buffer. The default 256 B overflows between 25 ms polls when the

@@ -20,4 +20,7 @@ void sendClockCommand(const char *cmd);
 // Send config acknowledgement to companion
 void sendConfigAck(uint32_t version);
 
+// Send one JSON line on every live link (USB, UDP peer, BLE during setup).
+void sendJson(const char *json);
+
 } // namespace CompanionLink

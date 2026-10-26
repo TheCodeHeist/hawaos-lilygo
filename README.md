@@ -79,13 +79,13 @@ flowchart LR
     DS --> EB["EventBus"] --> AM["AppManager + LVGL<br>(UI task, Core 1)"]
   end
 
-  PC -- "JSON lines over USB serial<br>or UDP :7777" --> CL
+  PC -- "JSON lines over USB serial, UDP :7777<br>or Bluetooth during setup" --> CL
   CL -- "config_ack, media and clock commands" --> PC
   DEV -. "album art over HTTP :7778" .-> PC
 ```
 
 - **One UI owner.** Only the UI task on Core 1 touches LVGL. Services on Core 0 write to the `DataStore` and post events.
-- **Either link works.** USB serial when plugged in, UDP over Wi-Fi otherwise. Wi-Fi credentials are provisioned from the companion over USB.
+- **Either link works.** USB serial when plugged in, UDP over Wi-Fi otherwise; a USB-only device takes its clock from the companion. Wi-Fi credentials arrive over USB or encrypted Bluetooth during setup.
 - **No leaks.** Screens are torn down synchronously on every switch; a built-in stress test (`t` on the serial console) runs 200 switches and reports heap drift.
 
 ## Getting started
@@ -113,7 +113,16 @@ cargo build --release
 ./target/release/hawaos-companion --minimized  # starts in the tray
 ```
 
-On first run, plug the device in over USB and use the **Setup & WiFi** page to detect it and send it your Wi-Fi credentials.
+### Adding a device
+
+A new HawaOS boots into a **Setup** screen showing its Bluetooth name and a 6-digit pairing code. The companion opens its **Add device** wizard on first run (or from the tray: *Add Device...*):
+
+1. **Connect** over a USB-C cable, or over **Bluetooth** with no cable.
+2. **Pair** (Bluetooth only): type the code from the device's screen. It proves you're next to the device, and it keys the encryption for your Wi-Fi password (X25519 + AES-GCM).
+3. **Wi-Fi**: pick from the networks the *device* can see. A wrong password or an out-of-range network is reported straight back. On USB you can skip Wi-Fi and run over the cable.
+4. **Personalize**: accent, theme and clock format, previewed live on the device.
+
+Bluetooth only runs while the device is in setup, so it uses no memory afterwards. To set a device up again, use **Settings > Set Up Again** on the device.
 
 ## Controls
 
@@ -121,6 +130,7 @@ Two buttons: **Next** (`GPIO 14`) and **Select** (`GPIO 0`, BOOT).
 
 | Where | Press | Does |
 |---|---|---|
+| Setup screen | Select, hold | Skip setup (use the device offline) |
 | Any app | Next | Next app |
 | Any app | Next, hold | Launcher |
 | Any app | Select, hold | Back to Home |
@@ -168,8 +178,9 @@ hawaos-lilygo/
 - [x] Rust companion: stats, media with album art, weather, notifications, tray
 - [x] Always-on display, Control Center, on-device Settings
 - [x] 17 synced accent themes with accent-tinted dark mode
+- [x] First-run setup wizard over USB or Bluetooth, with encrypted Wi-Fi provisioning
 - [ ] OTA firmware updates
-- [ ] BLE link (NimBLE)
+- [ ] Bluetooth for everyday data (today it's used for setup only)
 - [ ] Image wallpapers pushed from the companion
 
 ## License

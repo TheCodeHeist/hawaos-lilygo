@@ -14,6 +14,12 @@ bool registerApp(App *app);
 // Switch to app by index (0 .. appCount()-1).
 void switchTo(size_t idx);
 
+// First-run Setup screen: shown instead of the apps until SetupService
+// reports done, then Home loads. The app is not part of the launcher.
+void setSetupApp(App *app);
+void showSetup();
+bool isInSetup();
+
 // Exit current app (if any) and show the Redmi-style horizontal carousel
 // Launcher.
 void showLauncher();

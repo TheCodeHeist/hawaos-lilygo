@@ -18,7 +18,7 @@ private:
   void refreshRows();
 
   static constexpr int kVisibleRows = 3;
-  static constexpr int kTotalItems = 10;
+  static constexpr int kTotalItems = 11;
 
   lv_obj_t *m_rows[kVisibleRows] = {nullptr};
   lv_obj_t *m_rowNames[kVisibleRows] = {nullptr};

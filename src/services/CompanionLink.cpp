@@ -3,6 +3,9 @@
 #include "core/DataStore.h"
 #include "core/EventBus.h"
 #include "core/Settings.h"
+#include "services/BleLink.h"
+#include "services/NtpService.h"
+#include "services/SetupService.h"
 #include "services/WifiService.h"
 #include "ui/Theme.h"
 
@@ -29,6 +32,7 @@ bool s_lastRxViaUsb = false;
 
 char s_rxBuf[1460] = {0};
 char s_serialLine[1024] = {0};
+char s_bleLine[1024] = {0};
 size_t s_serialLen = 0;
 
 char s_pendingArtHash[16] = {0};
@@ -91,9 +95,104 @@ void sendJsonPacket(const char *jsonStr) {
     s_udp.endPacket();
   }
   Serial.println(jsonStr);
+  if (BleLink::isConnected()) {
+    BleLink::send(jsonStr);
+  }
 }
 
-void handleJsonMessage(const char *payload, size_t len, bool viaUsb) {
+using SetupService::Link;
+
+// Over BLE (setup only) a peer must prove it can read the pairing code before
+// anything but discovery and pairing messages is accepted.
+bool allowedOverBle(const char *type) {
+  static const char *const kOpen[] = {"query", "wifi_scan", "setup",
+                                      "setup_key", "setup_verify"};
+  for (const char *t : kOpen) {
+    if (strcmp(type, t) == 0)
+      return true;
+  }
+  return SetupService::isSessionVerified() &&
+         (strcmp(type, "wifi_creds") == 0 || strcmp(type, "config") == 0);
+}
+
+void reply(const JsonDocument &doc) {
+  char buf[256];
+  serializeJson(doc, buf, sizeof(buf));
+  sendJsonPacket(buf);
+}
+
+// First-run setup messages (DESIGN.md Section 11.4). Returns true if handled.
+bool handleSetupMessage(const char *type, JsonDocument &doc, Link link) {
+  if (strcmp(type, "wifi_scan") == 0) {
+    WifiService::requestScan();
+    return true;
+  }
+  if (strcmp(type, "setup") == 0) {
+    const char *stage = doc["stage"] | "";
+    if (strcmp(stage, "begin") == 0) {
+      SetupService::onCompanionAttached(link, doc["host"] | "");
+    } else if (strcmp(stage, "done") == 0) {
+      SetupService::finish();
+      sendConfigAck(Settings::getConfigVersion());
+    }
+    return true;
+  }
+  if (strcmp(type, "setup_key") == 0) {
+    char ourPub[48] = {0};
+    JsonDocument out;
+    out["type"] = "setup_key";
+    if (SetupService::exchangeKey(doc["pub"] | "", ourPub, sizeof(ourPub))) {
+      out["pub"] = ourPub;
+    } else {
+      out["error"] = "bad_key";
+    }
+    reply(out);
+    return true;
+  }
+  if (strcmp(type, "setup_verify") == 0) {
+    uint8_t attemptsLeft = 0;
+    const bool ok = SetupService::verify(doc["nonce"] | "", doc["ct"] | "",
+                                         &attemptsLeft);
+    JsonDocument out;
+    out["type"] = "setup_verify";
+    out["ok"] = ok;
+    out["attempts_left"] = attemptsLeft;
+    reply(out);
+    return true;
+  }
+  if (strcmp(type, "wifi_creds") == 0) {
+    // Encrypted {"ssid","pass"} (BLE); USB/UDP use plain wifi_join instead.
+    char plain[160];
+    JsonDocument creds;
+    if (SetupService::decrypt(doc["nonce"] | "", doc["ct"] | "", plain,
+                              sizeof(plain)) &&
+        !deserializeJson(creds, plain)) {
+      const char *ssid = creds["ssid"] | "";
+      if (ssid[0] != '\0') {
+        WifiService::reconfigure(ssid, creds["pass"] | "");
+      }
+    } else {
+      JsonDocument out;
+      out["type"] = "wifi_status";
+      out["state"] = "failed";
+      out["reason"] = "decrypt";
+      reply(out);
+    }
+    memset(plain, 0, sizeof(plain));
+    return true;
+  }
+  if (strcmp(type, "wifi_join") == 0 && link != Link::Ble) {
+    const char *ssid = doc["ssid"] | "";
+    if (ssid[0] != '\0') {
+      WifiService::reconfigure(ssid, doc["pass"] | "");
+    }
+    return true;
+  }
+  return false;
+}
+
+void handleJsonMessage(const char *payload, size_t len, Link link) {
+  const bool viaUsb = (link == Link::Usb);
   JsonDocument doc;
   const DeserializationError err = deserializeJson(doc, payload, len);
   if (err) {
@@ -112,6 +211,13 @@ void handleJsonMessage(const char *payload, size_t len, bool viaUsb) {
   }
 
   const char *type = doc["type"] | "";
+  if (link == Link::Ble && !allowedOverBle(type)) {
+    Serial.printf("[CompanionLink] BLE: ignored '%s' (not paired)\n", type);
+    return;
+  }
+  if (handleSetupMessage(type, doc, link)) {
+    return;
+  }
 
   if (strcmp(type, "query") == 0) {
     sendConfigAck(Settings::getConfigVersion());
@@ -132,6 +238,7 @@ void handleJsonMessage(const char *payload, size_t len, bool viaUsb) {
     }
 
     DataStore::updateStats(ts, cpu, ram, netUp, netDown, viaUsb);
+    NtpService::setFromCompanion(ts);
 
     bool pushedNotify = false;
     if (doc["notify"].is<JsonArrayConst>()) {
@@ -364,7 +471,9 @@ void handleJsonMessage(const char *payload, size_t len, bool viaUsb) {
     } else if (doc["orientation_inverted"].is<bool>()) {
       Settings::setOrientationInverted(doc["orientation_inverted"].as<bool>());
     }
-    if (doc["forget_wifi"].is<bool>() && doc["forget_wifi"].as<bool>()) {
+    if (link == Link::Ble) {
+      // WiFi over BLE only travels encrypted (wifi_creds).
+    } else if (doc["forget_wifi"].is<bool>() && doc["forget_wifi"].as<bool>()) {
       WifiService::forgetWifi();
     } else if (doc["wifi_ssid"].is<const char *>() &&
                doc["wifi_pass"].is<const char *>()) {
@@ -520,13 +629,17 @@ void flushPendingOutbound() {
     const char *orientStr =
         Settings::getOrientationInverted() ? "inverted" : "normal";
 
-    char buf[448];
+    char buf[600];
     snprintf(buf, sizeof(buf),
-             "{\"type\":\"config_ack\",\"v\":%lu,\"ip\":\"%s\",\"wifi\":%s,"
+             "{\"type\":\"config_ack\",\"id\":\"%s\",\"model\":\"%s\","
+             "\"fw\":\"%s\",\"setup\":%s,"
+             "\"v\":%lu,\"ip\":\"%s\",\"wifi\":%s,"
              "\"ssid\":\"%s\",\"theme\":\"%s\",\"accent\":\"%s\","
              "\"brightness\":%u,\"aod\":%s,"
              "\"aod_timeout_s\":%u,\"reduce_motion\":%s,\"wallpaper\":\"%s\","
              "\"use_24h\":%s,\"notify_popup\":%s,\"orientation\":\"%s\"}",
+             SetupService::deviceId(), Config::DEVICE_MODEL, Config::FW_VERSION,
+             Settings::isSetupDone() ? "false" : "true",
              static_cast<unsigned long>(ackVer), ipStr.c_str(),
              WifiService::isConnected() ? "true" : "false", ssidBuf, themeStr,
              Settings::getAccentId(),
@@ -548,7 +661,7 @@ void pollUsbSerial() {
       if (s_serialLen > 0) {
         s_serialLine[s_serialLen] = '\0';
         if (s_serialLine[0] == '{') {
-          handleJsonMessage(s_serialLine, s_serialLen, true);
+          handleJsonMessage(s_serialLine, s_serialLen, Link::Usb);
         } else if (s_serialLen == 1) {
           const char ch = s_serialLine[0];
           if (ch == 't' || ch == 'T') {
@@ -580,6 +693,11 @@ void begin() {
 
 void poll() {
   pollUsbSerial();
+  while (BleLink::popLine(s_bleLine, sizeof(s_bleLine))) {
+    if (s_bleLine[0] == '{') {
+      handleJsonMessage(s_bleLine, strlen(s_bleLine), Link::Ble);
+    }
+  }
 
   if (WiFi.status() == WL_CONNECTED) {
     if (!s_udpStarted) {
@@ -601,7 +719,7 @@ void poll() {
             s_udp.read(s_rxBuf, static_cast<int>(sizeof(s_rxBuf) - 1));
         if (readLen > 0) {
           s_rxBuf[readLen] = '\0';
-          handleJsonMessage(s_rxBuf, static_cast<size_t>(readLen), false);
+          handleJsonMessage(s_rxBuf, static_cast<size_t>(readLen), Link::Udp);
         }
         pktSize = s_udp.parsePacket();
       }
@@ -617,6 +735,8 @@ void poll() {
     flushPendingOutbound();
   }
 }
+
+void sendJson(const char *json) { sendJsonPacket(json); }
 
 void sendClockCommand(const char *cmd) {
   if (cmd == nullptr)

@@ -71,4 +71,9 @@ void setUse24Hour(bool use24h);
 bool getOrientationInverted();
 void setOrientationInverted(bool inverted);
 
+// First-run setup: false on a factory device until the companion's setup
+// wizard finishes (or the user skips it on the device).
+bool isSetupDone();
+void setSetupDone(bool done);
+
 } // namespace Settings

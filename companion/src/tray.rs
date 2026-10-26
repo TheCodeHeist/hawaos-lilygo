@@ -116,6 +116,17 @@ impl ksni::Tray for HawaTray {
                 ..Default::default()
             }
             .into(),
+            StandardItem {
+                label: "Add Device...".into(),
+                activate: Box::new(|this: &mut Self| {
+                    if let Ok(mut g) = this.state.lock() {
+                        g.open_window_requested = true;
+                        g.open_setup_requested = true;
+                    }
+                }),
+                ..Default::default()
+            }
+            .into(),
             MenuItem::Separator,
             StandardItem {
                 label: track_summary,

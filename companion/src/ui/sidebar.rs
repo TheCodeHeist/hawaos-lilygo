@@ -153,7 +153,7 @@ impl CompanionWindowView {
                             .gap_1()
                             .child(nav_item("nav-overview", IconName::LayoutDashboard, "Overview", NavSection::Overview, cx))
                             .child(nav_item("nav-device-settings", IconName::SlidersHorizontal, "Device", NavSection::DeviceSettings, cx))
-                            .child(nav_item("nav-initial-setup", IconName::Usb, "Setup & WiFi", NavSection::InitialSetup, cx))
+                            .child(nav_item("nav-initial-setup", IconName::CirclePlus, "Add device", NavSection::InitialSetup, cx))
                             .child(nav_item("nav-daemon-settings", IconName::Settings, "Background", NavSection::DaemonSettings, cx)),
                     ),
             )

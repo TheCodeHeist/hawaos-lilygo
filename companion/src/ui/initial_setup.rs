@@ -11,7 +11,7 @@ use crate::models::OutboundAction;
 use crate::config::{sanitize_ip_str, scan_wifi_networks, CompanionConfig};
 use crate::protocol::scan_serial_ports;
 use crate::ui::components::{
-    button_row, card_header, choice, divider, glass_card, page_header, pill, setting_row,
+    button_row, card_header, choice, divider, glass_card, pill, setting_row,
 };
 use crate::ui::theme::HawaPalette;
 use crate::ui::CompanionWindowView;
@@ -51,11 +51,6 @@ impl CompanionWindowView {
         v_flex()
             .w_full()
             .gap_4()
-            .child(page_header(
-                pal,
-                "Setup & WiFi",
-                "Connect a new device over USB, then give it WiFi",
-            ))
             // 1. USB
             .child(
                 glass_card(pal)

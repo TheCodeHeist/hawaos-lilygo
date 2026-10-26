@@ -4,6 +4,7 @@
 #include "apps/MediaApp.h"
 #include "apps/NotifyApp.h"
 #include "apps/SettingsApp.h"
+#include "apps/SetupApp.h"
 #include "apps/StatsApp.h"
 #include "apps/WeatherApp.h"
 #include "config.h"
@@ -14,6 +15,7 @@
 #include "core/Settings.h"
 #include "drivers/Buttons.h"
 #include "drivers/Display.h"
+#include "services/SetupService.h"
 #include "services/WifiService.h"
 #include "ui/StatusBar.h"
 #include "ui/Theme.h"
@@ -39,6 +41,7 @@ MediaApp s_mediaApp;
 StatsApp s_statsApp;
 NotifyApp s_notifyApp;
 SettingsApp s_settingsApp;
+SetupApp s_setupApp;
 
 void drainEvents() {
   Event ev{};
@@ -129,7 +132,11 @@ void uiTaskEntry(void * /*param*/) {
       }
 
       StatusBar::begin();
-      AppManager::switchTo(0); // Open Home
+      if (SetupService::isActive()) {
+        AppManager::showSetup(); // factory device: first-run setup
+      } else {
+        AppManager::switchTo(0); // Open Home
+      }
       logMemoryStats("home-ready");
     }
 
@@ -204,7 +211,7 @@ void begin() {
   Serial.setRxBufferSize(Config::USB_RX_BUFFER_BYTES); // must precede begin()
   Serial.begin(115200);
   Serial.println("\n=====================================================");
-  Serial.println("  HawaOS v0.4.0 — Milestone 4 Companion & Apps Ready");
+  Serial.printf("  HawaOS %s on %s\n", Config::FW_VERSION, Config::DEVICE_MODEL);
   Serial.println("=====================================================");
   logMemoryStats("boot-logo-shown");
 
@@ -220,6 +227,10 @@ void begin() {
   AppManager::registerApp(&s_statsApp);
   AppManager::registerApp(&s_notifyApp);
   AppManager::registerApp(&s_settingsApp);
+  AppManager::setSetupApp(&s_setupApp);
+
+  // Before WiFi: decides whether this boot shows first-run setup (and BLE).
+  SetupService::begin();
 
   // 4. Start Core 0 WiFi + NTP + CompanionLink service (non-blocking)
   WifiService::begin();

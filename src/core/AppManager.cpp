@@ -6,6 +6,7 @@
 #include "drivers/Display.h"
 #include "services/WifiService.h"
 #include "services/CompanionLink.h"
+#include "services/SetupService.h"
 #include "ui/StatusBar.h"
 #include "ui/Theme.h"
 #include "ui/icons.h"
@@ -25,9 +26,11 @@ enum class ViewState : uint8_t {
   Launcher,
   ControlCenter,
   Aod,
+  Setup, // first-run Setup screen (SetupApp), nothing else reachable
 };
 
 App *s_apps[Config::MAX_REGISTERED_APPS] = {nullptr};
+App *s_setupApp = nullptr;
 size_t s_appCount = 0;
 int s_activeAppIdx = 0;      // Last/active app index
 size_t s_launcherCursor = 0; // Focused app in Launcher carousel
@@ -961,6 +964,10 @@ void switchTo(size_t idx) {
     return;
   }
 
+  if (s_viewState == ViewState::Setup && s_setupApp != nullptr) {
+    s_setupApp->onExit();
+  }
+
   if (s_viewState == ViewState::InApp && s_activeAppIdx >= 0 &&
       static_cast<size_t>(s_activeAppIdx) < s_appCount) {
     s_apps[s_activeAppIdx]->onExit();
@@ -980,6 +987,28 @@ void switchTo(size_t idx) {
   nextApp->onEnter(newScr);
 }
 
+void setSetupApp(App *app) { s_setupApp = app; }
+
+void showSetup() {
+  if (s_setupApp == nullptr)
+    return;
+  if (s_viewState == ViewState::InApp && s_activeAppIdx >= 0 &&
+      static_cast<size_t>(s_activeAppIdx) < s_appCount) {
+    s_apps[s_activeAppIdx]->onExit();
+  } else if (s_viewState == ViewState::Setup) {
+    s_setupApp->onExit();
+  }
+  StatusBar::dismissNotificationPopup();
+  clearViewPointers();
+  s_viewState = ViewState::Setup;
+  StatusBar::setVisible(false);
+  lv_obj_t *newScr = createAndSwapScreen(s_setupApp->usesWallpaper(), false);
+  s_setupApp->onEnter(newScr);
+  Serial.println("[AppManager] Showing first-run Setup");
+}
+
+bool isInSetup() { return s_viewState == ViewState::Setup; }
+
 void showLauncher() {
   if (s_viewState == ViewState::InApp && s_activeAppIdx >= 0 &&
       static_cast<size_t>(s_activeAppIdx) < s_appCount) {
@@ -995,6 +1024,8 @@ void showLauncher() {
 }
 
 void openControlCenter() {
+  if (s_viewState == ViewState::Setup)
+    return;
   if (s_viewState == ViewState::ControlCenter) {
     closeControlCenter();
     return;
@@ -1024,7 +1055,7 @@ void closeControlCenter() {
 }
 
 void enterAod() {
-  if (s_viewState == ViewState::Aod)
+  if (s_viewState == ViewState::Aod || s_viewState == ViewState::Setup)
     return;
 
   StatusBar::dismissNotificationPopup();
@@ -1191,6 +1222,8 @@ void applyActiveTheme() {
     buildControlCenterScreen(newScr);
   } else if (s_viewState == ViewState::Launcher) {
     showLauncher();
+  } else if (s_viewState == ViewState::Setup) {
+    showSetup();
   } else if (s_viewState == ViewState::InApp) {
     switchTo(static_cast<size_t>(s_activeAppIdx >= 0 ? s_activeAppIdx : 0));
   } else if (s_viewState == ViewState::Aod) {
@@ -1218,6 +1251,17 @@ void tick(uint32_t nowMs) {
   DataStore::tickClock(nowMs);
   if (s_lastInputMs == 0 || nowMs < s_lastInputMs) {
     s_lastInputMs = nowMs;
+  }
+
+  if (s_viewState == ViewState::Setup) {
+    s_lastInputMs = nowMs; // no AOD during setup
+    s_setupApp->onTick(nowMs);
+    const SetupService::Snapshot s = SetupService::snapshot();
+    if (s.stage == SetupService::Stage::Done &&
+        nowMs - s.stageSinceMs >= Config::SETUP_DONE_HOLD_MS) {
+      switchTo(0);
+    }
+    return;
   }
 
   // Keep idle timer awake while notification popup is actively displayed
@@ -1268,6 +1312,11 @@ void tick(uint32_t nowMs) {
 
 void handleButton(Button b, Press p) {
   s_lastInputMs = millis();
+
+  if (s_viewState == ViewState::Setup) {
+    s_setupApp->onButton(b, p);
+    return;
+  }
 
   // 1. Any press in AOD:
   // - If alert active, dismiss alert

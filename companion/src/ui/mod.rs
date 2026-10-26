@@ -4,6 +4,7 @@ pub mod daemon_settings;
 pub mod device_settings;
 pub mod initial_setup;
 pub mod overview;
+pub mod setup_wizard;
 pub mod sidebar;
 pub mod theme;
 
@@ -25,6 +26,7 @@ pub use theme::{apply_hawaos_gpui_theme, use_translucent_window, window_backgrou
 
 use crate::config::{save_config, DEFAULT_DEVICE_IP, LOGO_PNG_BYTES};
 use crate::models::{CompanionConfig, OutboundAction, SharedState};
+use crate::setup::{self, Wizard};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum NavSection {
@@ -49,18 +51,25 @@ pub struct CompanionWindowView {
     pub(crate) timer_s_input: Entity<InputState>,
     pub(crate) timer_ms_input: Entity<InputState>,
     pub(crate) status_banner: Option<String>,
+    pub(crate) wizard: Wizard,
+    pub(crate) code_input: Entity<InputState>,
+    /// Network picked in the wizard's list (None with "Other network").
+    pub(crate) wizard_ssid: Option<String>,
+    pub(crate) wizard_manual_ssid: bool,
+    pub(crate) show_manual_setup: bool,
 }
 
 impl CompanionWindowView {
     pub fn new(window: &mut Window, cx: &mut Context<Self>, state: SharedState) -> Self {
-        let (target_ip, wifi_ssid, weather_city) = if let Ok(g) = state.lock() {
+        let (target_ip, wifi_ssid, weather_city, has_device) = if let Ok(g) = state.lock() {
             (
                 g.config.target_ip.clone(),
                 g.config.wifi_ssid.clone(),
                 g.config.weather_city.clone(),
+                !g.config.device_id.is_empty() || !g.config.wifi_ssid.is_empty(),
             )
         } else {
-            (DEFAULT_DEVICE_IP.to_string(), String::new(), String::new())
+            (DEFAULT_DEVICE_IP.to_string(), String::new(), String::new(), true)
         };
 
         let ip_input = cx.new(|cx| {
@@ -140,9 +149,20 @@ impl CompanionWindowView {
             Arc::new(Image::from_bytes(ImageFormat::Png, LOGO_PNG_BYTES.to_vec()))
         };
 
+        let code_input = cx.new(|cx| {
+            InputState::new(window, cx).placeholder("000000")
+        });
+
         Self {
+            wizard: Wizard::spawn(Arc::clone(&state)),
+            code_input,
+            wizard_ssid: None,
+            wizard_manual_ssid: false,
+            show_manual_setup: false,
+            // First run (no device yet): open straight into the wizard.
+            active_section: dev_start_section()
+                .unwrap_or(if has_device { NavSection::Overview } else { NavSection::InitialSetup }),
             state,
-            active_section: dev_start_section(),
             logo_image,
             ip_input,
             ssid_input,
@@ -182,15 +202,27 @@ impl CompanionWindowView {
 
 impl Render for CompanionWindowView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let (dark_mode, translucent, accent) = if let Ok(g) = self.state.lock() {
+        let (dark_mode, translucent, accent, needs_setup) = if let Ok(mut g) = self.state.lock() {
+            if std::mem::take(&mut g.open_setup_requested) {
+                self.active_section = NavSection::InitialSetup;
+            }
             (
                 g.config.companion_dark_mode,
                 use_translucent_window(&g.config.window_transparency),
                 g.config.accent.clone(),
+                g.device_needs_setup,
             )
         } else {
-            (true, false, accents::DEFAULT_ACCENT.to_string())
+            (true, false, accents::DEFAULT_ACCENT.to_string(), false)
         };
+        let setup_prompt = needs_setup && self.active_section != NavSection::InitialSetup;
+        // Leaving the page mid-wizard cancels it, so it can't keep the USB
+        // port (and the daemon's USB streaming) tied up in the background.
+        if self.active_section != NavSection::InitialSetup
+            && !matches!(self.wizard.snapshot().step, setup::Step::Welcome | setup::Step::Done)
+        {
+            self.wizard.send(setup::Cmd::Cancel);
+        }
         // Same frame as the palette below, so gpui-kit widgets and our own
         // elements always switch accent together (no-op when unchanged).
         apply_hawaos_gpui_theme(dark_mode, &accent, cx);
@@ -200,7 +232,7 @@ impl Render for CompanionWindowView {
         let content = match self.active_section {
             NavSection::Overview => self.render_overview(pal, cx).into_any_element(),
             NavSection::DeviceSettings => self.render_device_settings(pal, cx).into_any_element(),
-            NavSection::InitialSetup => self.render_initial_setup(pal, cx).into_any_element(),
+            NavSection::InitialSetup => self.render_setup_wizard(pal, cx).into_any_element(),
             NavSection::DaemonSettings => self.render_daemon_settings(pal, cx).into_any_element(),
         };
 
@@ -279,6 +311,47 @@ impl Render for CompanionWindowView {
                                         ),
                                 )
                             })
+                            .when(setup_prompt, |this| {
+                                this.child(
+                                    h_flex()
+                                        .w_full()
+                                        .gap_3()
+                                        .pl_4()
+                                        .pr_2()
+                                        .py_1p5()
+                                        .rounded_full()
+                                        .bg(pal.primary.opacity(0.14))
+                                        .border_1()
+                                        .border_color(pal.primary.opacity(0.35))
+                                        .justify_between()
+                                        .items_center()
+                                        .child(
+                                            h_flex()
+                                                .gap_2()
+                                                .min_w_0()
+                                                .items_center()
+                                                .child(div().flex_shrink_0().text_color(pal.accent).child(IconName::Sparkles))
+                                                .child(
+                                                    div()
+                                                        .min_w_0()
+                                                        .truncate()
+                                                        .text_sm()
+                                                        .text_color(pal.text)
+                                                        .child("A new HawaOS is connected and waiting to be set up."),
+                                                ),
+                                        )
+                                        .child(
+                                            Button::new("setup-prompt")
+                                                .small()
+                                                .primary()
+                                                .label("Set up")
+                                                .on_click(cx.listener(|this, _, _, cx| {
+                                                    this.active_section = NavSection::InitialSetup;
+                                                    cx.notify();
+                                                })),
+                                        ),
+                                )
+                            })
                             .child(content),
                     ),
             )
@@ -286,12 +359,13 @@ impl Render for CompanionWindowView {
 }
 
 /// Dev aid for screenshots: `HAWAOS_DEV_SECTION=device|setup|background`.
-fn dev_start_section() -> NavSection {
+fn dev_start_section() -> Option<NavSection> {
     match std::env::var("HAWAOS_DEV_SECTION").as_deref() {
-        Ok("device") => NavSection::DeviceSettings,
-        Ok("setup") => NavSection::InitialSetup,
-        Ok("background") => NavSection::DaemonSettings,
-        _ => NavSection::Overview,
+        Ok("device") => Some(NavSection::DeviceSettings),
+        Ok("setup") => Some(NavSection::InitialSetup),
+        Ok("background") => Some(NavSection::DaemonSettings),
+        Ok("overview") => Some(NavSection::Overview),
+        _ => None,
     }
 }
 

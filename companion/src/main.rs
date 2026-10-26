@@ -3,6 +3,7 @@ mod media;
 mod models;
 mod notifications;
 mod protocol;
+mod setup;
 mod tray;
 mod ui;
 mod weather;
@@ -64,13 +65,13 @@ fn main() {
                         .await;
                     tick_count = tick_count.wrapping_add(1);
 
-                    let (want_open, want_quit, look) = if let Ok(mut g) = poll_state.lock() {
+                    let (want_open, want_quit, look, live) = if let Ok(mut g) = poll_state.lock() {
                         let open = g.open_window_requested;
                         g.open_window_requested = false;
                         let look = (g.config.companion_dark_mode, g.config.accent.clone());
-                        (open, g.quit_requested, Some(look))
+                        (open, g.quit_requested, Some(look), g.wizard_active)
                     } else {
-                        (false, false, None)
+                        (false, false, None, false)
                     };
                     let look_changed = look.is_some() && look != last_look;
                     if look_changed {
@@ -94,7 +95,7 @@ fn main() {
                             } else {
                                 open_companion_window(cx, state_for_ui);
                             }
-                        } else if tick_count.is_multiple_of(5) && !cx.windows().is_empty() {
+                        } else if (live || tick_count.is_multiple_of(5)) && !cx.windows().is_empty() {
                             cx.refresh_windows();
                         }
                     });

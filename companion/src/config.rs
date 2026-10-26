@@ -48,6 +48,10 @@ pub struct CompanionConfig {
     pub weather_city: String,
     pub weather_unit: String, // "c" | "f"
     pub orientation: String,  // "normal" | "inverted"
+
+    /// Device added with the setup wizard ("" until one is).
+    pub device_id: String,
+    pub device_name: String,
 }
 
 impl Default for CompanionConfig {
@@ -76,6 +80,8 @@ impl Default for CompanionConfig {
             weather_city: String::new(),
             weather_unit: "c".to_string(),
             orientation: "normal".to_string(),
+            device_id: String::new(),
+            device_name: String::new(),
         }
     }
 }

@@ -4,6 +4,7 @@
 #include "core/DataStore.h"
 #include "core/Settings.h"
 #include "drivers/Display.h"
+#include "services/SetupService.h"
 #include "services/WifiService.h"
 #include "ui/Theme.h"
 
@@ -110,7 +111,12 @@ bool SettingsApp::onButton(Button b, Press p) {
       WifiService::forgetWifi();
       refreshRows();
       break;
-    case 9: // Reboot
+    case 9: // Set up again: back to the first-run Setup screen (+ BLE)
+      Settings::setSetupDone(false);
+      SetupService::start();
+      AppManager::showSetup();
+      return true; // this screen is gone
+    case 10: // Reboot
       ESP.restart();
       break;
     }
@@ -194,8 +200,12 @@ void SettingsApp::refreshRows() {
       snprintf(valBuf, sizeof(valBuf), d.wifiSsid[0] ? "Clear NVS" : "Cleared");
       break;
     case 9:
-      name = "HawaOS v0.4.0";
-      snprintf(valBuf, sizeof(valBuf), "Reboot");
+      name = "Set Up Again";
+      snprintf(valBuf, sizeof(valBuf), "Pair");
+      break;
+    case 10:
+      name = "HawaOS";
+      snprintf(valBuf, sizeof(valBuf), "v%s - Reboot", Config::FW_VERSION);
       break;
     }
 

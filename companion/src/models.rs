@@ -98,6 +98,8 @@ pub struct IncomingPacket {
     pub ip: Option<String>,
     pub wifi: Option<bool>,
     pub ssid: Option<String>,
+    pub id: Option<String>,
+    pub setup: Option<bool>,
     pub theme: Option<String>,
     pub accent: Option<String>,
     pub brightness: Option<u8>,
@@ -165,6 +167,8 @@ pub struct SharedDaemonState {
     pub outbound_queue: VecDeque<OutboundAction>,
     pub logs: VecDeque<String>,
     pub open_window_requested: bool,
+    /// Tray "Add device...": show the setup wizard when the window opens.
+    pub open_setup_requested: bool,
     pub quit_requested: bool,
     pub weather: Option<WeatherMsg>,
     pub stopwatch_state: String,
@@ -175,6 +179,12 @@ pub struct SharedDaemonState {
     pub timer_remaining_sec: u32,
     pub timer_remaining_ms: u32,
     pub timer_target_instant: Option<Instant>,
+    /// The setup wizard owns the USB port; the worker stays off it.
+    pub setup_holds_usb: bool,
+    /// Setup wizard running: the window refreshes faster.
+    pub wizard_active: bool,
+    /// A device on our link reports it still needs first-run setup.
+    pub device_needs_setup: bool,
 }
 
 impl SharedDaemonState {
@@ -206,6 +216,7 @@ impl SharedDaemonState {
             outbound_queue: VecDeque::new(),
             logs: VecDeque::with_capacity(40),
             open_window_requested: false,
+            open_setup_requested: false,
             quit_requested: false,
             weather: None,
             stopwatch_state: "stopped".to_string(),
@@ -216,6 +227,9 @@ impl SharedDaemonState {
             timer_remaining_sec: 300,
             timer_remaining_ms: 300_000,
             timer_target_instant: None,
+            setup_holds_usb: false,
+            wizard_active: false,
+            device_needs_setup: false,
         }
     }
 

@@ -107,6 +107,15 @@ pub fn handle_incoming_json_line(line: &str, state: &SharedState) {
                         g.config.wifi_ssid = ssid;
                     }
                 }
+                // Devices from before the wizard: remember the first one we hear.
+                if let Some(id) = pkt.id.filter(|s| !s.is_empty()) {
+                    if g.config.device_id.is_empty() {
+                        g.config.device_name = format!("HawaOS-{id}");
+                        g.config.device_id = id;
+                        save_config(&g.config);
+                    }
+                }
+                g.device_needs_setup = pkt.setup.unwrap_or(false);
                 if let Some(th) = pkt.theme {
                     g.config.device_theme = th;
                 }
@@ -173,6 +182,9 @@ pub fn handle_incoming_json_line(line: &str, state: &SharedState) {
 }
 
 pub fn send_usb_line(port_name: &str, json_line: &str, state: &SharedState) -> bool {
+    if state.lock().map(|g| g.setup_holds_usb).unwrap_or(false) {
+        return false; // the setup wizard has the port
+    }
     match serialport::new(port_name, USB_BAUD)
         .timeout(Duration::from_millis(350))
         .open()

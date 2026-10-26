@@ -206,7 +206,20 @@ Always dark. Background: the **tinted gradient** from the companion (`bg_top` to
 Tiles: **Brightness** (Select cycles 20/40/60/80/100%), **Theme** (`sun` / `moon`, Select toggles), **Connection** (shows USB/WiFi state, Select = reconnect), **AOD** (Select = enter AOD now). Next moves focus, Select long or chord again closes.
 
 ### 9.8 On-device Settings (minimal, everything else is in the companion)
-Only: WiFi setup/reset, brightness, theme, AOD timeout, reboot, about/version. Everything else is configured from the Rust companion and pushed to the device (section 11.3).
+Only: WiFi setup/reset, brightness, theme, AOD timeout, **Set Up Again** (back to 9.9), reboot, about/version. Everything else is configured from the Rust companion and pushed to the device (section 11.3).
+
+### 9.9 First-run Setup
+Shown instead of Home until setup is done (`setup_done` in `Preferences`; devices provisioned before the wizard count as done). No status bar, no AOD, no Control Center; Select long skips.
+```
+ HAWAOS SETUP            +-----------+
+ Welcome                 |  (bt)     |
+ Open the HawaOS         | HawaOS-7F3A
+ Companion and choose    |   482     |   <- 6-digit pairing code,
+ Add device.             |   913     |      two rows of three
+ Hold Select to skip     | or plug in USB-C
+                         +-----------+
+```
+The left column follows the stage: Welcome, Connected (code still shown until a BLE peer pairs), Joining WiFi (spinner in the card), Couldn't connect (wrong password / out of range / no answer, in `err`), You're online (SSID + IP), All set (2.5 s, then Home).
 
 ## 10. AOD (always-on display)
 
@@ -263,6 +276,27 @@ Companion to device (persisted in `Preferences`, acknowledged with `config_ack`)
  "aod":true,"aod_timeout_s":60,"reduce_motion":false,"wallpaper":"gradient"}
 ```
 `v` is a version counter; the device applies and stores the highest version it has seen. `accent` is a Tailwind color id (3.4); unknown ids are ignored. The companion keeps `v` in step with acks and ignores the accent in an ack older than its latest push, so quick changes never flash an old color back.
+
+### 11.4 First-run setup and provisioning
+A factory device (or one sent back with Set Up Again) runs `SetupService`: it shows 9.9, listens on USB, and advertises over **BLE** as `HawaOS-XXXX` (last MAC bytes). BLE only runs during setup and is shut down afterwards (`NimBLEDevice::deinit`), so it costs no RAM in normal use; while it runs, WiFi modem sleep stays on (required for coexistence).
+
+BLE is just another JSON-lines transport: service `48415741-4f53-4000-8000-000000000001`, RX `...0002` (write), TX `...0003` (notify, MTU-sized chunks). USB, UDP and BLE all feed the same handler.
+
+| Message | Direction | Notes |
+|---|---|---|
+| `query` -> `config_ack` | both | ack adds `id`, `model`, `fw`, `setup` (true = needs setup) |
+| `setup {stage:"begin", host}` | companion -> device | device shows "Connected" |
+| `wifi_scan` -> `wifi_scan {nets:[{ssid,rssi,secure}]}` | both | the device's own 2.4 GHz view, strongest first, deduplicated |
+| `wifi_join {ssid, pass}` | companion -> device | USB/UDP only (plaintext) |
+| `wifi_creds {nonce, ct}` | companion -> device | BLE: AES-256-GCM of `{"ssid","pass"}` |
+| `wifi_status {state, ssid, ip?, reason?}` | device -> companion | `connecting`, `connected`, `failed` (`auth` / `no_ap` / `timeout`) |
+| `setup {stage:"done"}` | companion -> device | persists `setup_done`, device goes Home |
+
+**BLE pairing.** `setup_key {pub}` both ways (X25519, base64), then key = SHA-256(shared || `"hawaos-setup-v1"` || code), where the code is the 6 digits on the device's screen. `setup_verify {nonce, ct}` proves the companion derived the same key (reply `{ok, attempts_left}`); after 5 wrong codes the device shows a new one. Until verified, BLE accepts only `query`, `wifi_scan`, `setup*`; WiFi fields never travel over BLE unencrypted. A failed join during setup clears the credentials so a wrong password is not retried forever.
+
+**Time without WiFi.** Until NTP syncs, the device sets its clock (and TZ from the saved offset) from the `ts` in companion stats, so USB-only devices keep correct time.
+
+**Companion wizard** (Add device page; opens automatically when no device is known; tray "Add Device..."): Connect (USB or Bluetooth discovery) -> Pair (BLE only, code entry) -> Wi-Fi (device's network list, password, or "Skip, use USB only") -> Personalize (accent, theme, clock; pushed live) -> Done. While it runs, the daemon stays off the USB port.
 
 ## 12. Boot logo
 
