@@ -104,6 +104,7 @@ pub struct IncomingPacket {
     pub state: Option<String>,
     pub pct: Option<u8>,
     pub error: Option<String>,
+    pub reason: Option<String>,
     pub theme: Option<String>,
     pub accent: Option<String>,
     pub brightness: Option<u8>,
@@ -196,6 +197,8 @@ pub struct SharedDaemonState {
     /// Firmware version the device reports (`fw` in config_ack).
     pub device_fw: Option<String>,
     pub ota: Option<OtaProgress>,
+    /// One-shot message for the window's banner (taken when shown).
+    pub notice: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -263,6 +266,7 @@ impl SharedDaemonState {
             device_needs_setup: false,
             device_fw: None,
             ota: None,
+            notice: None,
         }
     }
 

@@ -93,6 +93,15 @@ pub fn handle_incoming_json_line(line: &str, state: &SharedState) {
                 g.push_log(format!("Firmware update: {st} {}%", pkt.pct.unwrap_or(0)));
                 g.ota = Some(crate::models::OtaProgress::new(&st, pkt.pct.unwrap_or(0), pkt.error));
             }
+        } else if pkt.msg_type == "auth_error" {
+            if let Ok(mut g) = state.lock() {
+                let reason = pkt.reason.unwrap_or_default();
+                g.push_log(format!("Device refused a network message: {reason}"));
+                g.notice = Some(match reason.as_str() {
+                    "stale" => "The device ignored an old settings message. Try again.".into(),
+                    _ => "The device didn't accept settings from this computer. Run Add device again to re-pair it, or use USB.".into(),
+                });
+            }
         } else if pkt.msg_type == "config_ack" {
             if let Ok(mut g) = state.lock() {
                 g.last_ack_version = pkt.v;

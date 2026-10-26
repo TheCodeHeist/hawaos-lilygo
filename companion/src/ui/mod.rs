@@ -207,6 +207,9 @@ impl Render for CompanionWindowView {
             if std::mem::take(&mut g.open_setup_requested) {
                 self.active_section = NavSection::InitialSetup;
             }
+            if let Some(notice) = g.notice.take() {
+                self.status_banner = Some(notice);
+            }
             (
                 g.config.companion_dark_mode,
                 use_translucent_window(&g.config.window_transparency),

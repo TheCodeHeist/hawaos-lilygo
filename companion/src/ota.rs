@@ -4,8 +4,9 @@
 
 use std::sync::{Arc, Mutex};
 
-use hmac::{Hmac, Mac};
 use sha2::{Digest, Sha256};
+
+use crate::auth::hex;
 
 /// ESP32 app images start with this magic byte.
 const ESP_IMAGE_MAGIC: u8 = 0xE9;
@@ -44,13 +45,7 @@ pub fn served(path: &str) -> Option<Arc<Vec<u8>>> {
 /// HMAC-SHA256(token, "<sha256>:<size>") in hex: the device accepts network
 /// updates only with this, keyed by the token from setup.
 pub fn sign(token_hex: &str, sha256: &str, size: usize) -> Option<String> {
-    let key: Vec<u8> = (0..token_hex.len())
-        .step_by(2)
-        .map(|i| u8::from_str_radix(token_hex.get(i..i + 2)?, 16).ok())
-        .collect::<Option<_>>()?;
-    let mut mac = Hmac::<Sha256>::new_from_slice(&key).ok()?;
-    mac.update(format!("{sha256}:{size}").as_bytes());
-    Some(hex(&mac.finalize().into_bytes()))
+    crate::auth::mac(token_hex, format!("{sha256}:{size}").as_bytes())
 }
 
 /// Fresh 128-bit token for a newly set-up device.
@@ -60,9 +55,6 @@ pub fn new_token() -> String {
     hex(&b)
 }
 
-fn hex(bytes: &[u8]) -> String {
-    bytes.iter().map(|b| format!("{b:02x}")).collect()
-}
 
 #[cfg(test)]
 mod tests {

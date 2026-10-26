@@ -346,6 +346,11 @@ void getCompanionToken(char *outBuf, size_t maxLen) {
 
 void setCompanionToken(const char *hex) {
   s_prefs.putString("cmp_token", hex != nullptr ? hex : "");
+  s_prefs.remove("auth_n");
 }
+
+uint64_t getAuthCounter() { return s_prefs.getULong64("auth_n", 0); }
+
+void setAuthCounter(uint64_t n) { s_prefs.putULong64("auth_n", n); }
 
 } // namespace Settings

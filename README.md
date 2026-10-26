@@ -150,10 +150,10 @@ Bluetooth only runs while the device is in setup, so it uses no memory afterward
 
 After the first USB flash, updates can go over Wi-Fi. Build with `pio run`, then in the companion open **Device > Firmware > Install update...** and pick `.pio/build/tdisplay-s3/firmware.bin`.
 
-The device downloads the image from the companion into its spare app slot, with progress shown on both screens. It only switches to the new firmware if the whole file arrived and its SHA-256 matches; any failure leaves the running firmware untouched. Over Wi-Fi, the request has to be signed with a secret the companion gave the device during **Add device**, so other machines on your network can't push firmware to it. Details are in [`DESIGN.md`](DESIGN.md) §11.5.
+The device downloads the image from the companion into its spare app slot, with progress shown on both screens. It only switches to the new firmware if the whole file arrived and its SHA-256 matches; any failure leaves the running firmware untouched. Over Wi-Fi, the request has to be signed with a secret the companion gave the device during **Add device**, so other machines on your network can't push firmware to it (settings changes are signed the same way). Details are in [`DESIGN.md`](DESIGN.md) §11.5.
 
 > [!NOTE]
-> While the device is plugged in, updates are sent over USB and need no secret. A device set up before this feature has none, so run **Add device** again once to enable Wi-Fi updates. The device downloads from port 7778 on your PC, so allow it through your firewall.
+> While the device is plugged in, updates are sent over USB and need no secret. A device set up before this feature has none, so run **Add device** again once to enable Wi-Fi updates and signed settings. The device downloads from port 7778 on your PC, so allow it through your firewall.
 
 ## Controls
 
@@ -191,7 +191,8 @@ hawaos-lilygo/
 │   ├── core/         Kernel (boot, UI task), AppManager, EventBus, DataStore, Settings
 │   ├── apps/         Home, Clock, Weather, Media, Stats, Notify, Settings, Setup
 │   ├── services/     CompanionLink (USB + UDP + BLE JSON), WifiService, NtpService,
-│   │                 SetupService (pairing, provisioning), BleLink, OtaService
+│   │                 SetupService (pairing, provisioning), BleLink, OtaService,
+│   │                 CompanionAuth (signed network messages)
 │   ├── drivers/      Display (TFT_eSPI + LVGL, boot logo), Buttons
 │   └── ui/           Theme helpers, StatusBar, fonts, icons
 ├── include/          config.h, lv_conf.h, generated theme_tokens.h and boot_logo.h
@@ -200,6 +201,7 @@ hawaos-lilygo/
 │   ├── worker.rs     Daemon loop: stats, media, weather, outbound queue
 │   ├── protocol.rs   Device messages in; media.rs serves album art and firmware
 │   ├── setup/        Add device wizard: USB/BLE links, X25519 + AES-GCM pairing
+│   ├── auth.rs       Signed envelopes for network messages
 │   ├── ota.rs        Firmware staging and request signing
 │   ├── tray.rs       Tray menu (ksni)
 │   └── ui/           gpui window: pages, glass components, accent palettes
@@ -243,8 +245,8 @@ Media comes from MPRIS through `playerctl`. Check that `playerctl -l` lists your
 ## Security and privacy
 
 - **Wi-Fi password:** over Bluetooth it is encrypted (X25519 + AES-256-GCM, keyed by the 6-digit code on the screen). Over USB it goes over the cable in plain text.
-- **Firmware updates:** over Wi-Fi they must be signed with the secret from setup (HMAC-SHA256), and every image is checked against its SHA-256 before the device switches to it.
-- **Everyday data is not encrypted.** Stats, media, notifications and settings travel as plain UDP on your local network, and the device accepts settings and Wi-Fi changes from any machine on it. Use it on a network you trust.
+- **Changes over Wi-Fi are signed.** Settings, Wi-Fi changes and firmware updates must be signed with the secret the companion gave the device during setup (HMAC-SHA256), and each signed message only works once, so it can't be replayed. Another machine on your network can't reconfigure the device or take over its pairing. Firmware images are also checked against their SHA-256 before the device switches to them.
+- **Everyday data is not encrypted.** Stats, media, weather and notifications travel as plain UDP on your local network, unsigned, so anyone on it can read them or show fake ones. Settings are signed but not encrypted, so a Wi-Fi password changed from the companion is readable on the network; change it over USB if that matters.
 - **Outside services:** the companion asks [Open-Meteo](https://open-meteo.com) for weather and, with automatic location on, [ip-api.com](https://ip-api.com) for your rough location. Pick a city to turn that off. The device itself only talks to the companion and an NTP server.
 
 ## Roadmap
@@ -256,7 +258,7 @@ Media comes from MPRIS through `playerctl`. Check that `playerctl -l` lists your
 - [x] 17 synced accent themes with accent-tinted dark mode
 - [x] First-run setup wizard over USB or Bluetooth, with encrypted Wi-Fi provisioning
 - [x] Firmware updates over Wi-Fi, checksum-verified and signed
-- [ ] Sign settings and Wi-Fi changes sent over the network, like firmware updates
+- [x] Signed settings and Wi-Fi changes over the network, with replay protection
 - [ ] Bluetooth for everyday data (today it's used for setup only)
 - [ ] Image wallpapers pushed from the companion
 

@@ -77,8 +77,13 @@ bool isSetupDone();
 void setSetupDone(bool done);
 
 // Secret shared with the companion at setup (32 hex chars, "" if none).
-// Authorizes firmware updates sent over the network.
+// Authorizes settings, Wi-Fi changes and firmware updates sent over the
+// network. Setting a new token resets the replay counter.
 void getCompanionToken(char *outBuf, size_t maxLen);
 void setCompanionToken(const char *hex);
+
+// Highest `n` accepted in a signed message (replay protection).
+uint64_t getAuthCounter();
+void setAuthCounter(uint64_t n);
 
 } // namespace Settings

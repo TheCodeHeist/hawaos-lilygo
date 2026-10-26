@@ -287,7 +287,7 @@ BLE is just another JSON-lines transport: service `48415741-4f53-4000-8000-00000
 | `query` -> `config_ack` | both | ack adds `id`, `model`, `fw`, `setup` (true = needs setup) |
 | `setup {stage:"begin", host}` | companion -> device | device shows "Connected" |
 | `wifi_scan` -> `wifi_scan {nets:[{ssid,rssi,secure}]}` | both | the device's own 2.4 GHz view, strongest first, deduplicated |
-| `wifi_join {ssid, pass}` | companion -> device | USB/UDP only (plaintext) |
+| `wifi_join {ssid, pass}` | companion -> device | USB, or UDP signed (11.6); plaintext |
 | `wifi_creds {nonce, ct}` | companion -> device | BLE: AES-256-GCM of `{"ssid","pass"}` |
 | `wifi_status {state, ssid, ip?, reason?}` | device -> companion | `connecting`, `connected`, `failed` (`auth` / `no_ap` / `timeout`) |
 | `setup {stage:"done"}` | companion -> device | persists `setup_done`, device goes Home |
@@ -298,7 +298,7 @@ BLE is just another JSON-lines transport: service `48415741-4f53-4000-8000-00000
 
 **Companion wizard** (Add device page; opens automatically when no device is known; tray "Add Device..."): Connect (USB or Bluetooth discovery) -> Pair (BLE only, code entry) -> Wi-Fi (device's network list, password, or "Skip, use USB only") -> Personalize (accent, theme, clock; pushed live) -> Done. While it runs, the daemon stays off the USB port.
 
-**Companion token.** `setup {stage:"done"}` carries a fresh 128-bit token (32 hex): `token` over USB, `token_nonce`/`token_ct` sealed with the pairing key over BLE. The device stores it in `Preferences` (`cmp_token`), the companion in `device_token`. It authorizes firmware updates over the network (11.5).
+**Companion token.** `setup {stage:"done"}` carries a fresh 128-bit token (32 hex): `token` over USB, `token_nonce`/`token_ct` sealed with the pairing key over BLE. The device stores it in `Preferences` (`cmp_token`), the companion in `device_token`. It authorizes settings, Wi-Fi changes (11.6) and firmware updates (11.5) over the network. Setup messages (`setup`, `setup_key`, `setup_verify`, `wifi_creds`) are refused over UDP (`auth_error`/`setup_only`), so the token can only be set over USB or a paired BLE link.
 
 ### 11.5 Firmware updates (OTA)
 The device always pulls the image itself over WiFi; the companion only serves it. Installed from the Firmware card on the companion's Device page ("Install update..." -> pick a PlatformIO `firmware.bin`).
@@ -317,6 +317,19 @@ Errors: `unauthorized`, `rejected` (malformed, or an update already running), `n
 Device UI: while an update runs, a full-screen overlay on `lv_layer_top` shows the progress and keeps the screen awake (leaves AOD, no AOD timeout); a failure stays on screen 4 s, and a new request may start straight away. The companion clears its "done" status when the device answers again after restarting; the `fw` in `config_ack` shows the new version.
 
 Known limits: a signed request can be replayed to reinstall that same image (the MAC covers the image, not a nonce), so it can't install anything the companion didn't sign. The download is plain HTTP on the LAN, protected by the hash. There is no automatic rollback if the new firmware boots but misbehaves; reflash over USB.
+
+### 11.6 Signed network messages
+Once the device has a token, `config` and `wifi_join` over **UDP** must arrive wrapped:
+
+```json
+{"type":"signed","n":1761495600000,"body":"{\"type\":\"config\",...}","mac":"<hex>"}
+```
+
+`mac` = HMAC-SHA256(token, `"<n>:<body>"`), over the body string exactly as sent. `n` is the companion's Unix time in ms (kept strictly increasing in-process). The device accepts `n` only if it is greater than the last accepted one, stored in `Preferences` (`auth_n`, reset when a new token is set), so a captured packet can't be replayed, even after a reboot. A valid envelope is then handled as if its body had arrived over UDP; envelopes don't nest.
+
+Refusals are answered `{"type":"auth_error","reason","for"}`: `unsigned` (needs an envelope), `bad_mac`, `stale` (old `n`), `setup_only`. The companion turns them into a banner suggesting Add device or USB.
+
+Not signed: USB (physical access) and paired BLE; display data (`stats`, `media`, `weather`, `notify`, `clock`) and `query`. A device without a token (set up before signing) still accepts unsigned settings until Add device runs again. Bodies are signed, not encrypted: a Wi-Fi password sent over UDP is readable on the LAN.
 
 ## 12. Boot logo
 

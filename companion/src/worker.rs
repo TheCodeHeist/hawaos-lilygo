@@ -130,7 +130,15 @@ pub fn spawn_daemon_worker(state: SharedState, art_cache: SharedArtCache) {
                                 }
                             }
                             if let Some(addr) = target_addr {
-                                let _ = udp.send_to(json_str.as_bytes(), addr);
+                                // Signed once the device has a token (DESIGN.md 11.6).
+                                let pkt = if cfg.device_token.is_empty() {
+                                    Some(json_str)
+                                } else {
+                                    crate::auth::seal(&cfg.device_token, &json_str)
+                                };
+                                if let Some(pkt) = pkt {
+                                    let _ = udp.send_to(pkt.as_bytes(), addr);
+                                }
                             }
                         }
                     }

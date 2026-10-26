@@ -4,6 +4,7 @@
 #include "core/EventBus.h"
 #include "core/Settings.h"
 #include "services/BleLink.h"
+#include "services/CompanionAuth.h"
 #include "services/NtpService.h"
 #include "services/OtaService.h"
 #include "services/SetupService.h"
@@ -122,6 +123,33 @@ void reply(const JsonDocument &doc) {
   sendJsonPacket(buf);
 }
 
+// Over the network, setup only runs on USB or paired BLE; a token arriving
+// over UDP could otherwise be replaced by anyone on the LAN.
+bool setupOnly(const char *type) {
+  static const char *const kSetup[] = {"setup", "setup_key", "setup_verify",
+                                       "wifi_creds"};
+  for (const char *t : kSetup) {
+    if (strcmp(type, t) == 0)
+      return true;
+  }
+  return false;
+}
+
+// Messages that change the device must be signed over UDP once it has a
+// token (DESIGN.md Section 11.6). ota carries its own MAC.
+bool needsSignature(const char *type) {
+  return strcmp(type, "config") == 0 || strcmp(type, "wifi_join") == 0;
+}
+
+void replyAuthError(const char *reason, const char *forType) {
+  Serial.printf("[CompanionLink] UDP: refused '%s' (%s)\n", forType, reason);
+  JsonDocument out;
+  out["type"] = "auth_error";
+  out["reason"] = reason;
+  out["for"] = forType;
+  reply(out);
+}
+
 // First-run setup messages (DESIGN.md Section 11.4). Returns true if handled.
 bool handleSetupMessage(const char *type, JsonDocument &doc, Link link) {
   if (strcmp(type, "wifi_scan") == 0) {
@@ -225,7 +253,8 @@ bool handleSetupMessage(const char *type, JsonDocument &doc, Link link) {
   return false;
 }
 
-void handleJsonMessage(const char *payload, size_t len, Link link) {
+void handleJsonMessage(const char *payload, size_t len, Link link,
+                       bool signedMsg = false) {
   const bool viaUsb = (link == Link::Usb);
   JsonDocument doc;
   const DeserializationError err = deserializeJson(doc, payload, len);
@@ -248,6 +277,34 @@ void handleJsonMessage(const char *payload, size_t len, Link link) {
   if (link == Link::Ble && !allowedOverBle(type)) {
     Serial.printf("[CompanionLink] BLE: ignored '%s' (not paired)\n", type);
     return;
+  }
+  if (link == Link::Udp) {
+    if (strcmp(type, "signed") == 0) {
+      if (signedMsg)
+        return; // no nesting
+      const char *body = doc["body"] | "";
+      const char *inner = "signed";
+      switch (CompanionAuth::accept(doc["n"] | 0ULL, body, doc["mac"] | "")) {
+      case CompanionAuth::Result::Ok:
+        handleJsonMessage(body, strlen(body), Link::Udp, true);
+        break;
+      case CompanionAuth::Result::Stale:
+        replyAuthError("stale", inner);
+        break;
+      case CompanionAuth::Result::BadMac:
+        replyAuthError("bad_mac", inner);
+        break;
+      }
+      return;
+    }
+    if (setupOnly(type)) {
+      replyAuthError("setup_only", type);
+      return;
+    }
+    if (!signedMsg && needsSignature(type) && CompanionAuth::hasToken()) {
+      replyAuthError("unsigned", type);
+      return;
+    }
   }
   if (handleSetupMessage(type, doc, link)) {
     return;

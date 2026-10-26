@@ -1,5 +1,5 @@
 #include "services/OtaService.h"
-#include "core/Settings.h"
+#include "services/CompanionAuth.h"
 #include "services/CompanionLink.h"
 
 #include <Arduino.h>
@@ -7,7 +7,6 @@
 #include <HTTPClient.h>
 #include <Update.h>
 #include <WiFi.h>
-#include <mbedtls/md.h>
 #include <mbedtls/sha256.h>
 #include <string.h>
 
@@ -198,32 +197,12 @@ bool start(const char *url, uint32_t size, const char *sha256Hex) {
 }
 
 bool checkMac(const char *sha256Hex, uint32_t size, const char *macHex) {
-  char tokenHex[33] = {0};
-  Settings::getCompanionToken(tokenHex, sizeof(tokenHex));
-  if (!isHex(tokenHex, 32) || !isHex(macHex, 64))
+  if (!isHex(sha256Hex, 64))
     return false;
-  uint8_t key[16];
-  for (int i = 0; i < 16; ++i) {
-    char byte[3] = {tokenHex[i * 2], tokenHex[i * 2 + 1], 0};
-    key[i] = static_cast<uint8_t>(strtoul(byte, nullptr, 16));
-  }
   char msg[80];
   const int msgLen = snprintf(msg, sizeof(msg), "%s:%lu", sha256Hex,
                               static_cast<unsigned long>(size));
-  uint8_t mac[32];
-  if (mbedtls_md_hmac(mbedtls_md_info_from_type(MBEDTLS_MD_SHA256), key,
-                      sizeof(key), reinterpret_cast<const uint8_t *>(msg),
-                      msgLen, mac) != 0) {
-    return false;
-  }
-  char expected[65];
-  toHex(mac, sizeof(mac), expected);
-  // Constant-time compare.
-  uint8_t diff = 0;
-  for (int i = 0; i < 64; ++i) {
-    diff |= static_cast<uint8_t>(tolower(macHex[i]) ^ expected[i]);
-  }
-  return diff == 0;
+  return CompanionAuth::verify(msg, msgLen, macHex);
 }
 
 Progress progress() {
