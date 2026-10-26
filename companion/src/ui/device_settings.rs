@@ -31,6 +31,13 @@ impl CompanionWindowView {
         let brightness_steps: [u8; 5] = [20, 40, 60, 80, 100];
         let current_accent = accent_by_id(&cfg.accent);
         let aod_timeouts: [u16; 5] = [15, 30, 60, 120, 300];
+        // Dev aid for screenshots: HAWAOS_DEV_SECTION=firmware puts the card on top.
+        let firmware = Some(self.render_firmware_card(pal, cx).into_any_element());
+        let (firmware_top, firmware) = if std::env::var("HAWAOS_DEV_SECTION").as_deref() == Ok("firmware") {
+            (firmware, None)
+        } else {
+            (None, firmware)
+        };
 
         v_flex()
             .w_full()
@@ -77,6 +84,7 @@ impl CompanionWindowView {
                             ),
                     ),
             )
+            .children(firmware_top)
             // Appearance
             .child(
                 card_row()
@@ -415,6 +423,6 @@ impl CompanionWindowView {
                             ),
                     )),
             )
-            .child(self.render_firmware_card(pal, cx))
+            .children(firmware)
     }
 }

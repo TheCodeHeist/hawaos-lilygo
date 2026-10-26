@@ -212,6 +212,16 @@ pub fn spawn_daemon_worker(state: SharedState, art_cache: SharedArtCache) {
             if last_stats_tick.elapsed() >= Duration::from_secs(1) {
                 if let Ok(mut g) = state.lock() {
                     g.tick_clock();
+                    // After an update, ask until the restarted device answers;
+                    // its config_ack clears the status (protocol.rs).
+                    if let Some(since) = g.ota.as_ref().filter(|o| o.state == "done").map(|o| o.at.elapsed()) {
+                        if since > Duration::from_secs(60) {
+                            g.ota = None;
+                        } else if since > Duration::from_secs(3) {
+                            let via_usb = std::path::Path::new(&g.config.usb_port).exists();
+                            g.outbound_queue.push_back(OutboundAction::QueryDevice { via_usb });
+                        }
+                    }
                 }
                 let dt = last_stats_tick.elapsed().as_secs_f64().max(0.1);
                 last_stats_tick = Instant::now();

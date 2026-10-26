@@ -359,10 +359,10 @@ impl Render for CompanionWindowView {
     }
 }
 
-/// Dev aid for screenshots: `HAWAOS_DEV_SECTION=device|setup|background`.
+/// Dev aid for screenshots: `HAWAOS_DEV_SECTION=device|firmware|setup|background`.
 fn dev_start_section() -> Option<NavSection> {
     match std::env::var("HAWAOS_DEV_SECTION").as_deref() {
-        Ok("device") => Some(NavSection::DeviceSettings),
+        Ok("device" | "firmware") => Some(NavSection::DeviceSettings),
         Ok("setup") => Some(NavSection::InitialSetup),
         Ok("background") => Some(NavSection::DaemonSettings),
         Ok("overview") => Some(NavSection::Overview),
@@ -388,6 +388,12 @@ pub fn open_companion_window(cx: &mut App, state: SharedState) {
         );
         eprintln!("[companion] {}", msg);
         g.push_log(msg);
+        // Dev aid for screenshots: `HAWAOS_DEV_OTA=path/to/firmware.bin`
+        // starts a real update as the window opens.
+        if let Ok(path) = std::env::var("HAWAOS_DEV_OTA") {
+            g.ota = Some(crate::models::OtaProgress::new("starting", 0, None));
+            g.outbound_queue.push_back(OutboundAction::StartOta { path: path.into() });
+        }
         translucent
     } else {
         false

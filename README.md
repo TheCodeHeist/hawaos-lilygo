@@ -144,6 +144,10 @@ Bluetooth only runs while the device is in setup, so it uses no memory afterward
 
 ### Updating firmware
 
+<p align="center">
+  <img src="docs/media/companion-firmware.png" width="640" alt="Firmware card in the companion downloading an update to the device">
+</p>
+
 After the first USB flash, updates can go over Wi-Fi. Build with `pio run`, then in the companion open **Device > Firmware > Install update...** and pick `.pio/build/tdisplay-s3/firmware.bin`.
 
 The device downloads the image from the companion into its spare app slot, with progress shown on both screens. It only switches to the new firmware if the whole file arrived and its SHA-256 matches; any failure leaves the running firmware untouched. Over Wi-Fi, the request has to be signed with a secret the companion gave the device during **Add device**, so other machines on your network can't push firmware to it. Details are in [`DESIGN.md`](DESIGN.md) §11.5.
