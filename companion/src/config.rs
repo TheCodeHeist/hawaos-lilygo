@@ -160,6 +160,10 @@ pub fn config_file_path() -> PathBuf {
         .join("config.json")
 }
 
+/// Reverse-DNS id: the Flatpak id, the desktop file's name, and the window's
+/// Wayland app_id, so the compositor shows the right name and icon.
+pub const APP_ID: &str = "dev.is_a.thecodeheist.HawaOSCompanion";
+
 pub fn autostart_desktop_path() -> PathBuf {
     let home = env::var("HOME").unwrap_or_else(|_| ".".to_string());
     PathBuf::from(home)
@@ -178,21 +182,28 @@ pub fn set_autostart_installed(enable: bool) -> std::io::Result<()> {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
         }
-        let exe_path = env::current_exe()
-            .unwrap_or_else(|_| PathBuf::from("hawaos-companion"))
-            .display()
-            .to_string();
+        // Inside a Flatpak the binary's path only exists in the sandbox.
+        let exec = match env::var("FLATPAK_ID") {
+            Ok(id) if !id.is_empty() => format!("flatpak run {id}"),
+            _ => format!(
+                "\"{}\"",
+                env::current_exe()
+                    .unwrap_or_else(|_| PathBuf::from("hawaos-companion"))
+                    .display()
+            ),
+        };
         let desktop_entry = format!(
             "[Desktop Entry]\n\
              Type=Application\n\
              Name=HawaOS Companion\n\
              Comment=HawaOS Desktop Companion & Tray Daemon for LilyGo T-Display-S3\n\
-             Exec=\"{}\" --minimized\n\
+             Exec={} --minimized\n\
+             Icon={}\n\
              Terminal=false\n\
              Categories=Utility;System;\n\
              StartupNotify=false\n\
              X-GNOME-Autostart-enabled=true\n",
-            exe_path
+            exec, APP_ID
         );
         fs::write(path, desktop_entry)?;
     } else if path.exists() {
@@ -241,6 +252,12 @@ pub fn save_config(cfg: &CompanionConfig) {
         let _ = fs::create_dir_all(parent);
     }
     if let Ok(json) = serde_json::to_string_pretty(&clean_cfg) {
-        let _ = fs::write(path, json);
+        let _ = fs::write(&path, json);
+        // Holds the device token that keys the encrypted link: owner only.
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = fs::set_permissions(&path, fs::Permissions::from_mode(0o600));
+        }
     }
 }

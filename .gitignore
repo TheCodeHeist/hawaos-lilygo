@@ -6,3 +6,9 @@ companion/target/
 designs/
 SESSION_CONTEXT_1.md
 __pycache__/
+
+# Flatpak build output
+packaging/flatpak/.flatpak-builder/
+packaging/flatpak/build/
+packaging/flatpak/repo/
+packaging/flatpak/*.flatpak

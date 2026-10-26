@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=HawaOS Companion
+GenericName=Desk Display Companion
+Comment=Stream stats, music, weather and notifications to your HawaOS display
+Exec=hawaos-companion
+Icon=dev.is_a.thecodeheist.HawaOSCompanion
+Terminal=false
+Categories=Utility;
+Keywords=HawaOS;LilyGo;T-Display;ESP32;display;dashboard;
+StartupNotify=true
+StartupWMClass=dev.is_a.thecodeheist.HawaOSCompanion

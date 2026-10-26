@@ -421,7 +421,7 @@ pub fn open_companion_window(cx: &mut App, state: SharedState) {
             title: Some("HawaOS Companion".into()),
             ..Default::default()
         }),
-        app_id: Some("hawaos-companion".into()),
+        app_id: Some(crate::config::APP_ID.into()),
         ..Default::default()
     };
 

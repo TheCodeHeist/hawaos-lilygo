@@ -102,6 +102,24 @@ flowchart LR
 
 ## Getting started
 
+### Download
+
+Every [release](https://github.com/TheCodeHeist/hawaos-lilygo/releases) has ready-made files, so you don't need any toolchain:
+
+| File | What it's for |
+|---|---|
+| `hawaos-companion-<version>-x86_64.flatpak` | The companion app: `flatpak install --user <file>` (Flathub's runtime downloads automatically) |
+| `hawaos-<version>-full.bin` | First install on a new board, at offset `0x0`. **Erases saved settings.** |
+| `hawaos-<version>-update.bin` | Updating a device that already runs HawaOS: companion **Device > Firmware > Install update...** |
+
+Flash the full image from a browser with [ESP Web Flasher](https://espressif.github.io/esptool-js/) (Chrome or Edge, offset `0x0`), or with esptool:
+
+```bash
+esptool.py --chip esp32s3 write_flash 0x0 hawaos-<version>-full.bin
+```
+
+Then open the companion; it walks you through **Add device**. To build everything yourself instead, read on.
+
 ### Firmware
 
 Requires [PlatformIO Core](https://docs.platformio.org/en/latest/core/installation/index.html).
@@ -116,7 +134,20 @@ pio device monitor       # serial log at 115200 baud
 
 ### Companion (Linux)
 
-Requires a recent Rust toolchain (edition 2024), a Vulkan-capable GPU, `playerctl`, `dbus-monitor`, and a StatusNotifier tray (KDE has one built in; GNOME needs the AppIndicator extension).
+The companion installs as a **Flatpak**: it shows up in your app menu with its own icon, and runs in a sandbox with only the access it needs (serial port, Bluetooth, the session bus for media and notifications, the network).
+
+```bash
+flatpak install --user flathub org.flatpak.Builder \
+  org.freedesktop.Sdk//26.08 org.freedesktop.Sdk.Extension.rust-stable//26.08   # once
+packaging/flatpak/build.sh       # builds, installs, and writes hawaos-companion.flatpak
+```
+
+Then open **HawaOS Companion** from your app menu, or `flatpak run dev.is_a.thecodeheist.HawaOSCompanion`. To install on another machine, copy `packaging/flatpak/hawaos-companion.flatpak` over and run `flatpak install --user hawaos-companion.flatpak`. It needs a StatusNotifier tray (KDE has one built in; GNOME needs the AppIndicator extension), and your user in the `dialout` group for the USB serial port.
+
+<details>
+<summary><b>Run from source instead</b> (development)</summary>
+
+Requires a recent Rust toolchain (edition 2024), a Vulkan-capable GPU, `playerctl` and `dbus-monitor`.
 
 ```bash
 cd companion
@@ -124,6 +155,9 @@ cargo build --release
 ./target/release/hawaos-companion              # opens the window
 ./target/release/hawaos-companion --minimized  # starts in the tray
 ```
+
+Settings live in `~/.config/hawaos-companion/` either way, so the Flatpak and a source build share them.
+</details>
 
 ### Adding a device
 
@@ -223,6 +257,7 @@ hawaos-lilygo/
 │   ├── ota.rs        Firmware staging and request signing
 │   ├── tray.rs       Tray menu (ksni)
 │   └── ui/           gpui window: pages, glass components, accent palettes
+├── packaging/flatpak/ Flatpak manifest, desktop entry, AppStream metadata
 ├── assets/           logo, Inter and Lucide fonts
 ├── docs/media/       README captures
 └── DESIGN.md         Design system: tokens, layouts, motion, protocol
@@ -309,6 +344,8 @@ The full protocol, key derivation and replay rules are in [`DESIGN.md`](DESIGN.m
 - [x] Firmware updates over Wi-Fi, checksum-verified and signed
 - [x] Encrypted, authenticated network traffic with replay protection
 - [x] Bluetooth as an everyday link instead of Wi-Fi, with album art over Bluetooth and USB
+- [x] Companion packaged as a Flatpak, with prebuilt firmware in every release
+- [ ] Windows companion
 - [ ] Image wallpapers pushed from the companion
 
 ## License

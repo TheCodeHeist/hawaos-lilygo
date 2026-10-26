@@ -90,7 +90,7 @@ constexpr uint32_t SPLASH_MIN_DURATION_MS =
 constexpr uint32_t LVGL_BUF_PIXELS = (LCD_HOR_RES * LCD_VER_RES);
 
 // --- Firmware identity (reported to the companion in config_ack) ---
-constexpr const char *FW_VERSION = "0.5.0";
+constexpr const char *FW_VERSION = "0.6.0";
 constexpr const char *DEVICE_MODEL = "T-Display-S3";
 
 // --- First-run setup (BLE provisioning, DESIGN.md Section 11.4) ---

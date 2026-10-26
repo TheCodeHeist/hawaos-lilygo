@@ -1,0 +1,103 @@
+# HawaOS Companion as a Flatpak. Build and install with ./build.sh (see the
+# README's "Install the companion" section).
+id: dev.is_a.thecodeheist.HawaOSCompanion
+runtime: org.freedesktop.Platform
+runtime-version: '26.08'
+sdk: org.freedesktop.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.rust-stable
+command: hawaos-companion
+
+finish-args:
+  - --share=ipc
+  - --socket=wayland
+  - --socket=fallback-x11
+  # The device on the LAN (UDP 7777, HTTP 7778) and weather lookups.
+  - --share=network
+  # The device's USB serial port (/dev/ttyACM*) and the GPU.
+  - --device=all
+  # Mirroring notifications means monitoring the session bus, which the
+  # filtered bus proxy can't do; the bus also carries MPRIS media players and
+  # the tray (StatusNotifierItem).
+  - --socket=session-bus
+  # Bluetooth: setup and the everyday Bluetooth link go through BlueZ.
+  - --system-talk-name=org.bluez
+  # Same settings as a non-Flatpak build, and "Start with system".
+  - --filesystem=xdg-config/hawaos-companion:create
+  - --filesystem=xdg-config/autostart:create
+
+cleanup:
+  - /include
+  - /lib/pkgconfig
+  - /lib/cmake
+  - /share/doc
+  - /share/man
+  - /share/gtk-doc
+  - '*.a'
+
+modules:
+  # dbus-monitor (notification mirroring); the runtime has libdbus but not the
+  # tools.
+  - name: dbus-tools
+    buildsystem: meson
+    config-opts:
+      - -Dmessage_bus=false
+      - -Dtools=true
+      - -Dmodular_tests=disabled
+      - -Dinstalled_tests=false
+      - -Ddoxygen_docs=disabled
+      - -Dxml_docs=disabled
+      - -Dducktype_docs=disabled
+      - -Dqt_help=disabled
+      - -Dsystemd=disabled
+      - -Dselinux=disabled
+      - -Dapparmor=disabled
+      - -Dlibaudit=disabled
+    sources:
+      - type: archive
+        url: https://dbus.freedesktop.org/releases/dbus/dbus-1.16.2.tar.xz
+        sha256: 0ba2a1a4b16afe7bceb2c07e9ce99a8c2c3508e5dec290dbb643384bd6beb7e2
+
+  # playerctl (now playing, media keys), over MPRIS.
+  - name: playerctl
+    buildsystem: meson
+    config-opts:
+      - -Dgtk-doc=false
+      - -Dintrospection=false
+      - -Dbash-completions=false
+      - -Dzsh-completions=false
+    sources:
+      - type: archive
+        url: https://github.com/altdesktop/playerctl/archive/refs/tags/v2.4.1.tar.gz
+        sha256: 75957ad5071956f563542c7557af16a57e40b4a7f66bc9b6373d022ec5eef548
+
+  - name: hawaos-companion
+    buildsystem: simple
+    build-options:
+      append-path: /usr/lib/sdk/rust-stable/bin
+      env:
+        CARGO_HOME: /run/build/hawaos-companion/cargo
+      # Crates are fetched at build time. Fine for local bundles; Flathub
+      # would need them vendored (flatpak-cargo-generator).
+      build-args:
+        - --share=network
+    build-commands:
+      - cd companion && cargo build --release --locked
+      - install -Dm755 companion/target/release/hawaos-companion /app/bin/hawaos-companion
+      - install -Dm644 packaging/flatpak/dev.is_a.thecodeheist.HawaOSCompanion.desktop /app/share/applications/dev.is_a.thecodeheist.HawaOSCompanion.desktop
+      - install -Dm644 packaging/flatpak/dev.is_a.thecodeheist.HawaOSCompanion.metainfo.xml /app/share/metainfo/dev.is_a.thecodeheist.HawaOSCompanion.metainfo.xml
+      - install -Dm644 packaging/flatpak/dev.is_a.thecodeheist.HawaOSCompanion.png /app/share/icons/hicolor/256x256/apps/dev.is_a.thecodeheist.HawaOSCompanion.png
+    sources:
+      # The repo root: the companion embeds ../assets at compile time.
+      - type: dir
+        path: ../..
+        skip:
+          - .git
+          - .pio
+          - companion/target
+          - packaging/flatpak/.flatpak-builder
+          - packaging/flatpak/build
+          - packaging/flatpak/repo
+          - src
+          - include
+          - docs

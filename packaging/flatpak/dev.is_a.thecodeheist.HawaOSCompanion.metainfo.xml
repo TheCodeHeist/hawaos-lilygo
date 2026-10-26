@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>dev.is_a.thecodeheist.HawaOSCompanion</id>
+  <name>HawaOS Companion</name>
+  <summary>Stream stats, music, weather and notifications to your desk display</summary>
+  <developer id="dev.is_a.thecodeheist">
+    <name>Md Riyasat Hossain</name>
+  </developer>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+  <launchable type="desktop-id">dev.is_a.thecodeheist.HawaOSCompanion.desktop</launchable>
+  <url type="homepage">https://github.com/TheCodeHeist/hawaos-lilygo</url>
+  <url type="vcs-browser">https://github.com/TheCodeHeist/hawaos-lilygo</url>
+  <url type="bugtracker">https://github.com/TheCodeHeist/hawaos-lilygo/issues</url>
+
+  <description>
+    <p>
+      The desktop companion for HawaOS, a small dashboard OS for the LilyGo
+      T-Display-S3. It lives in your tray and keeps the device up to date with
+      your PC's CPU, memory and network, the music you're playing with its album
+      art, the weather, and your desktop notifications.
+    </p>
+    <ul>
+      <li>Add a device over USB or Bluetooth with a guided setup</li>
+      <li>Connect over Wi-Fi or Bluetooth, with encrypted traffic either way</li>
+      <li>Change theme, accent color, brightness and the always-on display live</li>
+      <li>Install firmware updates over the air</li>
+    </ul>
+  </description>
+
+  <screenshots>
+    <screenshot type="default">
+      <caption>Device settings</caption>
+      <image>https://raw.githubusercontent.com/TheCodeHeist/hawaos-lilygo/main/docs/media/companion-device.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>Adding a device</caption>
+      <image>https://raw.githubusercontent.com/TheCodeHeist/hawaos-lilygo/main/docs/media/companion-add-device.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>Firmware updates</caption>
+      <image>https://raw.githubusercontent.com/TheCodeHeist/hawaos-lilygo/main/docs/media/companion-firmware.png</image>
+    </screenshot>
+  </screenshots>
+
+  <categories>
+    <category>Utility</category>
+  </categories>
+  <content_rating type="oars-1.1"/>
+
+  <releases>
+    <release version="0.6.0" date="2026-10-27">
+      <description>
+        <p>First release: a guided setup over USB or Bluetooth, encrypted Wi-Fi and Bluetooth links, over-the-air firmware updates, and album art over every link.</p>
+      </description>
+    </release>
+  </releases>
+</component>
