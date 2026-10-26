@@ -201,6 +201,7 @@ void begin() {
 
   // 3. Initialize Serial, DataStore, EventBus, Buttons, AppManager, and
   // background services behind the visible boot logo
+  Serial.setRxBufferSize(Config::USB_RX_BUFFER_BYTES); // must precede begin()
   Serial.begin(115200);
   Serial.println("\n=====================================================");
   Serial.println("  HawaOS v0.4.0 — Milestone 4 Companion & Apps Ready");

@@ -1448,6 +1448,15 @@ void runStressTest(uint16_t switches) {
 
 size_t appCount() { return s_appCount; }
 
+int indexOf(const char *name) {
+  for (size_t i = 0; i < s_appCount; ++i) {
+    if (strcmp(s_apps[i]->name(), name) == 0) {
+      return static_cast<int>(i);
+    }
+  }
+  return -1;
+}
+
 int activeAppIndex() {
   return (s_viewState == ViewState::InApp) ? s_activeAppIdx : -1;
 }

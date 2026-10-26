@@ -61,6 +61,7 @@ void handleData(const DataSnapshot &d);
 void runStressTest(uint16_t switches);
 
 size_t appCount();
+int indexOf(const char *name); // -1 when no app has that name()
 int activeAppIndex(); // -1 when in Launcher
 
 } // namespace AppManager

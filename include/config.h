@@ -91,6 +91,9 @@ constexpr uint32_t LVGL_BUF_PIXELS = (LCD_HOR_RES * LCD_VER_RES);
 
 // --- Network, Companion & Time Defaults ---
 constexpr uint16_t COMPANION_UDP_PORT = 7777;
+// USB serial RX buffer. The default 256 B overflows between 25 ms polls when the
+// companion streams a weather message with forecast (~400 B) over USB.
+constexpr size_t USB_RX_BUFFER_BYTES = 2048;
 constexpr uint16_t COMPANION_ART_PORT = 7778;
 constexpr int32_t DEFAULT_GMT_OFFSET_SEC = 6 * 3600; // UTC+6 (Asia/Dhaka)
 constexpr int32_t DEFAULT_DST_OFFSET_SEC = 0;

@@ -129,9 +129,9 @@ bool HomeApp::onButton(Button b, Press p) {
   // 12/24h clock
   if (b == Button::Select && p == Press::Short) {
     const DataSnapshot snap = DataStore::getSnapshot();
-    if (snap.mediaState == MediaPlayState::Playing &&
-        AppManager::appCount() > 1) {
-      AppManager::switchTo(1);
+    const int mediaIdx = AppManager::indexOf("Media");
+    if (snap.mediaState == MediaPlayState::Playing && mediaIdx >= 0) {
+      AppManager::switchTo(static_cast<size_t>(mediaIdx));
       return true;
     }
     Settings::setUse24Hour(!Settings::getUse24Hour());
