@@ -59,7 +59,7 @@
   </tr>
 </table>
 
-A frosted-glass Rust app (gpui) that lives in your tray. It streams stats, media, weather and notifications to the device, and every device setting can be changed from it.
+A frosted-glass Rust app (gpui) that lives in your tray. It streams stats, media, weather and notifications to the device, and every device setting can be changed from it. The tray menu shows the current track with play/pause and next, switches the accent, adds a device, and can start the companion with your session.
 
 ## Make it yours
 
@@ -189,18 +189,63 @@ Two buttons: **Next** (`GPIO 14`) and **Select** (`GPIO 0`, BOOT).
 hawaos-lilygo/
 ├── src/
 │   ├── core/         Kernel (boot, UI task), AppManager, EventBus, DataStore, Settings
-│   ├── apps/         Home, Clock, Weather, Media, Stats, Notify, Settings
-│   ├── services/     CompanionLink (USB + UDP JSON), WifiService, NtpService
+│   ├── apps/         Home, Clock, Weather, Media, Stats, Notify, Settings, Setup
+│   ├── services/     CompanionLink (USB + UDP + BLE JSON), WifiService, NtpService,
+│   │                 SetupService (pairing, provisioning), BleLink, OtaService
 │   ├── drivers/      Display (TFT_eSPI + LVGL, boot logo), Buttons
 │   └── ui/           Theme helpers, StatusBar, fonts, icons
 ├── include/          config.h, lv_conf.h, generated theme_tokens.h and boot_logo.h
 ├── tools/            gen_theme.py, gen_logo.py, gen_icons.py
-├── companion/        Rust desktop companion (gpui window, tray, worker)
+├── companion/src/
+│   ├── worker.rs     Daemon loop: stats, media, weather, outbound queue
+│   ├── protocol.rs   Device messages in; media.rs serves album art and firmware
+│   ├── setup/        Add device wizard: USB/BLE links, X25519 + AES-GCM pairing
+│   ├── ota.rs        Firmware staging and request signing
+│   ├── tray.rs       Tray menu (ksni)
+│   └── ui/           gpui window: pages, glass components, accent palettes
 ├── assets/           logo, Inter and Lucide fonts
+├── docs/media/       README captures
 └── DESIGN.md         Design system: tokens, layouts, motion, protocol
 ```
 
 </details>
+
+## Troubleshooting
+
+<details>
+<summary><b>The companion says Disconnected</b></summary>
+
+The device and your PC must be on the same network, and the device only joins **2.4 GHz** Wi-Fi. The companion remembers the device's address from setup. If your router has since given the device a new one, run **Add device** again, or look the device up in your router's client list and start the companion with that address once: `hawaos-companion 192.168.0.98`. Plugged in over USB, the companion uses the cable instead.
+</details>
+
+<details>
+<summary><b>No album art, or firmware updates fail with a download error</b></summary>
+
+The device fetches both from your PC over HTTP on **TCP 7778**, so that port has to be open. On Fedora:
+
+```bash
+sudo firewall-cmd --permanent --add-port=7778/tcp && sudo firewall-cmd --reload
+```
+</details>
+
+<details>
+<summary><b>Now Playing stays empty</b></summary>
+
+Media comes from MPRIS through `playerctl`. Check that `playerctl -l` lists your player and `playerctl metadata` shows the track. Browsers need their media integration enabled.
+</details>
+
+<details>
+<summary><b>Serial console</b></summary>
+
+`pio device monitor` shows the boot log. Type `t` + Enter to run the 200-switch leak test, or `r` + Enter to force a Wi-Fi reconnect.
+</details>
+
+## Security and privacy
+
+- **Wi-Fi password:** over Bluetooth it is encrypted (X25519 + AES-256-GCM, keyed by the 6-digit code on the screen). Over USB it goes over the cable in plain text.
+- **Firmware updates:** over Wi-Fi they must be signed with the secret from setup (HMAC-SHA256), and every image is checked against its SHA-256 before the device switches to it.
+- **Everyday data is not encrypted.** Stats, media, notifications and settings travel as plain UDP on your local network, and the device accepts settings and Wi-Fi changes from any machine on it. Use it on a network you trust.
+- **Outside services:** the companion asks [Open-Meteo](https://open-meteo.com) for weather and, with automatic location on, [ip-api.com](https://ip-api.com) for your rough location. Pick a city to turn that off. The device itself only talks to the companion and an NTP server.
 
 ## Roadmap
 
@@ -211,6 +256,7 @@ hawaos-lilygo/
 - [x] 17 synced accent themes with accent-tinted dark mode
 - [x] First-run setup wizard over USB or Bluetooth, with encrypted Wi-Fi provisioning
 - [x] Firmware updates over Wi-Fi, checksum-verified and signed
+- [ ] Sign settings and Wi-Fi changes sent over the network, like firmware updates
 - [ ] Bluetooth for everyday data (today it's used for setup only)
 - [ ] Image wallpapers pushed from the companion
 
