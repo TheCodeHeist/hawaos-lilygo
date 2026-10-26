@@ -659,30 +659,51 @@ void fetchPendingAlbumArt() {
     return;
   }
 
+  // Paired: iv || ciphertext || tag, bound to the hash (DESIGN.md 11.6).
+  const bool sealedArt = CompanionAuth::hasToken();
+  constexpr size_t kIv = 12;
+  constexpr size_t kTag = 16;
+  const size_t wireBytes =
+      DataStore::ALBUM_ART_BYTES + (sealedArt ? kIv + kTag : 0);
+
   const int code = http.GET();
   if (code == HTTP_CODE_OK &&
-      http.getSize() == static_cast<int>(DataStore::ALBUM_ART_BYTES)) {
+      http.getSize() == static_cast<int>(wireBytes)) {
     WiFiClient *stream = http.getStreamPtr();
-    uint8_t *dst = reinterpret_cast<uint8_t *>(artBuf);
-    size_t totalRead = 0;
     const uint32_t startMs = millis();
-
-    while (http.connected() && totalRead < DataStore::ALBUM_ART_BYTES &&
-           (millis() - startMs) < 1500) {
-      const size_t avail = stream->available();
-      if (avail > 0) {
-        const size_t toRead =
-            min(avail, DataStore::ALBUM_ART_BYTES - totalRead);
-        const int r = stream->readBytes(dst + totalRead, toRead);
-        if (r > 0) {
-          totalRead += static_cast<size_t>(r);
+    auto readExact = [&](uint8_t *dst, size_t want) -> size_t {
+      size_t got = 0;
+      while (http.connected() && got < want && (millis() - startMs) < 1500) {
+        const size_t avail = stream->available();
+        if (avail > 0) {
+          const int r = stream->readBytes(dst + got, min(avail, want - got));
+          if (r > 0)
+            got += static_cast<size_t>(r);
+        } else {
+          delay(1);
         }
-      } else {
-        delay(1);
       }
+      return got;
+    };
+
+    uint8_t iv[kIv];
+    uint8_t tag[kTag];
+    uint8_t *dst = reinterpret_cast<uint8_t *>(artBuf);
+    const bool complete =
+        (!sealedArt || readExact(iv, kIv) == kIv) &&
+        readExact(dst, DataStore::ALBUM_ART_BYTES) ==
+            DataStore::ALBUM_ART_BYTES &&
+        (!sealedArt || readExact(tag, kTag) == kTag);
+
+    bool authentic = complete;
+    if (complete && sealedArt) {
+      char aad[24];
+      snprintf(aad, sizeof(aad), "art:%s", s_pendingArtHash);
+      authentic = CompanionAuth::openInPlace(aad, iv, dst,
+                                             DataStore::ALBUM_ART_BYTES, tag);
     }
 
-    if (totalRead == DataStore::ALBUM_ART_BYTES) {
+    if (authentic) {
       strncpy(s_loadedArtHash, s_pendingArtHash, sizeof(s_loadedArtHash) - 1);
       s_loadedArtHash[sizeof(s_loadedArtHash) - 1] = '\0';
       DataStore::setAlbumArtReady(s_loadedArtHash, true);
@@ -691,9 +712,11 @@ void fetchPendingAlbumArt() {
                     s_loadedArtHash);
       postDataUpdated();
     } else {
-      Serial.printf("[CompanionLink] Art read truncated (%u / %u bytes)\n",
-                    static_cast<unsigned>(totalRead),
-                    static_cast<unsigned>(DataStore::ALBUM_ART_BYTES));
+      // The buffer no longer holds the art it was loaded with.
+      s_loadedArtHash[0] = '\0';
+      Serial.printf("[CompanionLink] Art %s (%s)\n",
+                    complete ? "failed authentication" : "read truncated",
+                    s_pendingArtHash);
     }
   } else {
     Serial.printf("[CompanionLink] Art GET failed: %s code=%d size=%d\n", url,

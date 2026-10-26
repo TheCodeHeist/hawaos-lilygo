@@ -265,7 +265,7 @@ The transport is an open decision (see section 14). Design a `Transport` abstrac
 
 ### 11.2 Album art
 - Format: **128x128, RGB565 little-endian, raw, 32 768 bytes**, center-cropped, no alpha. The device only copies bytes into a PSRAM buffer, so **no JPEG decoder is needed**.
-- The device fetches art only when the `art` hash differs from the cached one. Default for WiFi: the device **pulls** `GET http://<companion>:7778/art/<hash>` (companion runs a tiny HTTP server). Over serial: the companion pushes an art frame.
+- The device fetches art only when the `art` hash differs from the cached one. Default for WiFi: the device **pulls** `GET http://<companion>:7778/art/<hash>` (companion runs a tiny HTTP server). Once paired the response is encrypted: `iv || ciphertext || tag`, 32 796 bytes (11.6). Over serial: the companion pushes an art frame.
 - Show a placeholder (Lucide `music` on `surface2`) until art arrives or when there is none.
 
 ### 11.3 Commands and config
@@ -331,9 +331,11 @@ Once the device has a token, all UDP traffic in both directions is encrypted and
 
 **Refusals** go back to the sender only, in plaintext since that sender is untrusted: `{"type":"auth_error","reason","for"}` with `plaintext`, `bad_mac` (failed decryption), `stale` (old `n`), `setup_only` (11.4). With a token, that is the only plaintext the companion accepts over UDP; it shows at most one banner a minute suggesting Add device or USB.
 
+**Album art** (11.2) is sealed with `k_c2d` as `iv || ciphertext || tag`, with `"art:<hash>"` as associated data: the hash comes from the encrypted `media` message, so an image can't be read on the LAN or swapped onto another track. The device decrypts in place; on a failed tag it forgets the loaded hash, so the overwritten buffer is never shown as art, and retries.
+
 **Sizes.** The companion trims notification and media text to the device's field sizes (DataStore.h) so any envelope fits one datagram; the device opens up to 1100 bytes of plaintext.
 
-A device without a token (set up before encryption) still talks plaintext until Add device runs again. Not covered: album art and firmware images travel over plain HTTP (firmware is hash-checked and its request signed; art is just an image), and traffic sizes and timing are visible on the LAN.
+A device without a token (set up before encryption) still talks plaintext until Add device runs again. Not covered: firmware images travel over plain HTTP (hash-checked, the request encrypted, and they hold no secrets), and traffic sizes and timing are visible on the LAN.
 
 ## 12. Boot logo
 

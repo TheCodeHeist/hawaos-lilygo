@@ -70,6 +70,19 @@ fn seal_with(token_hex: &str, body: &str, n: u64) -> Option<String> {
     )
 }
 
+/// Encrypts a binary blob for the device as `iv || ciphertext || tag`, bound
+/// to `aad` (album art uses `"art:<hash>"`, so an image can't be swapped onto
+/// another track).
+pub fn seal_blob(token_hex: &str, aad: &str, data: &[u8]) -> Option<Vec<u8>> {
+    let c = cipher(token_hex, b"hawaos-link-c2d")?;
+    let iv = Nonce::generate();
+    let ct = c.encrypt(&iv, Payload { msg: data, aad: aad.as_bytes() }).ok()?;
+    let mut out = Vec::with_capacity(12 + ct.len());
+    out.extend_from_slice(iv.as_slice());
+    out.extend_from_slice(&ct);
+    Some(out)
+}
+
 /// Decrypts a device envelope `{"type":"sealed","e","d","iv","ct"}`. `e`
 /// echoes our newest `n` the device accepted and `d` counts its messages;
 /// the pair must be recent and newer than any seen, so replays fail.
@@ -141,6 +154,18 @@ mod tests {
         let a: serde_json::Value = serde_json::from_str(&seal(TOKEN, "{}").unwrap()).unwrap();
         let b: serde_json::Value = serde_json::from_str(&seal(TOKEN, "{}").unwrap()).unwrap();
         assert!(b["n"].as_u64() > a["n"].as_u64());
+    }
+
+    #[test]
+    fn art_blob_is_bound_to_its_hash() {
+        let art = vec![7u8; 32768];
+        let blob = seal_blob(TOKEN, "art:abc", &art).unwrap();
+        assert_eq!(blob.len(), 12 + 32768 + 16);
+        let c = cipher(TOKEN, b"hawaos-link-c2d").unwrap();
+        let iv: [u8; 12] = blob[..12].try_into().unwrap();
+        let open = |aad: &str| c.decrypt(&Nonce::from(iv), Payload { msg: &blob[12..], aad: aad.as_bytes() }).ok();
+        assert_eq!(open("art:abc").unwrap(), art);
+        assert!(open("art:abd").is_none());
     }
 
     #[test]

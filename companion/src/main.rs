@@ -39,7 +39,7 @@ fn main() {
     let state: SharedState = Arc::new(Mutex::new(SharedDaemonState::new(cfg.clone())));
     let art_cache: SharedArtCache = Arc::new(Mutex::new(HashMap::new()));
 
-    spawn_art_http_server(Arc::clone(&art_cache));
+    spawn_art_http_server(Arc::clone(&art_cache), Arc::clone(&state));
     spawn_daemon_worker(Arc::clone(&state), Arc::clone(&art_cache));
     spawn_notification_listener(Arc::clone(&state));
     spawn_system_tray(Arc::clone(&state));

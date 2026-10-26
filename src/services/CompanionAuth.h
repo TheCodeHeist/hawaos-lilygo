@@ -31,6 +31,12 @@ Result open(uint64_t n, const char *ivB64, const char *ctB64, char *out,
 // (stats every second) stays in RAM to spare the flash.
 void persist();
 
+// Decrypts a companion blob in place (album art): buf holds the ciphertext,
+// aad must match what the companion bound in ("art:<hash>"). false if the
+// tag fails, in which case buf holds garbage.
+bool openInPlace(const char *aad, const uint8_t iv[12], uint8_t *buf,
+                 size_t len, const uint8_t tag[16]);
+
 // Seals json for the companion as a complete envelope
 // {"type":"sealed","e","d","iv","ct"}. false if out is too small.
 bool seal(const char *json, char *out, size_t outLen);

@@ -245,9 +245,9 @@ Media comes from MPRIS through `playerctl`. Check that `playerctl -l` lists your
 ## Security and privacy
 
 - **Wi-Fi password:** over Bluetooth it is encrypted (X25519 + AES-256-GCM, keyed by the 6-digit code on the screen). Over USB it goes over the cable in plain text.
-- **Everything over Wi-Fi is encrypted.** Traffic in both directions uses AES-256-GCM with keys derived from the secret the companion gave the device during setup. Other machines on your network can't read your stats, track titles, notifications or Wi-Fi password, and can't change settings, show fake messages, replay old ones, redirect the device, or take over its pairing.
+- **Everything over Wi-Fi is encrypted.** Traffic in both directions uses AES-256-GCM with keys derived from the secret the companion gave the device during setup. Other machines on your network can't read your stats, track titles, album art, notifications or Wi-Fi password, and can't change settings, show fake messages, replay old ones, redirect the device, or take over its pairing.
 - **Firmware updates** are also signed, and each image is checked against its SHA-256 before the device switches to it.
-- **Not covered:** album art and firmware images are downloaded over plain HTTP (an image, and a hash-checked file). USB is trusted as it is: whoever holds the cable holds the device.
+- **Not covered:** firmware images are downloaded over plain HTTP, since they're hash-checked and contain no secrets. USB is trusted as it is: whoever holds the cable holds the device.
 - **Outside services:** the companion asks [Open-Meteo](https://open-meteo.com) for weather and, with automatic location on, [ip-api.com](https://ip-api.com) for your rough location. Pick a city to turn that off. The device itself only talks to the companion and an NTP server.
 
 ## Roadmap

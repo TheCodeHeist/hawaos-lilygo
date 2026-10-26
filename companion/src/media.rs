@@ -12,7 +12,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use gpui_kit::gpui::Image;
 use crate::config::{ART_DIM, ART_HTTP_PORT};
-use crate::models::{ArtEntry, MediaMsg, SharedArtCache};
+use crate::models::{ArtEntry, MediaMsg, SharedArtCache, SharedState};
 use crate::protocol::sanitize_for_font;
 
 fn rgb_to_hsv(r: f32, g: f32, b: f32) -> (f32, f32, f32) {
@@ -333,7 +333,9 @@ pub fn handle_device_command(cmd: &str, active_player: Option<&str>) {
     let _ = command.spawn();
 }
 
-pub fn spawn_art_http_server(cache: SharedArtCache) {
+/// Serves album art and staged firmware. Once the device has a token, art is
+/// encrypted (DESIGN.md Section 11.6); firmware is hash-checked instead.
+pub fn spawn_art_http_server(cache: SharedArtCache, state: SharedState) {
     thread::spawn(move || {
         let bind_addr = format!("0.0.0.0:{}", ART_HTTP_PORT);
         let listener = match TcpListener::bind(&bind_addr) {
@@ -346,6 +348,7 @@ pub fn spawn_art_http_server(cache: SharedArtCache) {
 
         for stream in listener.incoming().flatten() {
             let cache_ref = Arc::clone(&cache);
+            let token = state.lock().map(|g| g.config.device_token.clone()).unwrap_or_default();
             thread::spawn(move || {
                 let mut stream = stream;
                 let _ = stream.set_read_timeout(Some(Duration::from_millis(1000)));
@@ -365,6 +368,12 @@ pub fn spawn_art_http_server(cache: SharedArtCache) {
                             .ok()
                             .and_then(|g| g.get(hash_clean).map(|e| e.rgb565_le.clone()));
 
+                        let bytes_opt = match bytes_opt {
+                            Some(b) if !token.is_empty() => {
+                                crate::auth::seal_blob(&token, &format!("art:{hash_clean}"), &b)
+                            }
+                            other => other,
+                        };
                         if let Some(bytes) = bytes_opt {
                             let header = format!(
                                 "HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",

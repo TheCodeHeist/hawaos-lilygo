@@ -145,6 +145,22 @@ Result open(uint64_t n, const char *ivB64, const char *ctB64, char *out,
   return Result::Ok;
 }
 
+bool openInPlace(const char *aad, const uint8_t iv[12], uint8_t *buf,
+                 size_t len, const uint8_t tag[16]) {
+  load();
+  if (!s_hasKey || aad == nullptr || buf == nullptr)
+    return false;
+  mbedtls_gcm_context gcm;
+  mbedtls_gcm_init(&gcm);
+  const bool ok =
+      mbedtls_gcm_setkey(&gcm, MBEDTLS_CIPHER_ID_AES, s_keyIn, 256) == 0 &&
+      mbedtls_gcm_auth_decrypt(&gcm, len, iv, kIvLen,
+                               reinterpret_cast<const uint8_t *>(aad),
+                               strlen(aad), tag, kTagLen, buf, buf) == 0;
+  mbedtls_gcm_free(&gcm);
+  return ok;
+}
+
 void persist() {
   load();
   if (s_lastN > Settings::getAuthCounter()) {
