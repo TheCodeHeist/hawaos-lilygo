@@ -139,6 +139,14 @@ void updateWeather(const WeatherSnapshot &ws) {
   }
 }
 
+void setBleConnected(bool connected) {
+  if (s_mutex != nullptr &&
+      xSemaphoreTake(s_mutex, pdMS_TO_TICKS(20)) == pdTRUE) {
+    s_data.bleConnected = connected;
+    xSemaphoreGive(s_mutex);
+  }
+}
+
 void updateWifi(bool connected, int8_t rssi, const char *ssid, const char *ip) {
   if (s_mutex != nullptr &&
       xSemaphoreTake(s_mutex, pdMS_TO_TICKS(20)) == pdTRUE) {

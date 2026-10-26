@@ -5,6 +5,7 @@
 #include "core/Settings.h"
 #include "services/BleLink.h"
 #include "services/CompanionAuth.h"
+#include <mbedtls/base64.h>
 #include "services/NtpService.h"
 #include "services/OtaService.h"
 #include "services/SetupService.h"
@@ -38,12 +39,25 @@ uint16_t s_rxPort = 0;
 
 char s_rxBuf[1460] = {0};
 char s_serialLine[1024] = {0};
-char s_bleLine[1024] = {0};
+char s_bleLine[1460] = {0};
 size_t s_serialLen = 0;
 
 char s_pendingArtHash[16] = {0};
 char s_loadedArtHash[16] = {0};
 uint32_t s_lastArtAttemptMs = 0;
+// Art pushed in art_data chunks (BLE, USB): iv and tag land here, the
+// ciphertext straight in the art buffer.
+size_t s_pushGot = 0;
+uint8_t s_pushIv[12];
+uint8_t s_pushTag[16];
+// Last sealed message over the everyday Bluetooth link, and last stats over
+// USB (isLinked()).
+volatile uint32_t s_lastBleRxMs = 0;
+volatile uint32_t s_lastUsbStatsMs = 0;
+// Failed art loads for the pending hash; gives up after a few (finishArt).
+uint8_t s_artFailures = 0;
+// A link-mode change applies shortly after its config_ack goes out.
+uint32_t s_linkApplyAtMs = 0;
 
 SemaphoreHandle_t s_txMutex = nullptr;
 char s_pendingCmd[24] = {0};
@@ -98,23 +112,24 @@ void postSettingsChanged() {
 void sendJsonPacket(const char *jsonStr) {
   if (jsonStr == nullptr)
     return;
-  if (s_hasCompanionPeer && WiFi.status() == WL_CONNECTED) {
-    // Encrypted once paired (DESIGN.md Section 11.6); USB and BLE stay plain.
-    static char sealed[1460];
-    const char *pkt = jsonStr;
-    if (CompanionAuth::hasToken()) {
-      pkt = CompanionAuth::seal(jsonStr, sealed, sizeof(sealed)) ? sealed
-                                                                 : nullptr;
-    }
-    if (pkt != nullptr) {
-      s_udp.beginPacket(s_companionIp, s_companionPort);
-      s_udp.write(reinterpret_cast<const uint8_t *>(pkt), strlen(pkt));
-      s_udp.endPacket();
-    }
+  // Encrypted once paired (DESIGN.md Section 11.6): UDP always, BLE outside
+  // setup (the setup protocol has its own pairing). USB stays plain.
+  const bool paired = CompanionAuth::hasToken();
+  const bool udp = s_hasCompanionPeer && WiFi.status() == WL_CONNECTED;
+  const bool ble = BleLink::isConnected();
+  const bool sealBle = ble && paired && !SetupService::isActive();
+  static char sealed[1460];
+  const bool haveSealed = paired && (udp || sealBle) &&
+                          CompanionAuth::seal(jsonStr, sealed, sizeof(sealed));
+  if (udp && (!paired || haveSealed)) {
+    const char *pkt = paired ? sealed : jsonStr;
+    s_udp.beginPacket(s_companionIp, s_companionPort);
+    s_udp.write(reinterpret_cast<const uint8_t *>(pkt), strlen(pkt));
+    s_udp.endPacket();
   }
   Serial.println(jsonStr);
-  if (BleLink::isConnected()) {
-    BleLink::send(jsonStr);
+  if (ble && (!sealBle || haveSealed)) {
+    BleLink::send(sealBle ? sealed : jsonStr);
   }
 }
 
@@ -159,21 +174,115 @@ bool changesDevice(const char *type) {
 
 // Answered to the sender, not the trusted peer, so junk from elsewhere on
 // the LAN can't flood the companion with errors.
-void replyAuthError(const char *reason, const char *forType) {
-  Serial.printf("[CompanionLink] UDP: refused '%s' (%s)\n", forType, reason);
+void replyAuthError(Link link, const char *reason, const char *forType) {
+  Serial.printf("[CompanionLink] %s: refused '%s' (%s)\n",
+                link == Link::Ble ? "BLE" : "UDP", forType, reason);
   JsonDocument out;
   out["type"] = "auth_error";
   out["reason"] = reason;
   out["for"] = forType;
   char buf[128];
   const size_t n = serializeJson(out, buf, sizeof(buf));
+  if (link == Link::Ble) {
+    BleLink::send(buf);
+    return;
+  }
   s_udp.beginPacket(s_rxIp, s_rxPort);
   s_udp.write(reinterpret_cast<const uint8_t *>(buf), n);
   s_udp.endPacket();
 }
 
+// Paired: art arrives as iv || ciphertext || tag (DESIGN.md Section 11.6).
+size_t artWireBytes() {
+  return DataStore::ALBUM_ART_BYTES +
+         (CompanionAuth::hasToken() ? sizeof(s_pushIv) + sizeof(s_pushTag) : 0);
+}
+
+// Decrypts the art buffer if paired and publishes it, or forgets it.
+void finishArt(bool complete, const uint8_t *iv, const uint8_t *tag) {
+  uint16_t *artBuf = DataStore::albumArtBuffer();
+  bool authentic = complete && artBuf != nullptr;
+  if (authentic && CompanionAuth::hasToken()) {
+    char aad[24];
+    snprintf(aad, sizeof(aad), "art:%s", s_pendingArtHash);
+    authentic = CompanionAuth::openInPlace(aad, iv,
+                                           reinterpret_cast<uint8_t *>(artBuf),
+                                           DataStore::ALBUM_ART_BYTES, tag);
+  }
+  if (authentic) {
+    s_artFailures = 0;
+    strncpy(s_loadedArtHash, s_pendingArtHash, sizeof(s_loadedArtHash) - 1);
+    s_loadedArtHash[sizeof(s_loadedArtHash) - 1] = '\0';
+    DataStore::setAlbumArtReady(s_loadedArtHash, true);
+    s_pendingArtHash[0] = '\0';
+    Serial.printf("[CompanionLink] Pulled 128x128 RGB565 art (%s)\n",
+                  s_loadedArtHash);
+    postDataUpdated();
+  } else {
+    // The buffer no longer holds the art it was loaded with.
+    s_loadedArtHash[0] = '\0';
+    Serial.printf("[CompanionLink] Art %s (%s)\n",
+                  complete ? "failed authentication" : "read truncated",
+                  s_pendingArtHash);
+    // A key mismatch fails the same way every time: stop asking.
+    if (++s_artFailures >= 3) {
+      s_artFailures = 0;
+      s_pendingArtHash[0] = '\0';
+      Serial.println("[CompanionLink] Giving up on this art");
+    }
+  }
+}
+
+// art_data {hash, off, b64}: in-order pieces of the wire blob, pushed where
+// the device can't pull over HTTP (art_req).
+void handleArtData(JsonDocument &doc) {
+  uint8_t *art = reinterpret_cast<uint8_t *>(DataStore::albumArtBuffer());
+  if (art == nullptr || s_pendingArtHash[0] == '\0' ||
+      strcmp(doc["hash"] | "", s_pendingArtHash) != 0) {
+    return;
+  }
+  const size_t off = doc["off"] | 0U;
+  if (off == 0) {
+    s_pushGot = 0;
+  } else if (off != s_pushGot) {
+    s_pushGot = 0; // a piece went missing; the next art_req starts over
+    return;
+  }
+  const char *b64 = doc["b64"] | "";
+  uint8_t chunk[768];
+  size_t n = 0;
+  const size_t wire = artWireBytes();
+  if (mbedtls_base64_decode(chunk, sizeof(chunk), &n,
+                            reinterpret_cast<const uint8_t *>(b64),
+                            strlen(b64)) != 0 ||
+      off + n > wire) {
+    s_pushGot = 0;
+    return;
+  }
+  const size_t ivLen = CompanionAuth::hasToken() ? sizeof(s_pushIv) : 0;
+  for (size_t i = 0; i < n; ++i) {
+    const size_t at = off + i;
+    if (at < ivLen) {
+      s_pushIv[at] = chunk[i];
+    } else if (at < ivLen + DataStore::ALBUM_ART_BYTES) {
+      art[at - ivLen] = chunk[i];
+    } else {
+      s_pushTag[at - ivLen - DataStore::ALBUM_ART_BYTES] = chunk[i];
+    }
+  }
+  s_pushGot = off + n;
+  s_lastArtAttemptMs = millis(); // progress: don't ask again mid-transfer
+  if (s_pushGot == wire) {
+    s_pushGot = 0;
+    finishArt(true, s_pushIv, s_pushTag);
+  }
+}
+
 // First-run setup messages (DESIGN.md Section 11.4). Returns true if handled.
-bool handleSetupMessage(const char *type, JsonDocument &doc, Link link) {
+bool handleSetupMessage(const char *type, JsonDocument &doc, Link link,
+                        bool trusted) {
+  // Plain BLE is the setup session: no WiFi or firmware over it.
+  const bool plainBle = (link == Link::Ble && !trusted);
   if (strcmp(type, "wifi_scan") == 0) {
     WifiService::requestScan();
     return true;
@@ -245,7 +354,7 @@ bool handleSetupMessage(const char *type, JsonDocument &doc, Link link) {
     memset(plain, 0, sizeof(plain));
     return true;
   }
-  if (strcmp(type, "ota") == 0 && link != Link::Ble) {
+  if (strcmp(type, "ota") == 0 && !plainBle) {
     const char *sha = doc["sha256"] | "";
     const uint32_t size = doc["size"] | 0U;
     const char *err = nullptr;
@@ -265,7 +374,7 @@ bool handleSetupMessage(const char *type, JsonDocument &doc, Link link) {
     }
     return true;
   }
-  if (strcmp(type, "wifi_join") == 0 && link != Link::Ble) {
+  if (strcmp(type, "wifi_join") == 0 && !plainBle) {
     const char *ssid = doc["ssid"] | "";
     if (ssid[0] != '\0') {
       WifiService::reconfigure(ssid, doc["pass"] | "");
@@ -285,40 +394,60 @@ void handleJsonMessage(const char *payload, size_t len, Link link,
   }
 
   const char *type = doc["type"] | "";
-  if (link == Link::Ble && !allowedOverBle(type)) {
-    Serial.printf("[CompanionLink] BLE: ignored '%s' (not paired)\n", type);
+  // Everyday Bluetooth (DESIGN.md Section 11.7) follows the UDP rules.
+  const bool bleEveryday = link == Link::Ble && !SetupService::isActive() &&
+                           CompanionAuth::hasToken();
+  if (!trusted && (link == Link::Udp || bleEveryday) &&
+      strcmp(type, "sealed") == 0) {
+    // With a token, network traffic is encrypted (DESIGN.md Section 11.6).
+    static char plain[1200];
+    switch (CompanionAuth::open(doc["n"] | 0ULL, doc["iv"] | "",
+                                doc["ct"] | "", plain, sizeof(plain))) {
+    case CompanionAuth::Result::Ok:
+      handleJsonMessage(plain, strlen(plain), link, true);
+      break;
+    case CompanionAuth::Result::Stale:
+      replyAuthError(link, "stale", type);
+      break;
+    case CompanionAuth::Result::BadMac:
+      replyAuthError(link, "bad_mac", type);
+      break;
+    }
     return;
   }
-  if (link == Link::Udp) {
-    // With a token, everything over UDP is encrypted (DESIGN.md Section 11.6).
-    if (strcmp(type, "sealed") == 0) {
-      if (trusted)
-        return; // no nesting
-      static char plain[1200];
-      switch (CompanionAuth::open(doc["n"] | 0ULL, doc["iv"] | "",
-                                  doc["ct"] | "", plain, sizeof(plain))) {
-      case CompanionAuth::Result::Ok:
-        handleJsonMessage(plain, strlen(plain), Link::Udp, true);
-        break;
-      case CompanionAuth::Result::Stale:
-        replyAuthError("stale", type);
-        break;
-      case CompanionAuth::Result::BadMac:
-        replyAuthError("bad_mac", type);
-        break;
+  if (link == Link::Ble) {
+    if (bleEveryday) {
+      if (setupOnly(type)) {
+        replyAuthError(link, "setup_only", type);
+        return;
       }
+      // Art chunks are pieces of an encrypted blob, checked when complete.
+      if (!trusted && strcmp(type, "art_data") != 0) {
+        replyAuthError(link, "plaintext", type);
+        return;
+      }
+    } else if (!allowedOverBle(type)) {
+      Serial.printf("[CompanionLink] BLE: ignored '%s' (not paired)\n", type);
       return;
     }
+  }
+  if (trusted && changesDevice(type)) {
+    CompanionAuth::persist();
+  }
+  if (trusted && link == Link::Ble) {
+    s_lastBleRxMs = millis() | 1;
+  }
+  if (viaUsb && strcmp(type, "stats") == 0) {
+    s_lastUsbStatsMs = millis() | 1;
+  }
+  if (link == Link::Udp) {
     if (setupOnly(type)) {
-      replyAuthError("setup_only", type);
+      replyAuthError(link, "setup_only", type);
       return;
     }
     if (!trusted && CompanionAuth::hasToken()) {
-      replyAuthError("plaintext", type);
+      replyAuthError(link, "plaintext", type);
       return;
-    }
-    if (trusted && changesDevice(type)) {
-      CompanionAuth::persist();
     }
     // Trusted from here: this is where replies and media commands go.
     s_companionIp = s_rxIp;
@@ -337,12 +466,17 @@ void handleJsonMessage(const char *payload, size_t len, Link link,
     }
   }
 
-  if (handleSetupMessage(type, doc, link)) {
+  if (handleSetupMessage(type, doc, link, trusted)) {
     return;
   }
 
   if (strcmp(type, "query") == 0) {
     sendConfigAck(Settings::getConfigVersion());
+    return;
+  }
+
+  if (strcmp(type, "art_data") == 0) {
+    handleArtData(doc);
     return;
   }
 
@@ -428,6 +562,7 @@ void handleJsonMessage(const char *payload, size_t len, Link link,
       if (strncmp(artHash, s_loadedArtHash, sizeof(s_loadedArtHash)) == 0) {
         DataStore::setAlbumArtReady(artHash, true);
       } else {
+        s_artFailures = 0;
         strncpy(s_pendingArtHash, artHash, sizeof(s_pendingArtHash) - 1);
         s_pendingArtHash[sizeof(s_pendingArtHash) - 1] = '\0';
       }
@@ -593,8 +728,8 @@ void handleJsonMessage(const char *payload, size_t len, Link link,
     } else if (doc["orientation_inverted"].is<bool>()) {
       Settings::setOrientationInverted(doc["orientation_inverted"].as<bool>());
     }
-    if (link == Link::Ble) {
-      // WiFi over BLE only travels encrypted (wifi_creds).
+    if (link == Link::Ble && !trusted) {
+      // WiFi over the BLE setup session only travels as wifi_creds.
     } else if (doc["forget_wifi"].is<bool>() && doc["forget_wifi"].as<bool>()) {
       WifiService::forgetWifi();
     } else if (doc["wifi_ssid"].is<const char *>() &&
@@ -603,6 +738,22 @@ void handleJsonMessage(const char *payload, size_t len, Link link,
       const char *newPass = doc["wifi_pass"];
       if (newSsid[0] != '\0') {
         WifiService::reconfigure(newSsid, newPass);
+      }
+    }
+
+    // Link mode (DESIGN.md Section 11.7). Bluetooth needs the token: its
+    // everyday traffic is sealed with it.
+    if (doc["link"].is<const char *>()) {
+      const LinkMode want = strcmp(doc["link"], "ble") == 0 ? LinkMode::Ble
+                                                            : LinkMode::Wifi;
+      // Wi-Fi mode without a saved network would strand the device (USB only).
+      char ssid[33] = {0};
+      Settings::getWifiSsid(ssid, sizeof(ssid));
+      const bool ok = want == LinkMode::Wifi ? ssid[0] != '\0'
+                                             : CompanionAuth::hasToken();
+      if (want != Settings::getLinkMode() && ok) {
+        Settings::setLinkMode(want);
+        s_linkApplyAtMs = millis() | 1;
       }
     }
 
@@ -626,7 +777,22 @@ void fetchPendingAlbumArt() {
   }
 
   const uint32_t nowMs = millis();
-  if (!s_hasCompanionPeer || WiFi.status() != WL_CONNECTED) {
+  // Without HTTP (Bluetooth or USB), ask the companion to push it.
+  const bool canPull = s_hasCompanionPeer && WiFi.status() == WL_CONNECTED;
+  const bool canPush =
+      (BleLink::isConnected() && !SetupService::isActive()) || s_lastRxViaUsb;
+  if (!canPull && canPush) {
+    if (nowMs - s_lastArtAttemptMs < 5000)
+      return;
+    s_lastArtAttemptMs = nowMs;
+    s_pushGot = 0;
+    char req[64];
+    snprintf(req, sizeof(req), "{\"type\":\"art_req\",\"hash\":\"%s\"}",
+             s_pendingArtHash);
+    sendJsonPacket(req);
+    return;
+  }
+  if (!canPull) {
     static uint32_t s_lastArtDiagMs = 0;
     if (nowMs - s_lastArtDiagMs >= 3000) {
       s_lastArtDiagMs = nowMs;
@@ -663,8 +829,7 @@ void fetchPendingAlbumArt() {
   const bool sealedArt = CompanionAuth::hasToken();
   constexpr size_t kIv = 12;
   constexpr size_t kTag = 16;
-  const size_t wireBytes =
-      DataStore::ALBUM_ART_BYTES + (sealedArt ? kIv + kTag : 0);
+  const size_t wireBytes = artWireBytes();
 
   const int code = http.GET();
   if (code == HTTP_CODE_OK &&
@@ -694,30 +859,7 @@ void fetchPendingAlbumArt() {
         readExact(dst, DataStore::ALBUM_ART_BYTES) ==
             DataStore::ALBUM_ART_BYTES &&
         (!sealedArt || readExact(tag, kTag) == kTag);
-
-    bool authentic = complete;
-    if (complete && sealedArt) {
-      char aad[24];
-      snprintf(aad, sizeof(aad), "art:%s", s_pendingArtHash);
-      authentic = CompanionAuth::openInPlace(aad, iv, dst,
-                                             DataStore::ALBUM_ART_BYTES, tag);
-    }
-
-    if (authentic) {
-      strncpy(s_loadedArtHash, s_pendingArtHash, sizeof(s_loadedArtHash) - 1);
-      s_loadedArtHash[sizeof(s_loadedArtHash) - 1] = '\0';
-      DataStore::setAlbumArtReady(s_loadedArtHash, true);
-      s_pendingArtHash[0] = '\0';
-      Serial.printf("[CompanionLink] Pulled 128x128 RGB565 art (%s)\n",
-                    s_loadedArtHash);
-      postDataUpdated();
-    } else {
-      // The buffer no longer holds the art it was loaded with.
-      s_loadedArtHash[0] = '\0';
-      Serial.printf("[CompanionLink] Art %s (%s)\n",
-                    complete ? "failed authentication" : "read truncated",
-                    s_pendingArtHash);
-    }
+    finishArt(complete, iv, tag);
   } else {
     Serial.printf("[CompanionLink] Art GET failed: %s code=%d size=%d\n", url,
                   code, http.getSize());
@@ -796,7 +938,8 @@ void flushPendingOutbound() {
              "\"ssid\":\"%s\",\"theme\":\"%s\",\"accent\":\"%s\","
              "\"brightness\":%u,\"aod\":%s,"
              "\"aod_timeout_s\":%u,\"reduce_motion\":%s,\"wallpaper\":\"%s\","
-             "\"use_24h\":%s,\"notify_popup\":%s,\"orientation\":\"%s\"}",
+             "\"use_24h\":%s,\"notify_popup\":%s,\"orientation\":\"%s\","
+             "\"link\":\"%s\"}",
              SetupService::deviceId(), Config::DEVICE_MODEL, Config::FW_VERSION,
              Settings::isSetupDone() ? "false" : "true",
              static_cast<unsigned long>(ackVer), ipStr.c_str(),
@@ -808,7 +951,8 @@ void flushPendingOutbound() {
              Settings::getReduceMotion() ? "true" : "false", wpStr,
              Settings::getUse24Hour() ? "true" : "false",
              Settings::getNotifyPopupEnabled() ? "true" : "false",
-             orientStr);
+             orientStr,
+             Settings::getLinkMode() == LinkMode::Ble ? "ble" : "wifi");
     sendJsonPacket(buf);
   }
 }
@@ -851,6 +995,11 @@ void begin() {
 }
 
 void poll() {
+  if (s_linkApplyAtMs != 0 && millis() - s_linkApplyAtMs >= 1500) {
+    s_linkApplyAtMs = 0;
+    SetupService::applyLinkMode();
+    WifiService::applyLinkMode();
+  }
   pollUsbSerial();
   while (BleLink::popLine(s_bleLine, sizeof(s_bleLine))) {
     if (s_bleLine[0] == '{') {
@@ -891,6 +1040,7 @@ void poll() {
       s_udpStarted = false;
     }
     flushPendingOutbound();
+    fetchPendingAlbumArt(); // pushed over Bluetooth or USB (art_req)
   }
 }
 
@@ -927,6 +1077,18 @@ void sendConfigAck(uint32_t version) {
     s_hasPendingAck = true;
     xSemaphoreGive(s_txMutex);
   }
+}
+
+bool isLinked() {
+  if (Settings::getLinkMode() != LinkMode::Ble)
+    return true;
+  // Stats arrive every second; a few missed means the companion is gone.
+  // Stats over the USB cable count too.
+  const uint32_t now = millis();
+  const bool usb = s_lastUsbStatsMs != 0 && now - s_lastUsbStatsMs < 8000;
+  const bool ble = BleLink::isConnected() && s_lastBleRxMs != 0 &&
+                   now - s_lastBleRxMs < 8000;
+  return usb || ble;
 }
 
 bool hasPeer() { return s_hasCompanionPeer || s_lastRxViaUsb; }

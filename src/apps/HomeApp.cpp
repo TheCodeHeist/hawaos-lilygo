@@ -230,7 +230,12 @@ void HomeApp::refreshDashboard(const DataSnapshot &d) {
     Theme::setFocusRing(m_mediaChip, false);
     lv_obj_set_style_text_color(m_mediaTextLbl, lv_color_hex(p.textDim),
                                 LV_PART_MAIN);
-    if (d.wifiConnected) {
+    if (Settings::getLinkMode() == LinkMode::Ble) {
+      // Wi-Fi is off on purpose in Bluetooth mode.
+      snprintf(chipText, sizeof(chipText), "%s",
+               d.bleConnected ? "Linked over Bluetooth"
+                              : "Waiting for the companion (Bluetooth)");
+    } else if (d.wifiConnected) {
       snprintf(chipText, sizeof(chipText), "%s \u00b7 %s", d.wifiSsid,
                d.wifiIp);
     } else if (d.wifiSsid[0] != '\0') {

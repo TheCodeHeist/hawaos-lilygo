@@ -3,6 +3,7 @@ mod media;
 mod models;
 mod notifications;
 mod auth;
+mod ble_daemon;
 mod ota;
 mod protocol;
 mod setup;
@@ -41,6 +42,7 @@ fn main() {
 
     spawn_art_http_server(Arc::clone(&art_cache), Arc::clone(&state));
     spawn_daemon_worker(Arc::clone(&state), Arc::clone(&art_cache));
+    ble_daemon::spawn(Arc::clone(&state));
     spawn_notification_listener(Arc::clone(&state));
     spawn_system_tray(Arc::clone(&state));
 

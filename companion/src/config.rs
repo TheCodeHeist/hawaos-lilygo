@@ -52,8 +52,10 @@ pub struct CompanionConfig {
     /// Device added with the setup wizard ("" until one is).
     pub device_id: String,
     pub device_name: String,
-    /// Secret given to the device at setup; signs network firmware updates.
+    /// Secret given to the device at setup; keys the encrypted network link.
     pub device_token: String,
+    /// Everyday link is Bluetooth instead of Wi-Fi (DESIGN.md Section 11.7).
+    pub use_ble: bool,
 }
 
 impl Default for CompanionConfig {
@@ -85,6 +87,7 @@ impl Default for CompanionConfig {
             device_id: String::new(),
             device_name: String::new(),
             device_token: String::new(),
+            use_ble: false,
         }
     }
 }

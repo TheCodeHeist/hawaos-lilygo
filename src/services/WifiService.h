@@ -21,4 +21,11 @@ void forceReconnect();
 
 bool isConnected();
 
+// Re-reads Settings' link mode: in Bluetooth mode Wi-Fi is off but the saved
+// network is kept.
+void applyLinkMode();
+
+// Turns Wi-Fi on in Bluetooth mode while a firmware update needs it.
+void holdForUpdate(bool hold);
+
 } // namespace WifiService

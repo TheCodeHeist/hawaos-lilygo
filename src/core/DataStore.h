@@ -161,6 +161,7 @@ uint32_t getTimerRemainingMs(uint32_t nowMs);
 bool isClockToolRunning();
 
 void updateWifi(bool connected, int8_t rssi, const char *ssid, const char *ip);
+void setBleConnected(bool connected);
 void updateNtp(bool synced);
 void pushNotification(const char *app, const char *title, const char *body,
                       uint32_t ts);

@@ -21,21 +21,28 @@ impl CompanionWindowView {
         compact: bool,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
-        let (target_ip, connected, stream_usb, dark_ui) = if let Ok(g) = self.state.lock() {
+        let (target_ip, connected, stream_usb, dark_ui, use_ble) = if let Ok(g) = self.state.lock() {
             let recent = g
                 .last_ack_instant
                 .map(|t| t.elapsed() < Duration::from_secs(120))
                 .unwrap_or(false);
+            let ble = g.config.use_ble;
             (
-                g.device_reported_ip
-                    .clone()
-                    .unwrap_or_else(|| g.config.target_ip.clone()),
-                recent,
+                // In Bluetooth mode, the device's name stands in for its address.
+                if ble {
+                    g.config.device_name.clone()
+                } else {
+                    g.device_reported_ip
+                        .clone()
+                        .unwrap_or_else(|| g.config.target_ip.clone())
+                },
+                if ble { g.ble_connected } else { recent },
                 g.config.stream_via_usb,
                 g.config.companion_dark_mode,
+                ble,
             )
         } else {
-            (DEFAULT_DEVICE_IP.to_string(), false, false, true)
+            (DEFAULT_DEVICE_IP.to_string(), false, false, true, false)
         };
 
         let active = self.active_section;
@@ -200,11 +207,11 @@ impl CompanionWindowView {
                             .truncate()
                             .text_xs()
                             .text_color(pal.text_dim)
-                            .child(format!(
-                                "{} · {}",
-                                target_ip,
-                                if stream_usb { "WiFi + USB" } else { "WiFi" }
-                            )),
+                            .child(if use_ble {
+                                format!("{} · Bluetooth", target_ip)
+                            } else {
+                                format!("{} · {}", target_ip, if stream_usb { "WiFi + USB" } else { "WiFi" })
+                            }),
                     )
                     .into_any_element()
             })

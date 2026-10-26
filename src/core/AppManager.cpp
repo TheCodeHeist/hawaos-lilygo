@@ -296,13 +296,19 @@ void refreshControlCenterTiles() {
   lv_label_set_text(s_ccTitleLbls[1], "Theme");
   lv_label_set_text(s_ccValLbls[1], dark ? "Dark" : "Light");
 
-  // Tile 2: Connection (WiFi / USB state, Select = reconnect)
-  lv_label_set_text(s_ccIcons[2], d.wifiConnected ? ICON_WIFI : ICON_WIFI_OFF);
+  // Tile 2: Connection (WiFi / Bluetooth / USB state, Select = reconnect)
   lv_label_set_text(s_ccTitleLbls[2], "Connection");
-  lv_label_set_text(s_ccValLbls[2],
-                    d.wifiConnected
-                        ? "WiFi OK"
-                        : (d.wifiSsid[0] ? "Reconnect" : "Use Companion"));
+  if (Settings::getLinkMode() == LinkMode::Ble) {
+    lv_label_set_text(s_ccIcons[2],
+                      d.bleConnected ? ICON_BLUETOOTH : ICON_BLUETOOTH_OFF);
+    lv_label_set_text(s_ccValLbls[2], d.bleConnected ? "Bluetooth" : "Waiting");
+  } else {
+    lv_label_set_text(s_ccIcons[2], d.wifiConnected ? ICON_WIFI : ICON_WIFI_OFF);
+    lv_label_set_text(s_ccValLbls[2],
+                      d.wifiConnected
+                          ? "WiFi OK"
+                          : (d.wifiSsid[0] ? "Reconnect" : "Use Companion"));
+  }
 
   // Tile 3: AOD (Enter AOD now)
   lv_label_set_text(s_ccIcons[3], ICON_CLOCK);
@@ -1271,6 +1277,68 @@ bool activeAppWantsDouble(Button b) {
   return false;
 }
 
+// --- "Not connected" box over apps that need the companion (Bluetooth mode) ---
+lv_obj_t *s_awayOverlay = nullptr;
+
+void refreshCompanionOverlay() {
+  App *app = (s_viewState == ViewState::InApp && s_activeAppIdx >= 0 &&
+              static_cast<size_t>(s_activeAppIdx) < s_appCount)
+                 ? s_apps[s_activeAppIdx]
+                 : nullptr;
+  const bool show = app != nullptr && app->needsCompanion() &&
+                    s_otaOverlay == nullptr && !CompanionLink::isLinked();
+  static App *s_coveredApp = nullptr;
+  if (!show || s_coveredApp != app) {
+    if (s_awayOverlay != nullptr) {
+      lv_obj_del(s_awayOverlay);
+      s_awayOverlay = nullptr;
+    }
+    s_coveredApp = nullptr;
+  }
+  if (!show || s_awayOverlay != nullptr)
+    return;
+
+  // Covers the app's content (and keeps the status bar visible if it has one).
+  const ThemeTokens::Palette &p = Theme::active();
+  const int16_t top = app->hidesStatusBar() ? 0 : Config::STATUS_BAR_HEIGHT;
+  const int16_t h = Config::LCD_VER_RES - top;
+  s_coveredApp = app;
+  s_awayOverlay = lv_obj_create(lv_layer_top());
+  lv_obj_set_size(s_awayOverlay, Config::LCD_HOR_RES, h);
+  lv_obj_set_pos(s_awayOverlay, 0, top);
+  lv_obj_set_style_bg_color(s_awayOverlay, lv_color_hex(p.bg), LV_PART_MAIN);
+  lv_obj_set_style_bg_opa(s_awayOverlay, LV_OPA_COVER, LV_PART_MAIN);
+  lv_obj_set_style_border_width(s_awayOverlay, 0, LV_PART_MAIN);
+  lv_obj_set_style_radius(s_awayOverlay, 0, LV_PART_MAIN);
+  lv_obj_set_style_pad_all(s_awayOverlay, 0, LV_PART_MAIN);
+  lv_obj_clear_flag(s_awayOverlay, LV_OBJ_FLAG_SCROLLABLE);
+
+  constexpr int16_t kCardW = 236;
+  constexpr int16_t kCardH = 112;
+  lv_obj_t *card = Theme::createCard(s_awayOverlay, kCardW, kCardH,
+                                     (Config::LCD_HOR_RES - kCardW) / 2,
+                                     (h - kCardH) / 2);
+  lv_obj_clear_flag(card, LV_OBJ_FLAG_SCROLLABLE);
+
+  lv_obj_t *icon = lv_label_create(card);
+  lv_label_set_text(icon, ICON_BLUETOOTH_OFF);
+  lv_obj_set_style_text_font(icon, Theme::iconFont32(), LV_PART_MAIN);
+  lv_obj_set_style_text_color(icon, lv_color_hex(p.textDim), LV_PART_MAIN);
+  lv_obj_align(icon, LV_ALIGN_TOP_MID, 0, 10);
+
+  lv_obj_t *title = lv_label_create(card);
+  lv_label_set_text(title, "Not connected");
+  lv_obj_set_style_text_font(title, Theme::fontTitle(), LV_PART_MAIN);
+  lv_obj_set_style_text_color(title, lv_color_hex(p.text), LV_PART_MAIN);
+  lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 50);
+
+  lv_obj_t *sub = lv_label_create(card);
+  lv_label_set_text(sub, "Waiting for the companion");
+  lv_obj_set_style_text_font(sub, Theme::fontCaption(), LV_PART_MAIN);
+  lv_obj_set_style_text_color(sub, lv_color_hex(p.textDim), LV_PART_MAIN);
+  lv_obj_align(sub, LV_ALIGN_TOP_MID, 0, 76);
+}
+
 void refreshOtaOverlay() {
   const OtaService::Progress pr = OtaService::progress();
   if (pr.state == OtaService::State::Idle) {
@@ -1357,6 +1425,7 @@ void refreshOtaOverlay() {
 void tick(uint32_t nowMs) {
   DataStore::tickClock(nowMs);
   refreshOtaOverlay();
+  refreshCompanionOverlay();
   if (s_otaOverlay != nullptr) {
     s_lastInputMs = nowMs; // no AOD mid-update
   }

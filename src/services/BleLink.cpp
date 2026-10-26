@@ -1,5 +1,7 @@
 #include "services/BleLink.h"
 #include "config.h"
+#include "core/DataStore.h"
+#include "core/EventBus.h"
 #include "services/SetupService.h"
 
 #include <Arduino.h>
@@ -12,8 +14,8 @@ namespace BleLink {
 
 namespace {
 
-constexpr size_t kRxBufferBytes = 2048;
-constexpr size_t kLineMax = 1024;
+constexpr size_t kRxBufferBytes = 8192; // art arrives in bursts
+constexpr size_t kLineMax = 1460; // a sealed message, like one UDP datagram
 
 NimBLEServer *s_server = nullptr;
 NimBLECharacteristic *s_tx = nullptr;
@@ -27,17 +29,34 @@ volatile uint16_t s_mtu = 23;
 char s_line[kLineMax] = {0};
 size_t s_lineLen = 0;
 
+void postConnection(bool connected) {
+  DataStore::setBleConnected(connected);
+  Event ev{};
+  ev.type = EventType::DataUpdated;
+  EventBus::post(ev);
+}
+
+std::string advData(bool paired) {
+  // Company 0xFFFF (testing), then 'H' and 1 for paired.
+  const char data[] = {'\xFF', '\xFF', 'H', paired ? '\x01' : '\x00'};
+  return std::string(data, sizeof(data));
+}
+
 class ServerCallbacks : public NimBLEServerCallbacks {
   void onConnect(NimBLEServer * /*server*/, ble_gap_conn_desc *desc) override {
     s_connHandle = desc->conn_handle;
     s_mtu = 23;
     s_connected = true;
+    // 7.5-15 ms intervals: album art takes seconds, not tens of them.
+    s_server->updateConnParams(desc->conn_handle, 6, 12, 0, 400);
     Serial.println("[BleLink] Companion connected");
+    postConnection(true);
   }
   void onDisconnect(NimBLEServer * /*server*/,
                     ble_gap_conn_desc * /*desc*/) override {
     s_connected = false;
     Serial.println("[BleLink] Companion disconnected");
+    postConnection(false);
     SetupService::onBleDisconnected();
   }
   void onMTUChange(uint16_t mtu, ble_gap_conn_desc * /*desc*/) override {
@@ -59,7 +78,7 @@ RxCallbacks s_rxCallbacks;
 
 } // namespace
 
-void start(const char *name) {
+void start(const char *name, bool paired) {
   if (NimBLEDevice::getInitialized())
     return;
   if (s_rx == nullptr) {
@@ -86,9 +105,23 @@ void start(const char *name) {
   // scan response.
   NimBLEAdvertising *adv = NimBLEDevice::getAdvertising();
   adv->addServiceUUID(Config::BLE_SERVICE_UUID);
+  adv->setManufacturerData(advData(paired));
   adv->setScanResponse(true);
   adv->start();
-  Serial.printf("[BleLink] Advertising as '%s'\n", name);
+  Serial.printf("[BleLink] Advertising as '%s' (%s)\n", name,
+                paired ? "paired" : "setup");
+}
+
+void setPaired(bool paired) {
+  if (!NimBLEDevice::getInitialized())
+    return;
+  NimBLEAdvertising *adv = NimBLEDevice::getAdvertising();
+  const bool wasAdvertising = adv->isAdvertising();
+  adv->stop();
+  adv->setManufacturerData(advData(paired));
+  if (wasAdvertising || !s_connected) {
+    adv->start();
+  }
 }
 
 void stop() {
@@ -98,6 +131,7 @@ void stop() {
   s_tx = nullptr;
   s_server = nullptr;
   NimBLEDevice::deinit(true);
+  postConnection(false);
 }
 
 bool isRunning() { return NimBLEDevice::getInitialized(); }

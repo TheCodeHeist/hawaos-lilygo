@@ -105,6 +105,8 @@ pub struct IncomingPacket {
     pub pct: Option<u8>,
     pub error: Option<String>,
     pub reason: Option<String>,
+    pub hash: Option<String>,
+    pub link: Option<String>,
     pub theme: Option<String>,
     pub accent: Option<String>,
     pub brightness: Option<u8>,
@@ -148,6 +150,16 @@ pub enum OutboundAction {
     StartOta {
         path: std::path::PathBuf,
     },
+    /// Switch the device's everyday link (DESIGN.md Section 11.7).
+    SetLink {
+        ble: bool,
+        /// When it was asked for: waits up to 15 s for a reconnecting link.
+        since: std::time::Instant,
+    },
+    /// Push album art to a device that can't pull it over HTTP (art_req).
+    SendArt {
+        hash: String,
+    },
     SendClockAction {
         action: String,
         duration_sec: u32,
@@ -169,6 +181,8 @@ pub struct SharedDaemonState {
     pub current_art_png: Option<Arc<Image>>,
     pub last_ack_version: Option<u32>,
     pub last_ack_instant: Option<Instant>,
+    /// When this process started (device_silence before the first ack).
+    pub started: Instant,
     pub device_reported_ip: Option<String>,
     pub device_wifi_connected: Option<bool>,
     pub available_ports: Vec<String>,
@@ -200,6 +214,10 @@ pub struct SharedDaemonState {
     /// One-shot message for the window's banner (taken when shown).
     pub notice: Option<String>,
     pub last_auth_notice: Option<std::time::Instant>,
+    /// The everyday Bluetooth link is up (ble_daemon.rs).
+    pub ble_connected: bool,
+    /// The device has a saved Wi-Fi network (from its last ack's `ssid`).
+    pub device_has_network: Option<bool>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -244,6 +262,7 @@ impl SharedDaemonState {
             current_art_png: None,
             last_ack_version: None,
             last_ack_instant: None,
+            started: Instant::now(),
             device_reported_ip: None,
             device_wifi_connected: None,
             available_ports: ports,
@@ -269,6 +288,8 @@ impl SharedDaemonState {
             ota: None,
             notice: None,
             last_auth_notice: None,
+            ble_connected: false,
+            device_has_network: None,
         }
     }
 
@@ -437,6 +458,13 @@ impl SharedDaemonState {
                 }
             }
         }
+    }
+
+    /// How long the device has been quiet: since its last ack, or since we
+    /// started. The worker queries every 20 s, so this stays small while the
+    /// link works; past 45 s the other transport gets probed (DESIGN.md 11.7).
+    pub fn device_silence(&self) -> std::time::Duration {
+        self.last_ack_instant.unwrap_or(self.started).elapsed()
     }
 
     pub fn push_log(&mut self, msg: impl Into<String>) {

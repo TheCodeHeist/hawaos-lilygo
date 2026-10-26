@@ -2,13 +2,16 @@
 
 #include <stddef.h>
 
-// BLE transport for first-run setup: one GATT service with an RX
-// characteristic (companion writes) and a TX characteristic (device
-// notifies), both carrying newline-delimited JSON like USB and UDP. Only runs
-// while SetupService is active; stop() frees the stack's memory.
+// BLE transport: one GATT service with an RX characteristic (companion
+// writes) and a TX characteristic (device notifies), both carrying
+// newline-delimited JSON like USB and UDP. Runs during setup and, in
+// Bluetooth link mode, all the time; stop() frees the stack's memory.
 namespace BleLink {
 
-void start(const char *name);
+// paired goes into the advertisement (manufacturer data 0xFFFF 'H' <0|1>) so
+// the companion can tell a device in setup from one already set up.
+void start(const char *name, bool paired);
+void setPaired(bool paired);
 void stop();
 bool isRunning();
 bool isConnected();

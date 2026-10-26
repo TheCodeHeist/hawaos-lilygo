@@ -171,7 +171,13 @@ pub async fn ble_devices(adapter: &Adapter) -> Result<Vec<(FoundDevice, Peripher
                 id,
                 name,
                 fw: None,
-                needs_setup: Some(true), // only advertises while in setup
+                // Manufacturer data 0xFFFF: 'H', then 1 once set up.
+                needs_setup: props
+                    .manufacturer_data
+                    .get(&0xFFFF)
+                    .filter(|d| d.len() >= 2 && d[0] == b'H')
+                    .map(|d| d[1] == 0)
+                    .or(Some(true)), // older firmware only advertised in setup
                 rssi: props.rssi,
                 endpoint: Endpoint::Ble(p.id().to_string()),
             },
@@ -186,6 +192,7 @@ pub struct BleLink {
     peripheral: Peripheral,
     rx: Characteristic,
     lines: UnboundedReceiver<String>,
+    write_type: WriteType,
 }
 
 impl BleLink {
@@ -226,7 +233,14 @@ impl BleLink {
                 }
             }
         });
-        Ok(Self { peripheral, rx, lines })
+        Ok(Self { peripheral, rx, lines, write_type: WriteType::WithResponse })
+    }
+
+    /// Write without response: the link layer still acknowledges each packet,
+    /// but no round trip per write. For the everyday link's throughput.
+    pub fn fast(mut self) -> Self {
+        self.write_type = WriteType::WithoutResponse;
+        self
     }
 }
 
@@ -250,13 +264,19 @@ impl Link {
                 let chunk = (b.peripheral.mtu() as usize).saturating_sub(3).clamp(20, 240);
                 for piece in data.chunks(chunk) {
                     b.peripheral
-                        .write(&b.rx, piece, WriteType::WithResponse)
+                        .write(&b.rx, piece, b.write_type)
                         .await
                         .map_err(|e| format!("Bluetooth write failed: {e}"))?;
                 }
                 Ok(())
             }
         }
+    }
+
+    /// Sends one already-serialized line (e.g. a sealed envelope).
+    pub async fn send_raw(&mut self, line: &str) -> Result<(), String> {
+        let value: Value = serde_json::from_str(line).map_err(|e| e.to_string())?;
+        self.send(&value).await
     }
 
     /// Next line from the device; `None` once the link is gone.

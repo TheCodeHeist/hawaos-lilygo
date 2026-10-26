@@ -7,6 +7,7 @@ class WeatherApp final : public App {
 public:
   const char *name() const override { return "Weather"; }
   const char *icon() const override { return ICON_CLOUD_SUN; }
+  bool needsCompanion() const override { return true; }
 
   void onEnter(lv_obj_t *root) override;
   void onExit() override;

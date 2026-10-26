@@ -265,7 +265,7 @@ The transport is an open decision (see section 14). Design a `Transport` abstrac
 
 ### 11.2 Album art
 - Format: **128x128, RGB565 little-endian, raw, 32 768 bytes**, center-cropped, no alpha. The device only copies bytes into a PSRAM buffer, so **no JPEG decoder is needed**.
-- The device fetches art only when the `art` hash differs from the cached one. Default for WiFi: the device **pulls** `GET http://<companion>:7778/art/<hash>` (companion runs a tiny HTTP server). Once paired the response is encrypted: `iv || ciphertext || tag`, 32 796 bytes (11.6). Over serial: the companion pushes an art frame.
+- The device fetches art only when the `art` hash differs from the cached one. Default for WiFi: the device **pulls** `GET http://<companion>:7778/art/<hash>` (companion runs a tiny HTTP server). Once paired the response is encrypted: `iv || ciphertext || tag`, 32 796 bytes (11.6). Without HTTP (Bluetooth mode, or USB only) the device sends `{"type":"art_req","hash"}` and the companion **pushes** the same bytes as in-order `{"type":"art_data","hash","off","b64"}` lines of 512 raw bytes (11.7). The device re-asks only after 5 s without a chunk, and gives up on a hash after 3 failed loads (a key mismatch would otherwise repeat forever).
 - Show a placeholder (Lucide `music` on `surface2`) until art arrives or when there is none.
 
 ### 11.3 Commands and config
@@ -278,7 +278,7 @@ Companion to device (persisted in `Preferences`, acknowledged with `config_ack`)
 `v` is a version counter; the device applies and stores the highest version it has seen. `accent` is a Tailwind color id (3.4); unknown ids are ignored. The companion keeps `v` in step with acks and ignores the accent in an ack older than its latest push, so quick changes never flash an old color back.
 
 ### 11.4 First-run setup and provisioning
-A factory device (or one sent back with Set Up Again) runs `SetupService`: it shows 9.9, listens on USB, and advertises over **BLE** as `HawaOS-XXXX` (last MAC bytes). BLE only runs during setup and is shut down afterwards (`NimBLEDevice::deinit`), so it costs no RAM in normal use; while it runs, WiFi modem sleep stays on (required for coexistence).
+A factory device (or one sent back with Set Up Again) runs `SetupService`: it shows 9.9, listens on USB, and advertises over **BLE** as `HawaOS-XXXX` (last MAC bytes). Manufacturer data `0xFFFF 'H' <0|1>` says whether it is in setup (0) or set up (1), so discovery can tell them apart. In Wi-Fi mode BLE only runs during setup and is shut down afterwards (`NimBLEDevice::deinit`), so it costs no RAM in normal use; in Bluetooth mode it stays up (11.7). While it runs, WiFi modem sleep stays on (required for coexistence).
 
 BLE is just another JSON-lines transport: service `48415741-4f53-4000-8000-000000000001`, RX `...0002` (write), TX `...0003` (notify, MTU-sized chunks). USB, UDP and BLE all feed the same handler.
 
@@ -336,6 +336,29 @@ Once the device has a token, all UDP traffic in both directions is encrypted and
 **Sizes.** The companion trims notification and media text to the device's field sizes (DataStore.h) so any envelope fits one datagram; the device opens up to 1100 bytes of plaintext.
 
 A device without a token (set up before encryption) still talks plaintext until Add device runs again. Not covered: firmware images travel over plain HTTP (hash-checked, the request encrypted, and they hold no secrets), and traffic sizes and timing are visible on the LAN.
+
+### 11.7 Bluetooth link mode
+A device can talk to the companion over **Bluetooth instead of Wi-Fi**. `Settings::LinkMode` (`link_ble` in `Preferences`) is `wifi` or `ble`; USB works in both. It is chosen in the wizard's Wi-Fi step ("Use Bluetooth") or on the companion's Device page (Connection card), and travels as `config {link:"ble"|"wifi"}`; `config_ack` reports it back as `link`, and the companion follows the device's value.
+
+| | Wi-Fi mode | Bluetooth mode |
+|---|---|---|
+| BLE | setup only | always on, advertising `paired` |
+| Wi-Fi radio | joins the saved network | off; the saved network is kept |
+| Clock | NTP | `ts` in companion stats |
+| Album art | device pulls over HTTP | companion pushes `art_data` |
+| Firmware update | as 11.5 | Wi-Fi turns on for the download, then off again |
+
+**Switching.** The device stores the new mode, acks it over the current link, and applies it 1.5 s later: Bluetooth mode starts BLE and switches Wi-Fi off; Wi-Fi mode stops BLE and rejoins. `ble` is refused without a token, since the everyday BLE traffic is sealed with it, and `wifi` without a saved network, which would leave the device reachable only over USB (the companion disables that button too). Saving a network in Bluetooth mode (`wifi_join`, `config.wifi_ssid`) only stores it and answers `wifi_status {state:"saved"}`; the wizard takes that as done and its finish switches the device to Wi-Fi. During setup (Set Up Again) Wi-Fi may always join, and the wizard always ends by stating `link`, saving whatever the device's ack confirms.
+
+**Finding each other again.** The companion queries every 20 s over its current link. If the device has been silent for 45 s, it also tries the other transport: in Bluetooth mode a sealed UDP query, in Wi-Fi mode a Bluetooth scan every 30 s. The device's ack carries `link`, so a switch whose ack was lost heals within about a minute.
+
+**Security.** Outside setup, BLE follows the UDP rules of 11.6. The GATT link is open, so anyone nearby can take the one connection (denial of service only: nothing is accepted from them), and the daemon ignores a device advertising that it is in setup. The rules: with a token, only `sealed` envelopes are accepted (same keys and replay counter), except `art_data` chunks, which are pieces of an encrypted blob checked when complete. Plaintext is answered `auth_error`/`plaintext`, setup messages `setup_only`, and the device's own messages over BLE are sealed. The GATT link itself is unauthenticated; everything rides on the app-layer encryption.
+
+**Companion.** `ble_daemon.rs` keeps a connection to `HawaOS-<device_id>` while `use_ble` is set and the wizard isn't running, reconnecting every few seconds when it drops. It writes without response (link-layer acknowledged) and the device asks for a 7.5–15 ms connection interval, so a 32 KB cover arrives in about a second. A firmware update or link switch requested while the link is reconnecting waits up to 15 s for it.
+
+**Firmware update over Bluetooth mode.** The `ota` request arrives sealed over BLE; `OtaService` calls `WifiService::holdForUpdate(true)`, waits up to 25 s for the saved network, then downloads as in 11.5. Without a saved network it fails with `no_wifi`.
+
+**Not connected.** Apps that show live companion data (`App::needsCompanion()`: Stats, Media, Weather) are covered by a "Not connected" card with `bluetooth-off` while `CompanionLink::isLinked()` is false: in Bluetooth mode, no sealed BLE message and no USB stats in the last 8 s (a link can stay "connected" on the PC side after the companion quits). The status bar shows `bluetooth` (accent) or `bluetooth-off` (dim) in place of the Wi-Fi icon, and Home's chip says "Linked over Bluetooth" or "Waiting for the companion (Bluetooth)".
 
 ## 12. Boot logo
 

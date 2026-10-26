@@ -423,6 +423,7 @@ impl CompanionWindowView {
                             ),
                     )),
             )
+            .child(self.render_connection_card(pal, cx))
             .children(firmware)
     }
 }

@@ -7,6 +7,7 @@ class StatsApp final : public App {
 public:
   const char *name() const override { return "Stats"; }
   const char *icon() const override { return ICON_ACTIVITY; }
+  bool needsCompanion() const override { return true; }
 
   void onEnter(lv_obj_t *root) override;
   void onExit() override;

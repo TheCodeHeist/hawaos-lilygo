@@ -14,6 +14,14 @@ enum class WallpaperMode : uint8_t {
   Solid = 1,
 };
 
+// How the companion reaches the device day to day (USB works in both).
+// Ble keeps Bluetooth on after setup and Wi-Fi off, except while a firmware
+// update downloads.
+enum class LinkMode : uint8_t {
+  Wifi = 0,
+  Ble = 1,
+};
+
 namespace Settings {
 
 void begin();
@@ -81,6 +89,9 @@ void setSetupDone(bool done);
 // network. Setting a new token resets the replay counter.
 void getCompanionToken(char *outBuf, size_t maxLen);
 void setCompanionToken(const char *hex);
+
+LinkMode getLinkMode();
+void setLinkMode(LinkMode mode);
 
 // Highest `n` accepted in a signed message (replay protection).
 uint64_t getAuthCounter();

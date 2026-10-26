@@ -55,6 +55,10 @@ void skip();   // user skipped on the device
 // Called from the WiFi task: stops BLE once setup is over.
 void poll();
 
+// Starts or stops the everyday Bluetooth link after Settings' link mode
+// changed (no-op during setup, which decides when it finishes).
+void applyLinkMode();
+
 // --- Pairing session (BLE): X25519 + 6-digit code -> AES-256-GCM ---
 // Takes the companion's base64 public key, writes ours (base64) to outB64.
 bool exchangeKey(const char *peerPubB64, char *outB64, size_t outLen);

@@ -285,6 +285,7 @@ async fn on_cmd(cx: &mut Ctx, cmd: Cmd) {
             };
             cx.update(|w| {
                 w.step = Step::Joining;
+                w.use_ble = false;
                 w.joining_ssid = ssid.clone();
                 w.error = None;
             });
@@ -292,6 +293,13 @@ async fn on_cmd(cx: &mut Ctx, cmd: Cmd) {
         }
         Cmd::SkipWifi => cx.update(|w| {
             w.usb_only = true;
+            w.use_ble = false;
+            w.step = Step::Personalize;
+            w.error = None;
+        }),
+        Cmd::UseBluetooth => cx.update(|w| {
+            w.usb_only = false;
+            w.use_ble = true;
             w.step = Step::Personalize;
             w.error = None;
         }),
@@ -346,6 +354,30 @@ async fn finish(cx: &mut Ctx) {
     .await;
 
     let w = cx.wiz.lock().map(|w| w.clone()).unwrap_or_default();
+    // Always state the link (Set Up Again may leave Bluetooth mode). It needs
+    // the token the device just stored, so it comes after "done"; the device
+    // confirms in its ack, which decides what the companion uses.
+    let mut use_ble = w.use_ble;
+    let v = cx.daemon.lock().ok().map(|mut g| {
+        g.config.config_version += 1;
+        g.config.config_version
+    });
+    if let Some(v) = v {
+        cx.send(json!({"type": "config", "v": v, "link": if w.use_ble { "ble" } else { "wifi" }})).await;
+        let _ = tokio::time::timeout(Duration::from_secs(3), async {
+            while let Some(l) = next_line(&mut cx.link).await {
+                let ack = serde_json::from_str::<serde_json::Value>(&l)
+                    .ok()
+                    .filter(|v| v["type"] == "config_ack")
+                    .and_then(|v| v["link"].as_str().map(|s| s == "ble"));
+                if let Some(ble) = ack {
+                    use_ble = ble;
+                    break;
+                }
+            }
+        })
+        .await;
+    }
     if let (Ok(mut g), Some(dev)) = (cx.daemon.lock(), w.device.as_ref()) {
         g.config.device_id = dev.id.clone();
         g.config.device_name = dev.name.clone();
@@ -353,14 +385,18 @@ async fn finish(cx: &mut Ctx) {
             g.config.usb_port = port.clone();
         }
         g.config.stream_via_usb = w.usb_only;
+        g.config.use_ble = use_ble;
         g.config.device_token = token;
         if let Some(ip) = &w.device_ip {
             g.config.target_ip = ip.clone();
             g.device_reported_ip = Some(ip.clone());
         }
         save_config(&g.config);
-        g.push_log(format!("Set up {} ({})", dev.name, w.device_ip.as_deref().unwrap_or("USB only")));
-        g.outbound_queue.push_back(OutboundAction::QueryDevice { via_usb: w.usb_only });
+        let how = if use_ble { "Bluetooth" } else { w.device_ip.as_deref().unwrap_or("USB only") };
+        g.push_log(format!("Set up {} ({how})", dev.name));
+        if !use_ble {
+            g.outbound_queue.push_back(OutboundAction::QueryDevice { via_usb: w.usb_only });
+        }
     }
     cx.drop_link().await;
     cx.hold_usb(false);
@@ -458,6 +494,20 @@ async fn on_line(cx: &mut Ctx, line: &str) {
                     cx.update(|w| {
                         w.device_ip = ip;
                         w.usb_only = false;
+                        w.step = Step::Personalize;
+                        w.error = None;
+                    });
+                }
+                "saved" => {
+                    // A set-up device in Bluetooth mode stores the network
+                    // instead of joining; finish() switches it to Wi-Fi, and
+                    // it joins then (DESIGN.md 11.7).
+                    if let Ok(mut g) = cx.daemon.lock() {
+                        g.config.wifi_ssid = ssid.clone();
+                    }
+                    cx.update(|w| {
+                        w.usb_only = false;
+                        w.use_ble = false;
                         w.step = Step::Personalize;
                         w.error = None;
                     });

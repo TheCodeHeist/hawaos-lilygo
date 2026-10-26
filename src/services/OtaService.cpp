@@ -1,6 +1,8 @@
 #include "services/OtaService.h"
 #include "services/CompanionAuth.h"
+#include "core/Settings.h"
 #include "services/CompanionLink.h"
+#include "services/WifiService.h"
 
 #include <Arduino.h>
 #include <ArduinoJson.h>
@@ -17,12 +19,15 @@ namespace {
 constexpr uint32_t kReadTimeoutMs = 8000;
 constexpr uint32_t kFailedShowMs = 4000;
 constexpr size_t kChunk = 4096;
+// Bluetooth link mode: how long to wait for the saved network to come up.
+constexpr uint32_t kWifiWaitMs = 25000;
 
 portMUX_TYPE s_mux = portMUX_INITIALIZER_UNLOCKED;
 Progress s_progress;
 uint32_t s_failedAtMs = 0;
 
 bool s_pending = false;
+uint32_t s_wifiWaitSinceMs = 0; // 0 = not waiting
 char s_url[160] = {0};
 uint32_t s_size = 0;
 char s_sha[65] = {0};
@@ -51,6 +56,7 @@ void report(const char *state, uint8_t pct, const char *error = nullptr) {
 
 void fail(const char *error) {
   Serial.printf("[OTA] Failed: %s\n", error);
+  WifiService::holdForUpdate(false);
   if (Update.isRunning()) {
     Update.abort();
   }
@@ -216,12 +222,31 @@ bool isActive() { return progress().state != State::Idle; }
 
 void poll() {
   if (s_pending) {
-    s_pending = false;
     if (WiFi.status() != WL_CONNECTED) {
+      // Bluetooth mode keeps Wi-Fi off: bring up the saved network for the
+      // download (DESIGN.md Section 11.7).
+      char ssid[33] = {0};
+      Settings::getWifiSsid(ssid, sizeof(ssid));
+      if (Settings::getLinkMode() == LinkMode::Ble && ssid[0] != '\0') {
+        if (s_wifiWaitSinceMs == 0) {
+          s_wifiWaitSinceMs = millis() | 1;
+          Serial.printf("[OTA] Turning on Wi-Fi ('%s') for the update\n", ssid);
+          setProgress(State::Downloading, 0);
+          report("downloading", 0);
+          WifiService::holdForUpdate(true);
+          return;
+        }
+        if (millis() - s_wifiWaitSinceMs < kWifiWaitMs)
+          return;
+      }
+      s_pending = false;
+      s_wifiWaitSinceMs = 0;
       fail("no_wifi");
-    } else {
-      run();
+      return;
     }
+    s_pending = false;
+    s_wifiWaitSinceMs = 0;
+    run();
     return;
   }
   if (progress().state == State::Failed &&

@@ -107,6 +107,11 @@ pub fn handle_incoming_json_line(line: &str, state: &SharedState) {
                 g.push_log(format!("Firmware update: {st} {}%", pkt.pct.unwrap_or(0)));
                 g.ota = Some(crate::models::OtaProgress::new(&st, pkt.pct.unwrap_or(0), pkt.error));
             }
+        } else if pkt.msg_type == "art_req" {
+            // The device can't pull art over HTTP (Bluetooth or USB): push it.
+            if let (Some(hash), Ok(mut g)) = (pkt.hash.clone(), state.lock()) {
+                g.outbound_queue.push_back(crate::models::OutboundAction::SendArt { hash });
+            }
         } else if pkt.msg_type == "auth_error" {
             if let Ok(mut g) = state.lock() {
                 // Stats go out every second; one log line and banner a minute is plenty.
@@ -137,6 +142,7 @@ pub fn handle_incoming_json_line(line: &str, state: &SharedState) {
                     g.device_wifi_connected = Some(w);
                 }
                 if let Some(ssid) = pkt.ssid {
+                    g.device_has_network = Some(!ssid.is_empty());
                     if !ssid.is_empty() {
                         g.config.wifi_ssid = ssid;
                     }
@@ -150,6 +156,15 @@ pub fn handle_incoming_json_line(line: &str, state: &SharedState) {
                     }
                 }
                 g.device_needs_setup = pkt.setup.unwrap_or(false);
+                // Follow the device's link mode (Device page switch, wizard).
+                if let Some(link) = pkt.link.as_deref() {
+                    let ble = link == "ble";
+                    if g.config.use_ble != ble {
+                        g.config.use_ble = ble;
+                        save_config(&g.config);
+                        g.push_log(format!("Device link: {}", if ble { "Bluetooth" } else { "Wi-Fi" }));
+                    }
+                }
                 if let Some(fw) = pkt.fw.filter(|s| !s.is_empty()) {
                     // The device answering again after "done" (a new version, or
                     // past its restart delay) means the update went through.
@@ -225,6 +240,36 @@ pub fn handle_incoming_json_line(line: &str, state: &SharedState) {
             }
         }
     }
+}
+
+/// Writes several lines on one open port (album art: ~65 lines), then reads replies
+/// briefly like `send_usb_line`.
+pub fn send_usb_lines(port_name: &str, lines: &[String], state: &SharedState) -> bool {
+    if state.lock().map(|g| g.setup_holds_usb).unwrap_or(false) {
+        return false;
+    }
+    let Ok(mut port) = serialport::new(port_name, USB_BAUD).timeout(Duration::from_millis(350)).open() else {
+        return false;
+    };
+    for l in lines {
+        if port.write_all(format!("{l}\n").as_bytes()).is_err() {
+            return false;
+        }
+        // The device's USB driver drops what doesn't fit its buffer; pace
+        // so its 25 ms poll keeps up (65 art lines: ~0.7 s).
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    let _ = port.flush();
+    let mut reader = BufReader::new(port);
+    let start = Instant::now();
+    while start.elapsed() < Duration::from_millis(350) {
+        let mut line = String::new();
+        match reader.read_line(&mut line) {
+            Ok(n) if n > 0 => handle_incoming_json_line(&line, state),
+            _ => break,
+        }
+    }
+    true
 }
 
 pub fn send_usb_line(port_name: &str, json_line: &str, state: &SharedState) -> bool {

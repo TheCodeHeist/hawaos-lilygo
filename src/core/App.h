@@ -52,5 +52,8 @@ public:
   virtual bool usesWallpaper() const {
     return false;
   } // Only Home & Launcher use wallpaper
+  virtual bool needsCompanion() const {
+    return false;
+  } // live companion data: covered while it's away (Bluetooth mode)
   virtual void onData(const DataSnapshot &d) {}
 };

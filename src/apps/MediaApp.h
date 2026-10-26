@@ -7,6 +7,7 @@ class MediaApp final : public App {
 public:
   const char *name() const override { return "Media"; }
   const char *icon() const override { return ICON_MUSIC; }
+  bool needsCompanion() const override { return true; }
   bool hidesStatusBar() const override { return true; }
   bool usesWallpaper() const override { return false; }
 

@@ -1,3 +1,4 @@
+#include "core/Settings.h"
 #include "ui/StatusBar.h"
 #include "config.h"
 #include "ui/Theme.h"
@@ -187,12 +188,19 @@ void updateData(const DataSnapshot &d) {
     return;
   const ThemeTokens::Palette &p = Theme::active();
 
-  // Connection icon: usb if USB companion active, wifi if WiFi connected, else
-  // wifi-off
+  // Connection icon: usb if USB companion active; in Bluetooth link mode the
+  // Bluetooth state; else wifi / wifi-off.
+  const bool bleMode = Settings::getLinkMode() == LinkMode::Ble;
   if (d.usbConnected) {
     lv_label_set_text(s_connIcon, ICON_USB);
     lv_obj_set_style_text_color(s_connIcon, lv_color_hex(p.accent),
                                 LV_PART_MAIN);
+  } else if (bleMode) {
+    lv_label_set_text(s_connIcon,
+                      d.bleConnected ? ICON_BLUETOOTH : ICON_BLUETOOTH_OFF);
+    lv_obj_set_style_text_color(
+        s_connIcon, lv_color_hex(d.bleConnected ? p.accent : p.textDim),
+        LV_PART_MAIN);
   } else if (d.wifiConnected) {
     lv_label_set_text(s_connIcon, ICON_WIFI);
     lv_obj_set_style_text_color(s_connIcon, lv_color_hex(p.text), LV_PART_MAIN);
@@ -204,7 +212,8 @@ void updateData(const DataSnapshot &d) {
 
   int16_t rightOffset = -28; // 20px icon + 8px gap
 
-  if (d.bleConnected) {
+  // Setup over BLE (or USB in Bluetooth mode): a second icon for the link.
+  if (d.bleConnected && (!bleMode || d.usbConnected)) {
     lv_obj_clear_flag(s_bleIcon, LV_OBJ_FLAG_HIDDEN);
     lv_obj_set_style_text_color(s_bleIcon, lv_color_hex(p.accent),
                                 LV_PART_MAIN);

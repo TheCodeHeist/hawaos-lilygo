@@ -90,13 +90,13 @@ flowchart LR
     DS --> EB["EventBus"] --> AM["AppManager + LVGL<br>(UI task, Core 1)"]
   end
 
-  PC -- "JSON lines over USB serial, encrypted UDP :7777<br>or Bluetooth during setup" --> CL
+  PC -- "JSON lines over USB serial, encrypted UDP :7777<br>or encrypted Bluetooth" --> CL
   CL -- "config_ack, media and clock commands" --> PC
   DEV -. "encrypted album art and firmware<br>over HTTP :7778" .-> PC
 ```
 
 - **One UI owner.** Only the UI task on Core 1 touches LVGL. Services on Core 0 write to the `DataStore` and post events.
-- **Either link works.** USB serial when plugged in, UDP over Wi-Fi otherwise; a USB-only device takes its clock from the companion. Wi-Fi credentials arrive over USB or encrypted Bluetooth during setup.
+- **Any link works.** USB serial when plugged in, and day to day either Wi-Fi (UDP) or Bluetooth; without Wi-Fi the device takes its clock from the companion. Wi-Fi credentials arrive over USB or encrypted Bluetooth during setup.
 - **Private on your network.** Once paired, everything over Wi-Fi is encrypted and authenticated (AES-256-GCM), so other machines on the LAN can neither read nor fake it. See [Security and privacy](#security-and-privacy).
 - **No leaks.** Screens are torn down synchronously on every switch; a built-in stress test (`t` on the serial console) runs 200 switches and reports heap drift.
 
@@ -138,10 +138,26 @@ A new HawaOS boots into a **Setup** screen showing its Bluetooth name and a 6-di
 
 1. **Connect** over a USB-C cable, or over **Bluetooth** with no cable.
 2. **Pair** (Bluetooth only): type the code from the device's screen. It proves you're next to the device, and it keys the encryption for your Wi-Fi password (X25519 + AES-GCM).
-3. **Wi-Fi**: pick from the networks the *device* can see. A wrong password or an out-of-range network is reported straight back. On USB you can skip Wi-Fi and run over the cable.
+3. **Wi-Fi**: pick from the networks the *device* can see. A wrong password or an out-of-range network is reported straight back. Or choose **Use Bluetooth** to skip the network entirely (see below), or on USB, run over the cable.
 4. **Personalize**: accent, theme and clock format, previewed live on the device.
 
-Bluetooth only runs while the device is in setup, so it uses no memory afterwards. To set a device up again, use **Settings > Set Up Again** on the device.
+In Wi-Fi mode Bluetooth only runs while the device is in setup, so it uses no memory afterwards. To set a device up again, use **Settings > Set Up Again** on the device.
+
+### Bluetooth instead of Wi-Fi
+
+<p align="center">
+  <img src="docs/media/screen-not-connected.png" width="480" alt="Stats screen covered by a Not connected card with a crossed-out Bluetooth icon">
+</p>
+
+The device can talk to the companion over **Bluetooth** with no network at all: pick **Use Bluetooth** in the wizard, or switch any time in the companion under **Device > Connection**. In Bluetooth mode:
+
+- Wi-Fi stays off. The saved network is kept, and Wi-Fi turns on by itself only while a firmware update downloads, then off again.
+- Stats, media, album art, weather and notifications all arrive over Bluetooth, encrypted exactly like Wi-Fi traffic. A new album cover takes about a second.
+- The clock is set from the companion, and the status bar shows a Bluetooth icon in place of Wi-Fi.
+- When the companion is away (PC asleep, out of range, companion closed), screens that need its live data (Stats, Now Playing, Weather) show **Not connected** with a crossed-out Bluetooth icon until it's back.
+
+Switching back to Wi-Fi rejoins the saved network. Linux needs BlueZ and a Bluetooth adapter; the companion reconnects on its own when the link drops.
+
 
 ### Updating firmware
 
@@ -203,6 +219,7 @@ hawaos-lilygo/
 │   ├── protocol.rs   Device messages in; media.rs serves album art and firmware
 │   ├── setup/        Add device wizard: USB/BLE links, X25519 + AES-GCM pairing
 │   ├── auth.rs       Encrypted envelopes for network traffic
+│   ├── ble_daemon.rs Everyday Bluetooth link (reconnects, steps aside for setup)
 │   ├── ota.rs        Firmware staging and request signing
 │   ├── tray.rs       Tray menu (ksni)
 │   └── ui/           gpui window: pages, glass components, accent palettes
@@ -244,6 +261,12 @@ The device and companion no longer share the same pairing secret: the companion'
 </details>
 
 <details>
+<summary><b>Bluetooth mode stays on "Not connected"</b></summary>
+
+The companion looks for the device by name (`HawaOS-XXXX`) every few seconds; the window's sidebar shows **Connected · Bluetooth** once it's linked. Check that your PC's Bluetooth is on (`bluetoothctl show`), and that no other app holds a connection to the device: `bluetoothctl disconnect <address>` frees it. Plugged in over USB, the device also works through the cable.
+</details>
+
+<details>
 <summary><b>Serial console</b></summary>
 
 `pio device monitor` shows the boot log. Type `t` + Enter to run the 200-switch leak test, or `r` + Enter to force a Wi-Fi reconnect.
@@ -253,7 +276,7 @@ The device and companion no longer share the same pairing secret: the companion'
 
 **Pairing.** During **Add device** the companion gives the device a random 128-bit secret. It is only accepted over the USB cable or a Bluetooth link paired with the code on the device's screen, never over Wi-Fi, so nobody on your network can replace it. Over Bluetooth the Wi-Fi password and the secret travel encrypted (X25519 key exchange + AES-256-GCM, keyed by the 6-digit code).
 
-**On your network.** Everything the companion and device exchange over Wi-Fi is encrypted and authenticated with AES-256-GCM, using a separate key for each direction derived from that secret:
+**On your network and over Bluetooth.** Everything the companion and device exchange over Wi-Fi, or over Bluetooth in Bluetooth mode, is encrypted and authenticated with AES-256-GCM, using a separate key for each direction derived from that secret:
 
 | | Protected |
 |---|---|
@@ -285,7 +308,7 @@ The full protocol, key derivation and replay rules are in [`DESIGN.md`](DESIGN.m
 - [x] First-run setup wizard over USB or Bluetooth, with encrypted Wi-Fi provisioning
 - [x] Firmware updates over Wi-Fi, checksum-verified and signed
 - [x] Encrypted, authenticated network traffic with replay protection
-- [ ] Bluetooth for everyday data (today it's used for setup only)
+- [x] Bluetooth as an everyday link instead of Wi-Fi, with album art over Bluetooth and USB
 - [ ] Image wallpapers pushed from the companion
 
 ## License

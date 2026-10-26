@@ -2,6 +2,7 @@
 #include "config.h"
 #include "core/Settings.h"
 #include "services/BleLink.h"
+#include "services/WifiService.h"
 
 #include <Arduino.h>
 #include <WiFi.h>
@@ -105,6 +106,10 @@ void begin() {
   }
   if (!Settings::isSetupDone()) {
     start();
+  } else if (Settings::getLinkMode() == LinkMode::Ble) {
+    // Everyday link (DESIGN.md Section 11.7); before the WiFi task starts,
+    // so it comes up in modem sleep.
+    BleLink::start(s_state.bleName, true);
   }
 }
 
@@ -127,7 +132,11 @@ void start() {
   Serial.printf("[Setup] Setup mode: BLE '%s'\n", s_state.bleName);
   // WiFi + BLE coexistence requires modem sleep (else the WiFi driver aborts).
   WiFi.setSleep(true);
-  BleLink::start(s_state.bleName);
+  if (BleLink::isRunning()) {
+    BleLink::setPaired(false); // Set Up Again in Bluetooth mode
+  } else {
+    BleLink::start(s_state.bleName, false);
+  }
 }
 
 bool isActive() {
@@ -219,9 +228,30 @@ void poll() {
   }
   if (stopNow) {
     resetSession();
+    if (Settings::getLinkMode() == LinkMode::Ble) {
+      BleLink::setPaired(true);
+      WifiService::applyLinkMode(); // a network joined during setup goes off
+      Serial.println("[Setup] Setup complete, staying on Bluetooth");
+    } else {
+      BleLink::stop();
+      WiFi.setSleep(false);
+      Serial.println("[Setup] Setup complete, BLE off");
+    }
+  }
+}
+
+void applyLinkMode() {
+  if (isActive())
+    return;
+  if (Settings::getLinkMode() == LinkMode::Ble) {
+    WiFi.setSleep(true);
+    if (!BleLink::isRunning()) {
+      BleLink::start(s_state.bleName, true);
+    }
+  } else if (BleLink::isRunning()) {
     BleLink::stop();
     WiFi.setSleep(false);
-    Serial.println("[Setup] Setup complete, BLE off");
+    Serial.println("[Setup] Link mode Wi-Fi, BLE off");
   }
 }
 

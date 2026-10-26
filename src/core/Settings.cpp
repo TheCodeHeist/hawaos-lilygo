@@ -33,6 +33,7 @@ int32_t s_gmtOffsetSec = Config::DEFAULT_GMT_OFFSET_SEC;
 bool s_use24Hour = false;
 bool s_orientationInverted = false;
 bool s_setupDone = false;
+LinkMode s_linkMode = LinkMode::Wifi;
 
 int8_t accentIndexOf(const char *id) {
   if (id == nullptr)
@@ -110,6 +111,7 @@ void begin() {
   // Devices provisioned before the setup wizard existed count as set up.
   s_setupDone = s_prefs.isKey("setup_done") ? s_prefs.getBool("setup_done", false)
                                             : (s_wifiSsid[0] != '\0');
+  s_linkMode = s_prefs.getBool("link_ble", false) ? LinkMode::Ble : LinkMode::Wifi;
 
   Serial.printf("[Settings] Loaded: SSID='%s', bright=%u%%, theme=%u, "
                 "accent=%s, aod=%d(%us), redMotion=%d, notifyPopup=%d, v=%lu\n",
@@ -347,6 +349,13 @@ void getCompanionToken(char *outBuf, size_t maxLen) {
 void setCompanionToken(const char *hex) {
   s_prefs.putString("cmp_token", hex != nullptr ? hex : "");
   s_prefs.remove("auth_n");
+}
+
+LinkMode getLinkMode() { return s_linkMode; }
+
+void setLinkMode(LinkMode mode) {
+  s_linkMode = mode;
+  s_prefs.putBool("link_ble", mode == LinkMode::Ble);
 }
 
 uint64_t getAuthCounter() { return s_prefs.getULong64("auth_n", 0); }

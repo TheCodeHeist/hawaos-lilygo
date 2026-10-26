@@ -314,6 +314,17 @@ impl CompanionWindowView {
                     .child(back_button(cx))
                     .child(
                         button_row()
+                            .child(
+                                Button::new("use-ble")
+                                    .ghost()
+                                    .icon(IconName::Bluetooth)
+                                    .label("Use Bluetooth")
+                                    .tooltip("No network needed; Wi-Fi only for firmware updates")
+                                    .on_click(cx.listener(|this, _, _, cx| {
+                                        this.wizard.send(Cmd::UseBluetooth);
+                                        cx.notify();
+                                    })),
+                            )
                             .when(usb, |this| {
                                 this.child(
                                     Button::new("skip-wifi")
@@ -427,6 +438,7 @@ impl CompanionWindowView {
     fn wizard_done(&mut self, pal: HawaPalette, w: &WizardState, cx: &mut Context<Self>) -> impl IntoElement {
         let name = w.device.as_ref().map(|d| d.name.clone()).unwrap_or_else(|| "Your HawaOS".into());
         let detail = match (&w.device_ip, w.usb_only) {
+            _ if w.use_ble => format!("{name} will talk to this computer over Bluetooth."),
             (Some(ip), false) => format!("{name} is online at {ip}."),
             _ => format!("{name} is connected over USB."),
         };

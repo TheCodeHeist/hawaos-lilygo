@@ -59,6 +59,8 @@ pub struct WizardState {
     pub joining_ssid: String,
     pub device_ip: Option<String>,
     pub usb_only: bool,
+    /// Everyday link over Bluetooth instead of Wi-Fi (DESIGN.md 11.7).
+    pub use_ble: bool,
     pub busy: bool,
     pub error: Option<String>,
 }
@@ -75,6 +77,7 @@ impl Default for WizardState {
             joining_ssid: String::new(),
             device_ip: None,
             usb_only: false,
+            use_ble: false,
             busy: false,
             error: None,
         }
@@ -89,6 +92,7 @@ pub enum Cmd {
     ScanNets,
     Join { ssid: String, pass: String },
     SkipWifi,
+    UseBluetooth,
     Personalize { accent: String, theme: String, use_24h: bool },
     Finish,
     Cancel,
@@ -132,7 +136,8 @@ impl Wizard {
 
 #[cfg(test)]
 mod hardware_tests {
-    //! Needs a HawaOS on USB: `cargo test -- --ignored usb_only_setup`.
+    //! Needs a HawaOS on USB: `cargo test -- --ignored usb_only_setup`
+    //! (or `usb_setup_bluetooth`). Both give the device a new token.
     use super::*;
     use crate::models::{CompanionConfig, SharedDaemonState};
     use std::time::{Duration, Instant};
@@ -176,6 +181,30 @@ mod hardware_tests {
         assert!(!cfg.device_id.is_empty());
         assert!(cfg.stream_via_usb);
         assert_eq!(cfg.accent, "emerald");
+        let _ = std::fs::remove_dir_all(home);
+    }
+
+    #[test]
+    #[ignore]
+    fn usb_setup_bluetooth() {
+        let home = std::env::temp_dir().join(format!("hawaos-hil-ble-{}", std::process::id()));
+        unsafe { std::env::set_var("HOME", &home) };
+        let daemon = Arc::new(Mutex::new(SharedDaemonState::new(CompanionConfig::default())));
+        let w = Wizard::spawn(Arc::clone(&daemon));
+
+        w.send(Cmd::Search(Method::Usb));
+        wait_for(&w, "a USB device", |s| !s.found.is_empty());
+        w.send(Cmd::Choose(0));
+        wait_for(&w, "wifi list", |s| s.step == Step::Wifi);
+        w.send(Cmd::UseBluetooth);
+        wait_for(&w, "personalize", |s| s.step == Step::Personalize);
+        w.send(Cmd::Personalize { accent: "cyan".into(), theme: "dark".into(), use_24h: false });
+        std::thread::sleep(Duration::from_millis(800));
+        w.send(Cmd::Finish);
+        let s = wait_for(&w, "done", |s| s.step == Step::Done);
+        let cfg = daemon.lock().unwrap().config.clone();
+        eprintln!("done: use_ble={} usb_only={} device={}", cfg.use_ble, s.usb_only, cfg.device_id);
+        assert!(cfg.use_ble && !cfg.stream_via_usb && !cfg.device_token.is_empty());
         let _ = std::fs::remove_dir_all(home);
     }
 }

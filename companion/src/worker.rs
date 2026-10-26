@@ -4,7 +4,7 @@ use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use sysinfo::{Networks, System};
 
-use crate::config::CompanionConfig;
+use crate::config::{CompanionConfig, save_config};
 use crate::media::query_mpris_media;
 use crate::config::{get_local_lan_ip, ART_HTTP_PORT, DEFAULT_DEVICE_IP, UDP_PORT, USB_BAUD};
 use crate::models::{
@@ -12,7 +12,7 @@ use crate::models::{
 };
 use crate::config::sanitize_ip_str;
 use crate::protocol::{
-    fit_bytes, handle_incoming_json_line, sanitize_for_font, send_usb_line,
+    fit_bytes, handle_incoming_json_line, sanitize_for_font, send_usb_line, send_usb_lines,
 };
 use crate::weather::trigger_weather_update;
 
@@ -37,6 +37,8 @@ pub fn spawn_daemon_worker(state: SharedState, art_cache: SharedArtCache) {
         let mut last_media_heartbeat = Instant::now() - Duration::from_secs(10);
         let mut last_weather_fetch = Instant::now();
         let mut last_weather_send = Instant::now();
+        let mut last_query = Instant::now();
+        let mut last_probe = Instant::now();
         let mut prev_media: Option<MediaMsg> = None;
         let mut prev_weather: Option<WeatherMsg> = None;
         let mut rx_buf = [0u8; 1460];
@@ -130,7 +132,7 @@ pub fn spawn_daemon_worker(state: SharedState, art_cache: SharedArtCache) {
                                 }
                             }
                             if let Some(addr) = target_addr {
-                                let _ = send_udp(&udp, addr, &json_str, &cfg.device_token);
+                                let _ = send_udp(&udp, addr, &json_str, &cfg.device_token, cfg.use_ble);
                             }
                         }
                     }
@@ -158,7 +160,7 @@ pub fn spawn_daemon_worker(state: SharedState, art_cache: SharedArtCache) {
                         if let Ok(json_str) = serde_json::to_string(&pkt) {
                             eprintln!("[Daemon] Dispatching notification to {:?}: {}", target_addr, json_str);
                             if let Some(addr) = target_addr {
-                                let _ = send_udp(&udp, addr, &json_str, &cfg.device_token);
+                                let _ = send_udp(&udp, addr, &json_str, &cfg.device_token, cfg.use_ble);
                             }
                             if cfg.stream_via_usb {
                                 let _ = send_usb_line(&cfg.usb_port, &json_str, &state);
@@ -170,13 +172,58 @@ pub fn spawn_daemon_worker(state: SharedState, art_cache: SharedArtCache) {
                         if via_usb {
                             let _ = send_usb_line(&cfg.usb_port, pkt, &state);
                         } else if let Some(addr) = target_addr {
-                            let _ = send_udp(&udp, addr, pkt, &cfg.device_token);
+                            let _ = send_udp(&udp, addr, pkt, &cfg.device_token, cfg.use_ble);
                         }
                     }
                     OutboundAction::RefreshWeather => {
                         trigger_weather_update(&state);
                     }
+                    OutboundAction::SetLink { ble, since } => {
+                        if let Ok(mut g) = state.lock() {
+                            if cfg.use_ble && !g.ble_connected && since.elapsed() < Duration::from_secs(15) {
+                                g.outbound_queue.push_back(OutboundAction::SetLink { ble, since });
+                                continue;
+                            }
+                        }
+                        // Sent over the current link; the device switches
+                        // after acking, and its ack's `link` moves us over.
+                        let v = state.lock().map(|mut g| {
+                            g.config.config_version += 1;
+                            save_config(&g.config);
+                            g.config.config_version
+                        }).unwrap_or(0);
+                        let pkt = serde_json::json!({"type": "config", "v": v, "link": if ble { "ble" } else { "wifi" }}).to_string();
+                        if cfg.stream_via_usb {
+                            let _ = send_usb_line(&cfg.usb_port, &pkt, &state);
+                        }
+                        if let Some(addr) = target_addr {
+                            let _ = send_udp(&udp, addr, &pkt, &cfg.device_token, cfg.use_ble);
+                        }
+                    }
+                    OutboundAction::SendArt { hash } => {
+                        let art = art_cache.lock().ok().and_then(|c| c.get(&hash).map(|e| e.rgb565_le.clone()));
+                        if let Some(lines) = art.and_then(|a| art_chunks(&hash, &a, &cfg.device_token)) {
+                            if cfg.use_ble {
+                                for l in lines {
+                                    crate::ble_daemon::send_line(l);
+                                }
+                            } else if std::path::Path::new(&cfg.usb_port).exists() {
+                                send_usb_lines(&cfg.usb_port, &lines, &state);
+                            }
+                        }
+                    }
                     OutboundAction::StartOta { path } => {
+                        // A Bluetooth link that is still (re)connecting gets a
+                        // moment; the card says "Waiting for the device".
+                        if let Ok(mut g) = state.lock() {
+                            let waiting = g.ota.as_ref().is_some_and(|o| {
+                                o.state == "starting" && o.at.elapsed() < Duration::from_secs(15)
+                            });
+                            if cfg.use_ble && !g.ble_connected && waiting {
+                                g.outbound_queue.push_back(OutboundAction::StartOta { path });
+                                continue;
+                            }
+                        }
                         let res = start_ota(&path, &cfg, target_addr, &udp, &state);
                         if let Ok(mut g) = state.lock() {
                             g.ota = Some(match res {
@@ -198,7 +245,7 @@ pub fn spawn_daemon_worker(state: SharedState, art_cache: SharedArtCache) {
                         if let Ok(json_str) = serde_json::to_string(&pkt) {
                             eprintln!("[Daemon] Dispatching clock action to {:?}: {}", target_addr, json_str);
                             if let Some(addr) = target_addr {
-                                let _ = send_udp(&udp, addr, &json_str, &cfg.device_token);
+                                let _ = send_udp(&udp, addr, &json_str, &cfg.device_token, cfg.use_ble);
                             }
                             if cfg.stream_via_usb {
                                 let _ = send_usb_line(&cfg.usb_port, &json_str, &state);
@@ -209,6 +256,29 @@ pub fn spawn_daemon_worker(state: SharedState, art_cache: SharedArtCache) {
             }
 
             // 3. 1 Hz Telemetry + Media tick
+            // Liveness: an ack every 20 s over the current link. If the device
+            // went quiet in Bluetooth mode, also ask over UDP: it may have
+            // switched to Wi-Fi with its ack lost (ble_daemon probes the
+            // other way). Its ack's `link` moves us over.
+            if last_query.elapsed() >= Duration::from_secs(20) {
+                last_query = Instant::now();
+                let probe = if let Ok(mut g) = state.lock() {
+                    g.outbound_queue.push_back(OutboundAction::QueryDevice { via_usb: false });
+                    let quiet = g.device_silence() > Duration::from_secs(45);
+                    (g.config.use_ble && quiet && last_probe.elapsed() >= Duration::from_secs(20))
+                        .then(|| (g.config.device_token.clone(), g.config.target_ip.clone()))
+                } else {
+                    None
+                };
+                if let Some((token, ip)) = probe {
+                    last_probe = Instant::now();
+                    let addr = format!("{}:{}", sanitize_ip_str(&ip), UDP_PORT).parse::<SocketAddr>().ok();
+                    if let Some(addr) = addr {
+                        let _ = send_udp(&udp, addr, r#"{"type":"query"}"#, &token, false);
+                    }
+                }
+            }
+
             if last_stats_tick.elapsed() >= Duration::from_secs(1) {
                 if let Ok(mut g) = state.lock() {
                     g.tick_clock();
@@ -257,7 +327,7 @@ pub fn spawn_daemon_worker(state: SharedState, art_cache: SharedArtCache) {
 
                 let (cur_media, cur_art_img, cur_player) = query_mpris_media(&art_cache);
 
-                let (target_ip, stream_usb, usb_port, token) = if let Ok(mut g) = state.lock() {
+                let (target_ip, stream_usb, usb_port, token, use_ble) = if let Ok(mut g) = state.lock() {
                     g.cpu_pct = cpu_pct;
                     g.ram_pct = ram_pct;
                     g.used_ram_gb = (used_mem as f32) / (1024.0 * 1024.0 * 1024.0);
@@ -276,9 +346,10 @@ pub fn spawn_daemon_worker(state: SharedState, art_cache: SharedArtCache) {
                         g.config.stream_via_usb,
                         g.config.usb_port.clone(),
                         g.config.device_token.clone(),
+                        g.config.use_ble,
                     )
                 } else {
-                    (DEFAULT_DEVICE_IP.to_string(), false, String::new(), String::new())
+                    (DEFAULT_DEVICE_IP.to_string(), false, String::new(), String::new(), false)
                 };
 
                 let clean_ip = sanitize_ip_str(&target_ip);
@@ -302,7 +373,7 @@ pub fn spawn_daemon_worker(state: SharedState, art_cache: SharedArtCache) {
 
                 if let Ok(json_str) = serde_json::to_string(&stats_msg) {
                     if let Some(addr) = target_addr {
-                        let _ = send_udp(&udp, addr, &json_str, &token);
+                        let _ = send_udp(&udp, addr, &json_str, &token, use_ble);
                     }
                     if stream_usb {
                         let _ = send_usb_line(&usb_port, &json_str, &state);
@@ -329,7 +400,7 @@ pub fn spawn_daemon_worker(state: SharedState, art_cache: SharedArtCache) {
                     };
                     if let Ok(json_str) = serde_json::to_string(&wire) {
                         if let Some(addr) = target_addr {
-                            let _ = send_udp(&udp, addr, &json_str, &token);
+                            let _ = send_udp(&udp, addr, &json_str, &token, use_ble);
                         }
                         if stream_usb {
                             let _ = send_usb_line(&usb_port, &json_str, &state);
@@ -359,7 +430,7 @@ pub fn spawn_daemon_worker(state: SharedState, art_cache: SharedArtCache) {
                 if let Some(pkt) = clock_pkt {
                     if let Ok(json_str) = serde_json::to_string(&pkt) {
                         if let Some(addr) = target_addr {
-                            let _ = send_udp(&udp, addr, &json_str, &token);
+                            let _ = send_udp(&udp, addr, &json_str, &token, use_ble);
                         }
                         if stream_usb {
                             let _ = send_usb_line(&usb_port, &json_str, &state);
@@ -386,7 +457,7 @@ pub fn spawn_daemon_worker(state: SharedState, art_cache: SharedArtCache) {
                     if weather_changed || last_weather_send.elapsed() >= Duration::from_secs(60) {
                         if let Ok(json_str) = serde_json::to_string(&w) {
                             if let Some(addr) = target_addr {
-                                let _ = send_udp(&udp, addr, &json_str, &token);
+                                let _ = send_udp(&udp, addr, &json_str, &token, use_ble);
                             }
                             if stream_usb {
                                 let _ = send_usb_line(&usb_port, &json_str, &state);
@@ -412,8 +483,9 @@ fn start_ota(
     udp: &UdpSocket,
     state: &SharedState,
 ) -> Result<&'static str, String> {
+    // In Bluetooth mode Wi-Fi is off until the update turns it on.
     let wifi = state.lock().ok().and_then(|g| g.device_wifi_connected);
-    if wifi == Some(false) {
+    if wifi == Some(false) && !cfg.use_ble {
         return Err("The device needs WiFi to download updates.".into());
     }
     let bytes = std::fs::read(path).map_err(|e| format!("Couldn't read {}: {e}", path.display()))?;
@@ -432,14 +504,15 @@ fn start_ota(
     let mac = crate::ota::sign(&cfg.device_token, &sha256, size).ok_or("Bad device token.")?;
     msg["mac"] = serde_json::Value::String(mac);
     let addr = target.ok_or("No device address.")?;
-    send_udp(udp, addr, &msg.to_string(), &cfg.device_token)
+    send_udp(udp, addr, &msg.to_string(), &cfg.device_token, cfg.use_ble)
         .map_err(|e| format!("Couldn't reach the device: {e}"))?;
-    Ok("WiFi")
+    Ok(if cfg.use_ble { "Bluetooth" } else { "WiFi" })
 }
 
-/// Sends a JSON message over UDP, encrypted once the device has a token
-/// (DESIGN.md Section 11.6).
-fn send_udp(udp: &UdpSocket, addr: SocketAddr, json: &str, token: &str) -> std::io::Result<()> {
+/// Sends a JSON message to the device over its everyday link: UDP, or
+/// Bluetooth in Bluetooth mode (DESIGN.md Section 11.7). Encrypted once the
+/// device has a token (Section 11.6).
+fn send_udp(udp: &UdpSocket, addr: SocketAddr, json: &str, token: &str, ble: bool) -> std::io::Result<()> {
     let sealed;
     let pkt = if token.is_empty() {
         json
@@ -448,8 +521,44 @@ fn send_udp(udp: &UdpSocket, addr: SocketAddr, json: &str, token: &str) -> std::
             .ok_or_else(|| std::io::Error::other("bad device token"))?;
         sealed.as_str()
     };
+    if ble {
+        return if crate::ble_daemon::send_line(pkt.to_string()) {
+            Ok(())
+        } else {
+            Err(std::io::Error::other("Bluetooth link is down"))
+        };
+    }
     udp.send_to(pkt.as_bytes(), addr).map(|_| ())
 }
+
+/// Album art as art_data chunks for a device that asked with art_req: the
+/// sealed blob (or raw pixels without a token), in order.
+fn art_chunks(hash: &str, art: &[u8], token: &str) -> Option<Vec<String>> {
+    use base64::Engine;
+    let wire = if token.is_empty() {
+        art.to_vec()
+    } else {
+        crate::auth::seal_blob(token, &format!("art:{hash}"), art)?
+    };
+    Some(
+        wire.chunks(ART_CHUNK)
+            .enumerate()
+            .map(|(i, c)| {
+                serde_json::json!({
+                    "type": "art_data",
+                    "hash": hash,
+                    "off": i * ART_CHUNK,
+                    "b64": base64::engine::general_purpose::STANDARD.encode(c),
+                })
+                .to_string()
+            })
+            .collect(),
+    )
+}
+
+/// Raw bytes per art_data line: 684 base64 characters, well inside the
+/// device's 1460-byte line.
+const ART_CHUNK: usize = 512;
 
 /// A datagram from the device, decrypted once it has a token (DESIGN.md
 /// Section 11.6). Plaintext is only taken for `auth_error`: the device sends

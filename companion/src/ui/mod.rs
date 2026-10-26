@@ -2,6 +2,7 @@ pub mod accents;
 pub mod components;
 pub mod daemon_settings;
 pub mod device_settings;
+pub mod connection;
 pub mod firmware;
 pub mod initial_setup;
 pub mod overview;
@@ -396,6 +397,11 @@ pub fn open_companion_window(cx: &mut App, state: SharedState) {
         if let Ok(path) = std::env::var("HAWAOS_DEV_OTA") {
             g.ota = Some(crate::models::OtaProgress::new("starting", 0, None));
             g.outbound_queue.push_back(OutboundAction::StartOta { path: path.into() });
+        }
+        // Dev aid for tests: `HAWAOS_DEV_LINK=ble|wifi` presses the Connection
+        // card's switch.
+        if let Ok(link) = std::env::var("HAWAOS_DEV_LINK") {
+            g.outbound_queue.push_back(OutboundAction::SetLink { ble: link == "ble", since: std::time::Instant::now() });
         }
         translucent
     } else {

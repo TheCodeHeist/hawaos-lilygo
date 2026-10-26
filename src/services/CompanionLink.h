@@ -23,4 +23,9 @@ void sendConfigAck(uint32_t version);
 // Send one JSON line on every live link (USB, UDP peer, BLE during setup).
 void sendJson(const char *json);
 
+// True while companion data is flowing over the everyday Bluetooth link:
+// connected and a sealed message within the last few seconds (a dead link
+// can stay "connected" on the PC side). Always true outside Bluetooth mode.
+bool isLinked();
+
 } // namespace CompanionLink

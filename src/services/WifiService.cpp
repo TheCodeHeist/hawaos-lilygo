@@ -31,6 +31,14 @@ volatile bool s_scanRequested = false;
 // wifi_status connected/failed so the setup wizard can react.
 volatile bool s_joinRequested = false;
 bool s_joinActive = false;
+volatile bool s_updateHold = false;
+
+// Bluetooth link mode keeps the radio off unless an update needs it, or
+// setup (Set Up Again) is joining a network.
+bool wifiWanted() {
+  return Settings::getLinkMode() != LinkMode::Ble || s_updateHold ||
+         SetupService::isActive();
+}
 uint32_t s_joinStartMs = 0;
 volatile uint8_t s_lastDiscReason = 0;
 volatile uint8_t s_authFailures = 0;
@@ -126,6 +134,18 @@ void startConnectAttempt(char *ssidBuf, size_t ssidLen, char *passBuf,
     return;
   }
 
+  if (!wifiWanted()) {
+    Serial.println("[WifiService] Bluetooth link mode: Wi-Fi off (network kept)");
+    WiFi.disconnect(true, false);
+    DataStore::updateWifi(false, 0, ssidBuf, "");
+    Event ev{};
+    ev.type = EventType::DataUpdated;
+    EventBus::post(ev);
+    return;
+  }
+
+  // Modem sleep must stay on while BLE runs, or the WiFi driver aborts.
+  WiFi.setSleep(BleLink::isRunning());
   Serial.printf("[WifiService] Connecting to SSID '%s'...\n", ssidBuf);
   WiFi.disconnect(false, false);
   s_authFailures = 0;
@@ -246,7 +266,8 @@ void wifiTaskEntry(void * /*param*/) {
         ev.type = EventType::DataUpdated;
         EventBus::post(ev);
         lastAttemptMs = nowMs;
-      } else if (ssid[0] != '\0' && (nowMs - lastAttemptMs >= 12000)) {
+      } else if (ssid[0] != '\0' && wifiWanted() &&
+                 (nowMs - lastAttemptMs >= 12000)) {
         Serial.printf(
             "[WifiService] Still disconnected (status=%d), retrying '%s'...\n",
             static_cast<int>(st), ssid);
@@ -295,6 +316,11 @@ void begin() {
 
 void reconfigure(const char *ssid, const char *pass) {
   Settings::setWifiCredentials(ssid, pass);
+  if (!wifiWanted()) {
+    // Bluetooth mode: kept for firmware updates, not joined now.
+    sendWifiStatus("saved", ssid, nullptr, nullptr);
+    return;
+  }
   s_joinRequested = true;
   s_reconfigRequested = true;
 }
@@ -312,5 +338,16 @@ void forceReconnect() {
 }
 
 bool isConnected() { return s_wasConnected; }
+
+void applyLinkMode() { s_forceReconnect = true; }
+
+void holdForUpdate(bool hold) {
+  if (s_updateHold == hold)
+    return;
+  s_updateHold = hold;
+  if (Settings::getLinkMode() == LinkMode::Ble) {
+    s_forceReconnect = true;
+  }
+}
 
 } // namespace WifiService
