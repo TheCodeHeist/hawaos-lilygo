@@ -437,3 +437,25 @@ Asset: `assets/logo.svg`, a **one-colour mark** (a rounded square with the wind 
 - AOD: enter/exit transitions work in all four states; clock at top when media is playing; backlight dims.
 - Boot: no white flash, logo appears quickly, fade-in is smooth, theme matches the saved one.
 - Heap and PSRAM stay stable over a multi-hour soak with media changing and AOD cycling.
+
+## 16. Companion platforms (Linux, Windows)
+
+Everything that differs between desktops sits behind `companion/src/platform`: one module per OS with the same functions, so the protocol, art processing, glyphs, setup and the window are shared. The tray's menu is shared too (`tray_actions.rs`), each platform only drawing it.
+
+| | Linux | Windows |
+|---|---|---|
+| Now playing, position, media keys | MPRIS through `playerctl` | System Media Transport Controls (WinRT), the sessions Windows' media flyout shows |
+| Album art | the player's `file://` or `http(s)://` URL | the session's thumbnail stream, read once per track |
+| Notifications | `dbus-monitor` on the session bus (11.10) | not yet: `UserNotificationListener` only works for packaged, signed apps |
+| Tray | StatusNotifierItem (`ksni`) | notification-area icon (`tray-icon`) on its own thread with a message loop |
+| Start with system | `~/.config/autostart/*.desktop` | `HKCU\…\CurrentVersion\Run` value `HawaOS Companion` |
+| Setup's Wi-Fi list | NetworkManager (`nmcli`) | WLAN API; 2.4 GHz only on both |
+| Board's serial port | `/dev/ttyACM*`, `/dev/ttyUSB*` | COM ports with Espressif's USB vendor id `303a` |
+| Settings | `~/.config/hawaos-companion` | `%APPDATA%\hawaos-companion` |
+| Glyph fonts (11.9) | the system's (Noto), Noto Emoji for emoji | the system's (Nirmala UI, Yu Gothic, Microsoft YaHei, Malgun Gothic), Segoe UI Symbol for emoji |
+| Package | Flatpak (`install.sh`) | Inno Setup installer, per user, no administrator rights |
+
+Bluetooth (`btleplug`: BlueZ / WinRT), serial (`serialport`), system stats (`sysinfo`), the window (gpui) and the network code are cross-platform already. On Windows the release `.exe` runs without a console window and carries the app icon (`build.rs`); the first network use brings up Windows Firewall's prompt, which needs allowing on private networks for the Wi-Fi link.
+
+**Builds.** `.github/workflows/windows.yml` tests and builds the Windows companion on every change and keeps the installer as an artifact; when a release is published (`tools/release.sh`), it attaches `hawaos-companion-<version>-windows-x64-setup.exe` and its checksum. The installer is unsigned for now, so SmartScreen warns on first run; signing (which would also allow notification mirroring) is open for 1.0.0.
+

@@ -104,7 +104,9 @@ flowchart LR
 
 ### Install the companion
 
-On any Linux with [Flatpak](https://flatpak.org/setup/), one command installs the latest companion for your user (no root):
+**Windows 10 or 11** (from 0.9.0): download `hawaos-companion-<version>-windows-x64-setup.exe` from the [latest release](https://github.com/TheCodeHeist/hawaos-lilygo/releases/latest) and run it. It installs for your user only (no administrator rights) and can start the companion when you sign in. The installer isn't signed yet, so Windows SmartScreen asks first: choose **More info**, then **Run anyway**. On first launch, allow the companion through Windows Firewall on private networks (the device talks to it over Wi-Fi). Everything works as on Linux except mirroring desktop notifications to the device, which Windows only allows for signed apps.
+
+**Linux:** on any distribution with [Flatpak](https://flatpak.org/setup/), one command installs the latest companion for your user (no root):
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/TheCodeHeist/hawaos-lilygo/main/install.sh | bash
@@ -118,7 +120,8 @@ Every [release](https://github.com/TheCodeHeist/hawaos-lilygo/releases) has read
 
 | File | What it's for |
 |---|---|
-| `hawaos-companion-<version>-x86_64.flatpak` | The companion app, if you'd rather install by hand: `flatpak install --user <file>` |
+| `hawaos-companion-<version>-x86_64.flatpak` | The Linux companion, if you'd rather install by hand: `flatpak install --user <file>` |
+| `hawaos-companion-<version>-windows-x64-setup.exe` | The Windows companion's installer |
 | `hawaos-<version>-full.bin` | First install on a new board, at offset `0x0`. **Erases saved settings.** |
 | `hawaos-<version>-update.bin` | Updating a device that already runs HawaOS: companion **Device > Firmware > Install update...** |
 
@@ -358,7 +361,8 @@ The full protocol, key derivation and replay rules are in [`DESIGN.md`](DESIGN.m
 - [x] Companion packaged as a Flatpak, with prebuilt firmware in every release
 - [x] Image wallpapers pushed from the companion, over Wi-Fi, Bluetooth or USB
 - [x] Titles and notifications in any script (CJK, Arabic, Hebrew, Bengali, emoji), drawn by the companion
-- [ ] Windows companion
+- [x] Windows companion: media, album art, tray, Bluetooth and USB setup (0.9.0)
+- [ ] Notification mirroring on Windows (needs a signed app)
 
 ## License
 
