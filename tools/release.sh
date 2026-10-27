@@ -31,8 +31,9 @@ grep -q "<release version=\"$VER\"" "$META" || die "add a <release version=\"$VE
 git rev-parse -q --verify "refs/tags/v$VER" >/dev/null && die "tag v$VER already exists"
 if [[ $DRY != --dry-run ]]; then
   [[ $(git branch --show-current) == main ]] || die "release from main"
-  # The metainfo entry is the only change expected before a release.
-  dirty=$(git status --porcelain | grep -v " $META\$" || true)
+  # Only the files this script bumps may differ (the metainfo entry, or a
+  # dry run's bump).
+  dirty=$(git status --porcelain | grep -vE " ($META|companion/Cargo\.toml|companion/Cargo\.lock|include/config\.h|packaging/flatpak/cargo-sources\.json)\$" || true)
   [[ -z $dirty ]] || die "uncommitted changes:"$'\n'"$dirty"
 fi
 
@@ -74,7 +75,8 @@ fi
 echo "== Publish"
 git add companion/Cargo.toml companion/Cargo.lock include/config.h "$META" \
   packaging/flatpak/cargo-sources.json
-git commit -q -m "Release $VER"
+# Already committed when the bump went in ahead of the release.
+git diff --cached --quiet || git commit -q -m "Release $VER"
 git tag "v$VER"
 git push origin main "v$VER"
 gh release create "v$VER" --title "HawaOS $VER" --notes-file "$NOTES" \

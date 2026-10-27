@@ -49,6 +49,11 @@
   <content_rating type="oars-1.1"/>
 
   <releases>
+    <release version="0.8.0" date="2026-10-27">
+      <description>
+        <p>Titles and notifications in any script: Chinese, Japanese, Korean, Arabic, Hebrew, Bengali and other Indic scripts, and emoji, shaped on your computer and shown on the device. Accented letters show again. Notifications keep their bold text, line breaks and links. A firmware update that doesn't start properly is rolled back automatically, and setting a board up again keeps all your settings. A new logo that takes your accent colour.</p>
+      </description>
+    </release>
     <release version="0.7.0" date="2026-10-27">
       <description>
         <p>Your own picture as the device's wallpaper, sent over Wi-Fi, Bluetooth or USB and kept through restarts. The screen can turn fully off after a while on the always-on display. Album art that can't be loaded is now explained in the log.</p>
