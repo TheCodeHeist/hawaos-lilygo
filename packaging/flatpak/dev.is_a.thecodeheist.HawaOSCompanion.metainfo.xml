@@ -49,6 +49,11 @@
   <content_rating type="oars-1.1"/>
 
   <releases>
+    <release version="0.6.1" date="2026-10-27">
+      <description>
+        <p>Album art works again in the Flatpak: the companion can now read the cover files media players save.</p>
+      </description>
+    </release>
     <release version="0.6.0" date="2026-10-27">
       <description>
         <p>First release: a guided setup over USB or Bluetooth, encrypted Wi-Fi and Bluetooth links, over-the-air firmware updates, and album art over every link.</p>
