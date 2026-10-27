@@ -2985,6 +2985,7 @@ dependencies = [
  "aes-gcm",
  "base64 0.22.1",
  "btleplug",
+ "cosmic-text",
  "futures",
  "getrandom 0.3.4",
  "gpui-kit",

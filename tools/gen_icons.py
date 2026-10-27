@@ -135,6 +135,22 @@ def run_lv_font_conv(
     )
 
 
+def link_glyph_fallback(out_file: Path, size: int):
+    """Points a text font at the glyph cache font of its size, which draws
+    what the companion sends for other scripts (DESIGN.md Section 11.9)."""
+    fallback = f"font_glyphs_{size}"
+    text = out_file.read_text()
+    text = text.replace(
+        "/*Initialize a public general font descriptor*/",
+        f"/*Glyphs the companion sends (src/services/GlyphCache.cpp)*/\n"
+        f"extern lv_font_t {fallback};\n\n"
+        "/*Initialize a public general font descriptor*/",
+        1,
+    )
+    text = text.replace("    .fallback = NULL,", f"    .fallback = &{fallback},", 1)
+    out_file.write_text(text)
+
+
 def main():
     repo_root = Path(__file__).resolve().parent.parent
     fonts_dir = repo_root / "assets" / "fonts"
@@ -205,6 +221,8 @@ def main():
         ttf_path = fonts_dir / ttf_file
         out_c = out_fonts_dir / f"{c_name}.c"
         run_lv_font_conv(lv_font_conv, ttf_path, sz, rng, out_c)
+        if rng == FULL_TEXT_RANGE:
+            link_glyph_fallback(out_c, sz)
 
 
 if __name__ == "__main__":

@@ -116,6 +116,7 @@ pub struct IncomingPacket {
     /// Set when a firmware update failed its start-up check and the device
     /// went back to the firmware it had (DESIGN.md 11.5).
     pub rolled_back: Option<String>,
+    pub gl: Option<u8>,
     pub reduce_motion: Option<bool>,
     pub wallpaper: Option<String>,
     pub use_24h: Option<bool>,
@@ -168,6 +169,10 @@ pub enum OutboundAction {
     SendWallpaper {
         hash: String,
     },
+    /// Push a glyph pack to a device that can't pull it over HTTP (gl_req).
+    SendGlyphs {
+        hash: String,
+    },
     SendClockAction {
         action: String,
         duration_sec: u32,
@@ -218,6 +223,9 @@ pub struct SharedDaemonState {
     pub device_needs_setup: bool,
     /// Firmware version the device reports (`fw` in config_ack).
     pub device_fw: Option<String>,
+    /// The device's firmware has a glyph cache (`gl` in config_ack), so text
+    /// in other scripts goes as glyphs (glyphs.rs) instead of being dropped.
+    pub device_glyphs: bool,
     pub ota: Option<OtaProgress>,
     /// One-shot message for the window's banner (taken when shown).
     pub notice: Option<String>,
@@ -293,6 +301,7 @@ impl SharedDaemonState {
             wizard_active: false,
             device_needs_setup: false,
             device_fw: None,
+            device_glyphs: false,
             ota: None,
             notice: None,
             last_auth_notice: None,

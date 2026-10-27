@@ -59,7 +59,7 @@
   </tr>
 </table>
 
-A frosted-glass Rust app (gpui) that lives in your tray. It streams stats, media, weather and notifications to the device, and every device setting can be changed from it. The tray menu shows the current track with play/pause and next, switches the accent, adds a device, and can start the companion with your session.
+A frosted-glass Rust app (gpui) that lives in your tray. It streams stats, media, weather and notifications to the device, and every device setting can be changed from it. Text in scripts the device's fonts don't include (Chinese, Japanese, Korean, Arabic, Hebrew, Bengali and other Indic scripts, emoji) is shaped on your computer with its own fonts and sent as glyphs, so it shows on the device as it would on your desktop. The tray menu shows the current track with play/pause and next, switches the accent, adds a device, and can start the companion with your session.
 
 ## Make it yours
 
@@ -346,6 +346,7 @@ The full protocol, key derivation and replay rules are in [`DESIGN.md`](DESIGN.m
 - [x] Bluetooth as an everyday link instead of Wi-Fi, with album art over Bluetooth and USB
 - [x] Companion packaged as a Flatpak, with prebuilt firmware in every release
 - [x] Image wallpapers pushed from the companion, over Wi-Fi, Bluetooth or USB
+- [x] Titles and notifications in any script (CJK, Arabic, Hebrew, Bengali, emoji), drawn by the companion
 - [ ] Windows companion
 
 ## License

@@ -97,7 +97,7 @@ Rules:
 | display | 28 | SemiBold | big numbers (CPU %), AOD clock |
 | hero | 48 | SemiBold | Home clock |
 
-- Glyph coverage v1: Basic Latin, Latin-1 Supplement, Latin Extended-A, Greek, Cyrillic, plus `° % · – — … ’ “ ”` and digits. Media titles can contain any script, so the companion (`sanitize_for_font`) first composes accents (players often send `n` + a combining tilde rather than `ñ`), keeps every character the fonts cover, reduces other accented letters to their base letter (`ạ` → `a`), and drops the rest, so the device never shows missing-glyph boxes. The device copies text into its fixed buffers without splitting a UTF-8 character. Wider coverage (CJK, other scripts) can be added later via LVGL TinyTTF with a Noto subset; complex scripts needing shaping/RTL are out of scope for v1.
+- Glyph coverage v1: Basic Latin, Latin-1 Supplement, Latin Extended-A, Greek, Cyrillic, plus `° % · – — … ’ “ ”` and digits. Media titles can contain any script, so the companion (`sanitize_for_font`) first composes accents (players often send `n` + a combining tilde rather than `ñ`), keeps every character the fonts cover, reduces other accented letters to their base letter (`ạ` → `a`), and drops the rest, so the device never shows missing-glyph boxes. The device copies text into its fixed buffers without splitting a UTF-8 character. Every other script (CJK, Arabic, Hebrew, Bengali and other Indic scripts, emoji) is drawn by the companion and sent as glyphs (11.9), so the fonts themselves stay this size.
 - Long text: ellipsis by default; use slow circular scroll (`LV_LABEL_LONG_SCROLL_CIRCULAR`) only for the **focused media title**.
 
 ## 5. Icons: Lucide everywhere
@@ -261,7 +261,7 @@ The transport is an open decision (see section 14). Design a `Transport` abstrac
 - Send on every change and as a **5 s heartbeat**. `state`: `playing | paused | stopped`.
 - Device computes position as `pos_ms + (now - receive_time)` while playing, and resyncs on each message.
 - `bg_top` / `bg_bottom` / `ink` are computed by the companion (extract the dominant color from a small downscale, clamp OKLCH lightness so it is a deep tint, keep contrast with light or dark text). **The device does no color math.**
-- The companion replaces characters the device fonts cannot render (section 4).
+- Text in scripts the device fonts lack is sent as glyphs: `gl` and `gl_len` name the pack (11.9). The same goes for `notify` and `weather`.
 
 ### 11.2 Album art
 - Format: **128x128, RGB565 little-endian, raw, 32 768 bytes**, center-cropped, no alpha. The device only copies bytes into a PSRAM buffer, so **no JPEG decoder is needed**.
@@ -358,7 +358,7 @@ A device can talk to the companion over **Bluetooth instead of Wi-Fi**. `Setting
 
 **Finding each other again.** The companion queries every 20 s over its current link. If the device has been silent for 45 s, it also tries the other transport: in Bluetooth mode a sealed UDP query, in Wi-Fi mode a Bluetooth scan every 30 s. The device's ack carries `link`, so a switch whose ack was lost heals within about a minute.
 
-**Security.** Outside setup, BLE follows the UDP rules of 11.6. The GATT link is open, so anyone nearby can take the one connection (denial of service only: nothing is accepted from them), and the daemon ignores a device advertising that it is in setup. The rules: with a token, only `sealed` envelopes are accepted (same keys and replay counter), except `art_data` and `wp_data` chunks, which are pieces of an encrypted blob checked when complete. Plaintext is answered `auth_error`/`plaintext`, setup messages `setup_only`, and the device's own messages over BLE are sealed. The GATT link itself is unauthenticated; everything rides on the app-layer encryption.
+**Security.** Outside setup, BLE follows the UDP rules of 11.6. The GATT link is open, so anyone nearby can take the one connection (denial of service only: nothing is accepted from them), and the daemon ignores a device advertising that it is in setup. The rules: with a token, only `sealed` envelopes are accepted (same keys and replay counter), except `art_data`, `wp_data` and `gl_data` chunks, which are pieces of an encrypted blob checked when complete. Plaintext is answered `auth_error`/`plaintext`, setup messages `setup_only`, and the device's own messages over BLE are sealed. The GATT link itself is unauthenticated; everything rides on the app-layer encryption.
 
 **Companion.** `ble_daemon.rs` keeps a connection to `HawaOS-<device_id>` while `use_ble` is set and the wizard isn't running, reconnecting every few seconds when it drops. It writes without response (link-layer acknowledged) and the device asks for a 7.5–15 ms connection interval, so a 32 KB cover arrives in about a second. A firmware update or link switch requested while the link is reconnecting waits up to 15 s for it.
 
@@ -372,6 +372,17 @@ The companion turns a picked picture into the device's wallpaper (`wallpaper.rs`
 Transfer works like album art (11.2), with `wp` for `art`: the device pulls `GET /wp/<hash>` over Wi-Fi, or asks with `{"type":"wp_req","hash"}` and receives `wp_data` chunks over Bluetooth or USB. Paired, the blob is `iv || ciphertext || tag` with AAD `wp:<hash>`, 108 828 bytes; about 3.5 s over Bluetooth, 2 s over USB. Both use one transfer engine on each side (`ImageSlot` in `CompanionLink.cpp`, `image_chunks` in `worker.rs`), each image with its own buffer, so a cover and a wallpaper can arrive at the same time.
 
 The device keeps it in the `spiffs` data partition of the default table, which nothing else uses and which OTA updates don't touch: a header in the first 4 KB sector (magic `HWP1`, size, hash, CRC-32 of the pixels), the pixels from 4 KB. The header is written last, so an interrupted save reads back as no picture. Downloads land in a PSRAM staging buffer; `Wallpaper::commit()` saves it (the erase pauses flash access, and so drawing, for about a second) and the UI task swaps it in on `SettingsChanged`, so the screen never shows half a picture. At boot the saved picture is loaded into PSRAM if its CRC checks out. A device on older firmware treats `image` as `gradient`, and its ack moves the companion back to that.
+
+### 11.9 Text in other scripts
+The device fonts cover Latin, Greek and Cyrillic (section 4). Fonts for everything else would cost megabytes of flash and still couldn't draw Bengali or Arabic, whose letters change shape with their neighbours. So the companion draws that text itself and sends the result as glyphs (`glyphs.rs`):
+
+1. It shapes the text with the system's fonts (`cosmic-text`: HarfBuzz-style shaping, bidi, font fallback), the way a desktop would draw it. A color emoji font that doesn't rasterise is retried in Noto Emoji.
+2. A cluster the device can draw itself (one Latin, Greek or Cyrillic character) stays as text. Any other cluster (a CJK character, a Bengali syllable, an Arabic letter in its joined form, an emoji) becomes one private-use character, `U+E000`–`U+F8FE`, and the clusters go out in **display order**, so the device draws left to right without knowing about bidi or shaping. Fields that wrap across lines (notification bodies) read right to left within each line only.
+3. Each cluster is rasterised at the device's three text sizes (12, 14, 18 px) as a 4-bit alpha bitmap, the same layout as LVGL font bitmaps. The message names its **glyph pack** with `"gl":"<hash>","gl_len":<bytes>`: `HGL1`, a 32-bit session id, a glyph count, then per glyph its character, size, box, offsets, advance and bitmap. Packs are at most 32 KB.
+
+The device fetches packs like album art (11.2), with `gl` for `art` (`GET /gl/<hash>`, or `gl_req` and `gl_data` chunks; sealed with AAD `gl:<hash>`), queueing up to four while one downloads. `GlyphCache` adds them to a 384 KB PSRAM cache on the UI task. The Inter text fonts fall back to `font_glyphs_{12,14,18}` (set by `tools/gen_icons.py`), whose callbacks look glyphs up there, so every existing label (scrolling, colours, themes) draws them unchanged; afterwards labels holding such text are set again so they re-measure. A new session id (the companion restarted and is numbering clusters afresh) clears the cache, as does running out of room, after which messages bring back what they need. Until a pack arrives the text is simply blank (`LV_USE_FONT_PLACEHOLDER 0`).
+
+The companion only sends glyphs to firmware that says it can draw them (`"gl":1` in `config_ack`); older firmware gets the cleaned-up text of section 4. A message's text is converted once and cached, so the 5 s media heartbeat costs nothing and names the same pack, which the device already has.
 
 ## 12. Boot logo
 
@@ -395,7 +406,7 @@ Asset: the user supplies the HawaOS logo as **SVG or transparent PNG** (ideally 
 1. **Transport:** WiFi only, USB serial as primary (no WiFi credentials, fast, reliable, but debug logs cannot share that port), or both behind the `Transport` abstraction.
 2. **Button mapping:** which physical button is Next vs Select.
 3. **LVGL version:** 8 vs 9 (APIs differ). Pick one, pin it, keep it consistent.
-4. **Unicode coverage** beyond v1 (CJK or other scripts via TinyTTF).
+4. ~~**Unicode coverage** beyond v1~~: done, as companion-drawn glyphs (11.9).
 5. **Logo asset** format and colors (single-color A8 vs multi-color).
 6. **Wallpaper** default (gradient is the suggested default).
 7. **Touch variant:** assumed non-touch.

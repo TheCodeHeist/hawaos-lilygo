@@ -3,7 +3,6 @@ use std::thread;
 use std::time::Duration;
 
 use crate::models::{SharedState, WeatherForecastDayMsg, WeatherMsg};
-use crate::protocol::sanitize_for_font;
 
 pub fn map_wmo_code(code: u64, is_day: bool) -> (&'static str, &'static str) {
     match code {
@@ -194,7 +193,7 @@ pub fn fetch_open_meteo_weather(
 
     Some(WeatherMsg {
         msg_type: "weather".to_string(),
-        city: sanitize_for_font(&resolved_city),
+        city: resolved_city.trim().to_string(),
         temp,
         feels_like,
         temp_min,

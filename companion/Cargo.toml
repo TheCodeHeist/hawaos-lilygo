@@ -9,6 +9,7 @@ license = "MIT"
 aes-gcm = { version = "0.11.1", features = ["getrandom"] }
 base64 = "0.22"
 btleplug = "0.13.5"
+cosmic-text = "0.19"
 futures = "0.3.34"
 getrandom = "0.3"
 gpui-kit = "0.8.0"

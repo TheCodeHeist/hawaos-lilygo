@@ -17,6 +17,7 @@
 #include "drivers/Display.h"
 #include "services/FirmwareHealth.h"
 #include "services/SetupService.h"
+#include "services/GlyphCache.h"
 #include "services/Wallpaper.h"
 #include "services/WifiService.h"
 #include "ui/StatusBar.h"
@@ -57,6 +58,7 @@ void drainEvents() {
       AppManager::handleButton(ev.btn.button, ev.btn.press);
       break;
     case EventType::DataUpdated: {
+      GlyphCache::applyPending(); // text in other scripts, if a pack came
       const DataSnapshot snap = DataStore::getSnapshot();
       StatusBar::updateData(snap);
       AppManager::handleData(snap);
@@ -222,6 +224,7 @@ void begin() {
   FirmwareHealth::begin();
   DataStore::begin();
   Wallpaper::begin();
+  GlyphCache::begin();
   EventBus::begin();
   Buttons::begin();
 

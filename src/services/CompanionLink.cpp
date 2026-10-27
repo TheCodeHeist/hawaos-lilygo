@@ -10,6 +10,7 @@
 #include "services/NtpService.h"
 #include "services/OtaService.h"
 #include "services/SetupService.h"
+#include "services/GlyphCache.h"
 #include "services/Wallpaper.h"
 #include "services/WifiService.h"
 #include "ui/Theme.h"
@@ -44,15 +45,17 @@ char s_serialLine[1024] = {0};
 char s_bleLine[1460] = {0};
 size_t s_serialLen = 0;
 
-// An image the companion serves by hash: album art or the wallpaper. Pulled
-// over HTTP on Wi-Fi, else pushed in <kind>_data chunks (Bluetooth, USB).
+// A blob the companion serves by hash: album art, the wallpaper or a glyph
+// pack. Pulled over HTTP on Wi-Fi, else pushed in <kind>_data chunks
+// (Bluetooth, USB).
 struct ImageSlot {
-  const char *kind;  // "art" | "wp": URL path, message prefix and AAD
+  const char *kind;  // "art" | "wp" | "gl": URL path, message prefix and AAD
   const char *label; // for the log
-  size_t bytes;
-  uint8_t *(*buffer)();               // where the pixels land
-  void (*done)(const char *hash);     // called once authentic
+  size_t bytes;      // the buffer's size
+  uint8_t *(*buffer)();                       // where the bytes land
+  void (*done)(const char *hash, size_t len); // called once authentic
   uint32_t pullTimeoutMs;
+  size_t len; // this transfer's size: `bytes`, or less for a glyph pack
   char pending[16];
   char loaded[16]; // what the buffer holds
   uint32_t lastAttemptMs;
@@ -206,12 +209,12 @@ uint8_t *artBuffer() {
   return reinterpret_cast<uint8_t *>(DataStore::albumArtBuffer());
 }
 
-void artDone(const char *hash) {
+void artDone(const char *hash, size_t) {
   DataStore::setAlbumArtReady(hash, true);
   postDataUpdated();
 }
 
-void wallpaperDone(const char *hash) {
+void wallpaperDone(const char *hash, size_t) {
   Wallpaper::commit(hash);
   postSettingsChanged(); // the UI swaps it in and redraws
 }
@@ -221,19 +224,63 @@ ImageSlot s_art{"art", "128x128 RGB565 art", DataStore::ALBUM_ART_BYTES,
 ImageSlot s_wp{"wp", "320x170 wallpaper", Wallpaper::BYTES,
                Wallpaper::stagingBuffer, wallpaperDone, 4000};
 
-// Paired: images arrive as iv || ciphertext || tag (DESIGN.md Section 11.6).
-size_t wireBytes(const ImageSlot &s) {
-  return s.bytes + (CompanionAuth::hasToken() ? sizeof(s.iv) + sizeof(s.tag) : 0);
+void glyphsDone(const char *hash, size_t len) {
+  GlyphCache::commit(hash, len);
+  postDataUpdated(); // the UI adds them and redraws
 }
 
-void wantImage(ImageSlot &s, const char *hash) {
+ImageSlot s_gl{"gl", "glyph pack", GlyphCache::kPackBytes,
+               GlyphCache::stagingBuffer, glyphsDone, 1500};
+
+// Glyph packs wait here while another downloads: a notification's and the
+// now-playing title's can arrive together.
+struct GlyphWant {
+  char hash[16];
+  size_t len;
+};
+GlyphWant s_glQueue[4] = {};
+size_t s_glQueued = 0;
+
+// Paired: images arrive as iv || ciphertext || tag (DESIGN.md Section 11.6).
+size_t wireBytes(const ImageSlot &s) {
+  return s.len + (CompanionAuth::hasToken() ? sizeof(s.iv) + sizeof(s.tag) : 0);
+}
+
+void wantImage(ImageSlot &s, const char *hash, size_t len = 0) {
   if (hash[0] == '\0') {
     s.pending[0] = '\0';
   } else if (strncmp(hash, s.pending, sizeof(s.pending)) != 0) {
     s.failures = 0;
+    s.len = (len != 0) ? len : s.bytes;
     strncpy(s.pending, hash, sizeof(s.pending) - 1);
     s.pending[sizeof(s.pending) - 1] = '\0';
   }
+}
+
+// A message's text needs glyph pack `gl` (gl_len bytes) unless it's cached.
+void wantGlyphs(JsonDocument &doc) {
+  const char *hash = doc["gl"] | "";
+  const size_t len = doc["gl_len"] | 0U;
+  if (hash[0] == '\0' || len == 0 || len > GlyphCache::kPackBytes ||
+      strlen(hash) >= sizeof(s_gl.pending) || GlyphCache::hasPack(hash) ||
+      strcmp(hash, s_gl.pending) == 0) {
+    return;
+  }
+  for (size_t i = 0; i < s_glQueued; ++i) {
+    if (strcmp(s_glQueue[i].hash, hash) == 0) {
+      return;
+    }
+  }
+  if (s_gl.pending[0] == '\0') {
+    wantImage(s_gl, hash, len);
+    return;
+  }
+  if (s_glQueued == sizeof(s_glQueue) / sizeof(s_glQueue[0])) {
+    memmove(&s_glQueue[0], &s_glQueue[1], sizeof(s_glQueue) - sizeof(s_glQueue[0]));
+    --s_glQueued;
+  }
+  strcpy(s_glQueue[s_glQueued].hash, hash);
+  s_glQueue[s_glQueued++].len = len;
 }
 
 // Decrypts the buffer if paired and publishes it, or forgets it.
@@ -244,7 +291,7 @@ void finishImage(ImageSlot &s, bool complete, const uint8_t *iv,
   if (authentic && CompanionAuth::hasToken()) {
     char aad[24];
     snprintf(aad, sizeof(aad), "%s:%s", s.kind, s.pending);
-    authentic = CompanionAuth::openInPlace(aad, iv, buf, s.bytes, tag);
+    authentic = CompanionAuth::openInPlace(aad, iv, buf, s.len, tag);
   }
   if (authentic) {
     s.failures = 0;
@@ -252,7 +299,7 @@ void finishImage(ImageSlot &s, bool complete, const uint8_t *iv,
     s.loaded[sizeof(s.loaded) - 1] = '\0';
     s.pending[0] = '\0';
     Serial.printf("[CompanionLink] Pulled %s (%s)\n", s.label, s.loaded);
-    s.done(s.loaded);
+    s.done(s.loaded, s.len);
   } else {
     // The buffer no longer holds what it was loaded with.
     s.loaded[0] = '\0';
@@ -299,10 +346,10 @@ void handleImageData(ImageSlot &s, JsonDocument &doc) {
     const size_t at = off + i;
     if (at < ivLen) {
       s.iv[at] = chunk[i];
-    } else if (at < ivLen + s.bytes) {
+    } else if (at < ivLen + s.len) {
       buf[at - ivLen] = chunk[i];
     } else {
-      s.tag[at - ivLen - s.bytes] = chunk[i];
+      s.tag[at - ivLen - s.len] = chunk[i];
     }
   }
   s.pushGot = off + n;
@@ -461,7 +508,7 @@ void handleJsonMessage(const char *payload, size_t len, Link link,
       }
       // Image chunks are pieces of an encrypted blob, checked when complete.
       if (!trusted && strcmp(type, "art_data") != 0 &&
-          strcmp(type, "wp_data") != 0) {
+          strcmp(type, "wp_data") != 0 && strcmp(type, "gl_data") != 0) {
         replyAuthError(link, "plaintext", type);
         return;
       }
@@ -523,6 +570,10 @@ void handleJsonMessage(const char *payload, size_t len, Link link,
   }
   if (strcmp(type, "wp_data") == 0) {
     handleImageData(s_wp, doc);
+    return;
+  }
+  if (strcmp(type, "gl_data") == 0) {
+    handleImageData(s_gl, doc);
     return;
   }
 
@@ -603,6 +654,7 @@ void handleJsonMessage(const char *payload, size_t len, Link link,
 
     DataStore::updateMedia(state, title, artist, album, posMs, durMs, artHash,
                            bgTop, bgBot, inkLight);
+    wantGlyphs(doc);
 
     if (artHash[0] != '\0' &&
         strncmp(artHash, s_art.loaded, sizeof(s_art.loaded)) == 0) {
@@ -653,6 +705,7 @@ void handleJsonMessage(const char *payload, size_t len, Link link,
     Serial.printf("[CompanionLink] Weather RX: %s %d°%s (%s)\n", ws.city,
                   ws.temp, ws.unit, ws.condition);
     DataStore::updateWeather(ws);
+    wantGlyphs(doc);
     postDataUpdated();
     return;
   }
@@ -715,6 +768,7 @@ void handleJsonMessage(const char *payload, size_t len, Link link,
     Serial.printf("[CompanionLink] Notify RX via %s: app='%s', title='%s', body='%s', ts=%lu\n",
                   viaUsb ? "USB" : "UDP", a, t, body, static_cast<unsigned long>(ts));
     DataStore::pushNotification(a, t, body, ts);
+    wantGlyphs(doc);
     postNotificationArrived();
     return;
   }
@@ -821,7 +875,8 @@ void handleJsonMessage(const char *payload, size_t len, Link link,
 void fetchPending(ImageSlot &s) {
   if (s.pending[0] == '\0')
     return;
-  if (&s == &s_wp && !Wallpaper::canStage())
+  if ((&s == &s_wp && !Wallpaper::canStage()) ||
+      (&s == &s_gl && !GlyphCache::canStage()))
     return; // the UI hasn't taken the last one yet
 
   const uint32_t nowMs = millis();
@@ -903,7 +958,7 @@ void fetchPending(ImageSlot &s) {
     uint8_t iv[kIv];
     uint8_t tag[kTag];
     const bool complete = (!sealed || readExact(iv, kIv) == kIv) &&
-                          readExact(dst, s.bytes) == s.bytes &&
+                          readExact(dst, s.len) == s.len &&
                           (!sealed || readExact(tag, kTag) == kTag);
     finishImage(s, complete, iv, tag);
   } else {
@@ -913,8 +968,18 @@ void fetchPending(ImageSlot &s) {
   http.end();
 }
 
-// Album art first: it changes with every track; the wallpaper rarely.
+// Glyphs first (small, and text is missing without them), then album art
+// (changes with every track), then the wallpaper (rarely).
 void fetchPendingImages() {
+  while (s_gl.pending[0] == '\0' && s_glQueued > 0) {
+    const GlyphWant next = s_glQueue[0];
+    memmove(&s_glQueue[0], &s_glQueue[1], sizeof(s_glQueue) - sizeof(s_glQueue[0]));
+    --s_glQueued;
+    if (!GlyphCache::hasPack(next.hash)) {
+      wantImage(s_gl, next.hash, next.len);
+    }
+  }
+  fetchPending(s_gl);
   fetchPending(s_art);
   fetchPending(s_wp);
 }
@@ -992,7 +1057,7 @@ void flushPendingOutbound() {
     char buf[768];
     snprintf(buf, sizeof(buf),
              "{\"type\":\"config_ack\",\"id\":\"%s\",\"model\":\"%s\","
-             "\"fw\":\"%s\",\"setup\":%s,"
+             "\"fw\":\"%s\",\"gl\":1,\"setup\":%s,"
              "\"v\":%lu,\"ip\":\"%s\",\"wifi\":%s,"
              "\"ssid\":\"%s\",\"theme\":\"%s\",\"accent\":\"%s\","
              "\"brightness\":%u,\"aod\":%s,"

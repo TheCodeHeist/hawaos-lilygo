@@ -128,6 +128,9 @@
 #define LV_FONT_FMT_TXT_LARGE 1
 #define LV_USE_FONT_COMPRESSED 0
 #define LV_USE_FONT_SUBPX 0
+/* No boxes for missing glyphs: text in other scripts is blank for the moment
+ * before its glyphs arrive from the companion (GlyphCache). */
+#define LV_USE_FONT_PLACEHOLDER 0
 
 /*==================
  *  WIDGET USAGE

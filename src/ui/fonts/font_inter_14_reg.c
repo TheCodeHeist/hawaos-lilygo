@@ -6852,6 +6852,9 @@ static lv_font_fmt_txt_dsc_t font_dsc = {
  *  PUBLIC FONT
  *----------------*/
 
+/*Glyphs the companion sends (src/services/GlyphCache.cpp)*/
+extern lv_font_t font_glyphs_14;
+
 /*Initialize a public general font descriptor*/
 #if LVGL_VERSION_MAJOR >= 8
 const lv_font_t font_inter_14_reg = {
@@ -6871,7 +6874,7 @@ lv_font_t font_inter_14_reg = {
 #endif
     .dsc = &font_dsc,          /*The custom font data. Will be accessed by `get_glyph_bitmap/dsc` */
 #if LV_VERSION_CHECK(8, 2, 0) || LVGL_VERSION_MAJOR >= 9
-    .fallback = NULL,
+    .fallback = &font_glyphs_14,
 #endif
     .user_data = NULL,
 };

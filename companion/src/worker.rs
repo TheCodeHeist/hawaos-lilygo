@@ -12,7 +12,7 @@ use crate::models::{
 };
 use crate::config::sanitize_ip_str;
 use crate::protocol::{
-    fit_bytes, handle_incoming_json_line, sanitize_for_font, send_usb_line, send_usb_lines,
+    handle_incoming_json_line, send_usb_line, send_usb_lines,
 };
 use crate::weather::trigger_weather_update;
 
@@ -137,13 +137,18 @@ pub fn spawn_daemon_worker(state: SharedState, art_cache: SharedArtCache) {
                             .duration_since(UNIX_EPOCH)
                             .unwrap_or_default()
                             .as_secs();
-                        let pkt = serde_json::json!({
-                            "type": "notify",
-                            "app": fit_bytes(sanitize_for_font(&app), 31),
-                            "title": fit_bytes(sanitize_for_font(&title), 47),
-                            "body": fit_bytes(sanitize_for_font(&body), 95),
-                            "ts": ts
-                        });
+                        let glyphs = state.lock().is_ok_and(|g| g.device_glyphs);
+                        let text = crate::glyphs::for_device(&[(&app, 31), (&title, 47), (&body, 95)], glyphs);
+                        let pkt = with_glyphs(
+                            serde_json::json!({
+                                "type": "notify",
+                                "app": text.fields[0],
+                                "title": text.fields[1],
+                                "body": text.fields[2],
+                                "ts": ts
+                            }),
+                            &text,
+                        );
                         if let Ok(json_str) = serde_json::to_string(&pkt) {
                             eprintln!("[Daemon] Dispatching notification to {:?}: {}", target_addr, json_str);
                             if let Some(addr) = target_addr {
@@ -190,6 +195,12 @@ pub fn spawn_daemon_worker(state: SharedState, art_cache: SharedArtCache) {
                     OutboundAction::SendArt { hash } => {
                         let art = art_cache.lock().ok().and_then(|c| c.get(&hash).map(|e| e.rgb565_le.clone()));
                         if let Some(lines) = art.and_then(|a| image_chunks("art", &hash, &a, &cfg.device_token)) {
+                            push_lines(&lines, &cfg, &state);
+                        }
+                    }
+                    OutboundAction::SendGlyphs { hash } => {
+                        let pack = crate::glyphs::pack(&hash);
+                        if let Some(lines) = pack.and_then(|p| image_chunks("gl", &hash, &p, &cfg.device_token)) {
                             push_lines(&lines, &cfg, &state);
                         }
                     }
@@ -320,7 +331,7 @@ pub fn spawn_daemon_worker(state: SharedState, art_cache: SharedArtCache) {
                     }
                 }
 
-                let (target_ip, stream_usb, usb_port, token, use_ble) = if let Ok(mut g) = state.lock() {
+                let (target_ip, stream_usb, usb_port, token, use_ble, glyphs) = if let Ok(mut g) = state.lock() {
                     g.cpu_pct = cpu_pct;
                     g.ram_pct = ram_pct;
                     g.used_ram_gb = (used_mem as f32) / (1024.0 * 1024.0 * 1024.0);
@@ -340,9 +351,10 @@ pub fn spawn_daemon_worker(state: SharedState, art_cache: SharedArtCache) {
                         g.config.usb_port.clone(),
                         g.config.device_token.clone(),
                         g.config.use_ble,
+                        g.device_glyphs,
                     )
                 } else {
-                    (DEFAULT_DEVICE_IP.to_string(), false, String::new(), String::new(), false)
+                    (DEFAULT_DEVICE_IP.to_string(), false, String::new(), String::new(), false, false)
                 };
 
                 let clean_ip = sanitize_ip_str(&target_ip);
@@ -385,13 +397,17 @@ pub fn spawn_daemon_worker(state: SharedState, art_cache: SharedArtCache) {
 
                 if changed || last_media_heartbeat.elapsed() >= Duration::from_secs(5) {
                     // Device field sizes (DataStore.h); the window keeps full text.
+                    let text = crate::glyphs::for_device(
+                        &[(&cur_media.title, 63), (&cur_media.artist, 47), (&cur_media.album, 47)],
+                        glyphs,
+                    );
                     let wire = MediaMsg {
-                        title: fit_bytes(cur_media.title.clone(), 63),
-                        artist: fit_bytes(cur_media.artist.clone(), 47),
-                        album: fit_bytes(cur_media.album.clone(), 47),
+                        title: text.fields[0].clone(),
+                        artist: text.fields[1].clone(),
+                        album: text.fields[2].clone(),
                         ..cur_media.clone()
                     };
-                    if let Ok(json_str) = serde_json::to_string(&wire) {
+                    if let Ok(json_str) = serde_json::to_value(&wire).map(|v| with_glyphs(v, &text).to_string()) {
                         if let Some(addr) = target_addr {
                             let _ = send_udp(&udp, addr, &json_str, &token, use_ble);
                         }
@@ -448,7 +464,9 @@ pub fn spawn_daemon_worker(state: SharedState, art_cache: SharedArtCache) {
                         None => true,
                     };
                     if weather_changed || last_weather_send.elapsed() >= Duration::from_secs(60) {
-                        if let Ok(json_str) = serde_json::to_string(&w) {
+                        let text = crate::glyphs::for_device(&[(&w.city, 31)], glyphs);
+                        let wire = WeatherMsg { city: text.fields[0].clone(), ..w.clone() };
+                        if let Ok(json_str) = serde_json::to_value(&wire).map(|v| with_glyphs(v, &text).to_string()) {
                             if let Some(addr) = target_addr {
                                 let _ = send_udp(&udp, addr, &json_str, &token, use_ble);
                             }
@@ -549,9 +567,19 @@ fn send_udp(udp: &UdpSocket, addr: SocketAddr, json: &str, token: &str, ble: boo
     udp.send_to(pkt.as_bytes(), addr).map(|_| ())
 }
 
+/// Names the glyph pack a message's text needs (`gl`, `gl_len`): the device
+/// fetches it like album art.
+fn with_glyphs(mut msg: serde_json::Value, text: &crate::glyphs::DeviceText) -> serde_json::Value {
+    if let Some((hash, len)) = &text.pack {
+        msg["gl"] = serde_json::json!(hash);
+        msg["gl_len"] = serde_json::json!(len);
+    }
+    msg
+}
+
 /// An image as `<kind>_data` chunks for a device that asked with
-/// `<kind>_req` (kind "art" or "wp"): the sealed blob (or raw pixels without
-/// a token), in order.
+/// `<kind>_req` (kind "art", "wp" or "gl"): the sealed blob (or raw bytes
+/// without a token), in order.
 fn image_chunks(kind: &str, hash: &str, px: &[u8], token: &str) -> Option<Vec<String>> {
     use base64::Engine;
     let wire = if token.is_empty() {

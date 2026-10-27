@@ -39,7 +39,7 @@ pub fn fit_bytes(mut s: String, max_bytes: usize) -> String {
 
 /// Whether the device's text fonts have a glyph for `c` (the ranges in
 /// tools/gen_icons.py's FULL_TEXT_RANGE).
-fn device_has_glyph(c: char) -> bool {
+pub fn device_has_glyph(c: char) -> bool {
     matches!(c as u32,
         0x20..=0x7E | 0xA0..=0x17F | 0x370..=0x3FF | 0x400..=0x4FF
         | 0x2013 | 0x2014 | 0x2018 | 0x2019 | 0x201C | 0x201D | 0x2022 | 0x2026)
@@ -120,6 +120,10 @@ pub fn handle_incoming_json_line(line: &str, state: &SharedState) {
             if let (Some(hash), Ok(mut g)) = (pkt.hash.clone(), state.lock()) {
                 g.outbound_queue.push_back(crate::models::OutboundAction::SendArt { hash });
             }
+        } else if pkt.msg_type == "gl_req" {
+            if let (Some(hash), Ok(mut g)) = (pkt.hash.clone(), state.lock()) {
+                g.outbound_queue.push_back(crate::models::OutboundAction::SendGlyphs { hash });
+            }
         } else if pkt.msg_type == "wp_req" {
             if let (Some(hash), Ok(mut g)) = (pkt.hash.clone(), state.lock()) {
                 g.outbound_queue.push_back(crate::models::OutboundAction::SendWallpaper { hash });
@@ -168,6 +172,7 @@ pub fn handle_incoming_json_line(line: &str, state: &SharedState) {
                     }
                 }
                 g.device_needs_setup = pkt.setup.unwrap_or(false);
+                g.device_glyphs = pkt.gl.unwrap_or(0) >= 1;
                 // Follow the device's link mode (Device page switch, wizard).
                 if let Some(link) = pkt.link.as_deref() {
                     let ble = link == "ble";

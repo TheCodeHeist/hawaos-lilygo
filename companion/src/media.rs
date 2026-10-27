@@ -13,7 +13,6 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use gpui_kit::gpui::Image;
 use crate::config::{ART_DIM, ART_HTTP_PORT};
 use crate::models::{ArtEntry, MediaMsg, SharedArtCache, SharedState};
-use crate::protocol::sanitize_for_font;
 
 fn rgb_to_hsv(r: f32, g: f32, b: f32) -> (f32, f32, f32) {
     let max = r.max(g).max(b);
@@ -268,9 +267,11 @@ pub fn query_mpris_media(
                 if parts.len() >= 7 {
                     let player_name = parts[0].trim().to_string();
                     let raw_status = parts[1].trim().to_lowercase();
-                    let title = sanitize_for_font(parts[2]);
-                    let artist = sanitize_for_font(parts[3]);
-                    let album = sanitize_for_font(parts[4]);
+                    // As the player gave them; the worker fits them to the
+                    // device (glyphs.rs).
+                    let title = parts[2].trim().to_string();
+                    let artist = parts[3].trim().to_string();
+                    let album = parts[4].trim().to_string();
                     let pos_us: u64 = parts[5].trim().parse().unwrap_or(0);
                     let dur_us: u64 = parts[6].trim().parse().unwrap_or(0);
                     let art_url = if parts.len() >= 8 {
@@ -401,11 +402,15 @@ pub fn spawn_art_http_server(cache: SharedArtCache, state: SharedState) {
                 let first_line = req.lines().next().unwrap_or("");
                 let parts: Vec<&str> = first_line.split_whitespace().collect();
                 if parts.len() >= 2 && parts[0] == "GET" {
-                    // Album art and the wallpaper, by hash: /art/<h>, /wp/<h>.
+                    // Album art, the wallpaper and glyph packs, by hash:
+                    // /art/<h>, /wp/<h>, /gl/<h>.
                     let found = if let Some(hash) = parts[1].strip_prefix("/art/") {
                         let hash = hash.trim();
                         let px = cache_ref.lock().ok().and_then(|g| g.get(hash).map(|e| e.rgb565_le.clone()));
                         Some(("art", hash, px))
+                    } else if let Some(hash) = parts[1].strip_prefix("/gl/") {
+                        let hash = hash.trim();
+                        Some(("gl", hash, crate::glyphs::pack(hash).map(|p| p.to_vec())))
                     } else {
                         parts[1]
                             .strip_prefix("/wp/")
