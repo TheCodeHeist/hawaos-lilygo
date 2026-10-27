@@ -2,6 +2,8 @@ use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
+use unicode_normalization::UnicodeNormalization;
+
 use crate::config::{save_config, sanitize_ip_str, USB_BAUD};
 use crate::media::handle_device_command;
 use crate::models::{IncomingPacket, SharedState};
@@ -35,18 +37,24 @@ pub fn fit_bytes(mut s: String, max_bytes: usize) -> String {
     s
 }
 
+/// Whether the device's text fonts have a glyph for `c` (the ranges in
+/// tools/gen_icons.py's FULL_TEXT_RANGE).
+fn device_has_glyph(c: char) -> bool {
+    matches!(c as u32,
+        0x20..=0x7E | 0xA0..=0x17F | 0x370..=0x3FF | 0x400..=0x4FF
+        | 0x2013 | 0x2014 | 0x2018 | 0x2019 | 0x201C | 0x201D | 0x2022 | 0x2026)
+}
+
+/// Text the device can draw. Composes accents first (players often send
+/// "n" + combining tilde rather than "ñ"); a letter the fonts lack keeps its
+/// base letter ("ạ" becomes "a"); anything else is dropped.
 pub fn sanitize_for_font(input: &str) -> String {
     let mut out = String::with_capacity(input.len());
-    for ch in input.chars() {
+    for ch in input.nfc() {
         match ch {
-            '\u{2018}' | '\u{2019}' => out.push('\''),
-            '\u{201C}' | '\u{201D}' => out.push('"'),
-            '\u{2013}' => out.push('-'),
-            '\u{2014}' => out.push_str(" - "),
-            '\u{2026}' => out.push_str("..."),
-            '\u{00B7}' | '\u{00D7}' | '\u{00B0}' => out.push(ch),
-            c if (' '..='~').contains(&c) => out.push(c),
-            _ => {}
+            c if device_has_glyph(c) => out.push(c),
+            c if c.is_whitespace() => out.push(' '),
+            c => out.extend(std::iter::once(c).nfd().filter(|&b| b.is_ascii() && device_has_glyph(b))),
         }
     }
     out.trim().to_string()
@@ -335,12 +343,24 @@ pub fn send_usb_line(port_name: &str, json_line: &str, state: &SharedState) -> b
 
 #[cfg(test)]
 mod tests {
-    use super::handle_incoming_json_line;
+    use super::{handle_incoming_json_line, sanitize_for_font};
     use crate::models::{CompanionConfig, SharedDaemonState, SharedState};
     use std::sync::{Arc, Mutex};
 
     fn ack(v: u32, accent: &str) -> String {
         format!(r#"{{"type":"config_ack","v":{v},"accent":"{accent}"}}"#)
+    }
+
+    #[test]
+    fn text_keeps_what_the_device_can_draw() {
+        // Composed and decomposed (n + combining tilde) both arrive as ñ.
+        assert_eq!(sanitize_for_font("Señorita"), "Señorita");
+        assert_eq!(sanitize_for_font("Sen\u{303}orita"), "Señorita");
+        assert_eq!(sanitize_for_font("Beyoncé – Ελλάδα, Москва"), "Beyoncé – Ελλάδα, Москва");
+        // Letters outside the fonts keep their base letter.
+        assert_eq!(sanitize_for_font("Việt Nam"), "Viet Nam");
+        assert_eq!(sanitize_for_font("  line\nbreak\t"), "line break");
+        assert_eq!(sanitize_for_font("🎵 Song"), "Song");
     }
 
     #[test]

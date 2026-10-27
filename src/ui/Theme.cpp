@@ -216,6 +216,18 @@ void sanitizeText(const char *in, char *out, size_t outSize) {
       lastWasSpace = false;
     }
   }
+  // A full buffer may end partway through a UTF-8 character; drop that part.
+  size_t lead = o;
+  while (lead > 0 && (static_cast<uint8_t>(out[lead - 1]) & 0xC0) == 0x80) {
+    --lead;
+  }
+  if (lead > 0 && (static_cast<uint8_t>(out[lead - 1]) & 0x80) != 0) {
+    const uint8_t b = static_cast<uint8_t>(out[lead - 1]);
+    const size_t want = (b >= 0xF0) ? 4 : (b >= 0xE0) ? 3 : 2;
+    if (o - (lead - 1) < want) {
+      o = lead - 1;
+    }
+  }
   // Trim trailing space if any
   while (o > 0 && out[o - 1] == ' ') {
     --o;

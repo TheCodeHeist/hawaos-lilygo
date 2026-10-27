@@ -97,7 +97,7 @@ Rules:
 | display | 28 | SemiBold | big numbers (CPU %), AOD clock |
 | hero | 48 | SemiBold | Home clock |
 
-- Glyph coverage v1: Basic Latin, Latin-1 Supplement, Latin Extended-A, Greek, Cyrillic, plus `° % · – — … ’ “ ”` and digits. Media titles can contain any script: the companion should **replace unsupported characters** with a placeholder instead of sending them, so the device never shows missing-glyph boxes. Wider coverage (CJK, other scripts) can be added later via LVGL TinyTTF with a Noto subset; complex scripts needing shaping/RTL are out of scope for v1.
+- Glyph coverage v1: Basic Latin, Latin-1 Supplement, Latin Extended-A, Greek, Cyrillic, plus `° % · – — … ’ “ ”` and digits. Media titles can contain any script, so the companion (`sanitize_for_font`) first composes accents (players often send `n` + a combining tilde rather than `ñ`), keeps every character the fonts cover, reduces other accented letters to their base letter (`ạ` → `a`), and drops the rest, so the device never shows missing-glyph boxes. The device copies text into its fixed buffers without splitting a UTF-8 character. Wider coverage (CJK, other scripts) can be added later via LVGL TinyTTF with a Noto subset; complex scripts needing shaping/RTL are out of scope for v1.
 - Long text: ellipsis by default; use slow circular scroll (`LV_LABEL_LONG_SCROLL_CIRCULAR`) only for the **focused media title**.
 
 ## 5. Icons: Lucide everywhere

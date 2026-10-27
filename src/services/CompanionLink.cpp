@@ -619,7 +619,7 @@ void handleJsonMessage(const char *payload, size_t len, Link link,
   if (strcmp(type, "weather") == 0) {
     WeatherSnapshot ws{};
     const char *cityStr = doc["city"] | "";
-    strncpy(ws.city, cityStr, sizeof(ws.city) - 1);
+    DataStore::copyText(ws.city, cityStr);
     ws.temp = doc["temp"] | 0;
     ws.feelsLike = doc["feels_like"] | ws.temp;
     ws.tempMin = doc["temp_min"] | ws.temp;
@@ -630,7 +630,7 @@ void handleJsonMessage(const char *payload, size_t len, Link link,
     strncpy(ws.unit, (unitStr[0] == 'f' || unitStr[0] == 'F') ? "F" : "C",
             sizeof(ws.unit) - 1);
     const char *condStr = doc["condition"] | "Clear";
-    strncpy(ws.condition, condStr, sizeof(ws.condition) - 1);
+    DataStore::copyText(ws.condition, condStr);
     const char *iconStr = doc["icon"] | "cloud-sun";
     strncpy(ws.icon, iconStr, sizeof(ws.icon) - 1);
 

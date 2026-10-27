@@ -11,7 +11,7 @@
 #
 # Assets land in dist/<version>/: hawaos-X-full.bin (flash at 0x0, new
 # boards), hawaos-X-update.bin (OTA), hawaos-companion-X-x86_64.flatpak and
-# SHA256SUMS; flathub/ holds the manifest for the Flathub repo.
+# SHA256SUMS.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -79,6 +79,4 @@ git tag "v$VER"
 git push origin main "v$VER"
 gh release create "v$VER" --title "HawaOS $VER" --notes-file "$NOTES" \
   "$OUT"/*.bin "$OUT"/*.flatpak "$OUT"/SHA256SUMS
-# For the Flathub repo: the same manifest, building from this tag.
-tools/flathub_manifest.py "$VER" "$(git rev-parse HEAD)" "$OUT/flathub"
 echo "Released v$VER"

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <stddef.h>
 #include <stdint.h>
 
 enum class MediaPlayState : uint8_t {
@@ -126,6 +127,13 @@ constexpr uint32_t ALBUM_ART_BYTES =
 
 void begin();
 DataSnapshot getSnapshot();
+
+// Copies text into a fixed buffer, always terminated, and never ends on half
+// of a multi-byte UTF-8 character (which would draw as a broken glyph).
+void copyText(char *dst, size_t size, const char *src);
+template <size_t N> void copyText(char (&dst)[N], const char *src) {
+  copyText(dst, N, src);
+}
 void setSnapshot(const DataSnapshot &snapshot);
 
 void updateStats(uint32_t ts, uint8_t cpuPct, uint8_t ramPct,

@@ -27,6 +27,24 @@ void begin() {
   }
 }
 
+void copyText(char *dst, size_t size, const char *src) {
+  if (size == 0) {
+    return;
+  }
+  size_t n = (src != nullptr) ? strnlen(src, size - 1) : 0;
+  if (n == size - 1 && src[n] != '\0') {
+    // Cut short: back up over continuation bytes to the start of the last
+    // character, and drop it unless all of it fit.
+    size_t lead = n;
+    while (lead > 0 && (static_cast<uint8_t>(src[lead]) & 0xC0) == 0x80) {
+      --lead;
+    }
+    n = lead;
+  }
+  memcpy(dst, src, n);
+  dst[n] = '\0';
+}
+
 DataSnapshot getSnapshot() {
   DataSnapshot copy{};
   if (s_mutex != nullptr &&
@@ -77,22 +95,19 @@ void updateMedia(MediaPlayState state, const char *title, const char *artist,
     s_data.mediaState = state;
 
     if (title != nullptr) {
-      strncpy(s_data.mediaTitle, title, sizeof(s_data.mediaTitle) - 1);
-      s_data.mediaTitle[sizeof(s_data.mediaTitle) - 1] = '\0';
+      copyText(s_data.mediaTitle, title);
     } else {
       s_data.mediaTitle[0] = '\0';
     }
 
     if (artist != nullptr) {
-      strncpy(s_data.mediaArtist, artist, sizeof(s_data.mediaArtist) - 1);
-      s_data.mediaArtist[sizeof(s_data.mediaArtist) - 1] = '\0';
+      copyText(s_data.mediaArtist, artist);
     } else {
       s_data.mediaArtist[0] = '\0';
     }
 
     if (album != nullptr) {
-      strncpy(s_data.mediaAlbum, album, sizeof(s_data.mediaAlbum) - 1);
-      s_data.mediaAlbum[sizeof(s_data.mediaAlbum) - 1] = '\0';
+      copyText(s_data.mediaAlbum, album);
     } else {
       s_data.mediaAlbum[0] = '\0';
     }
@@ -153,8 +168,7 @@ void updateWifi(bool connected, int8_t rssi, const char *ssid, const char *ip) {
     s_data.wifiConnected = connected;
     s_data.wifiRssi = rssi;
     if (ssid != nullptr) {
-      strncpy(s_data.wifiSsid, ssid, sizeof(s_data.wifiSsid) - 1);
-      s_data.wifiSsid[sizeof(s_data.wifiSsid) - 1] = '\0';
+      copyText(s_data.wifiSsid, ssid);
     } else {
       s_data.wifiSsid[0] = '\0';
     }
@@ -193,12 +207,9 @@ void pushNotification(const char *app, const char *title, const char *body, uint
     const char *safeApp = (app != nullptr && app[0] != '\0')
                               ? app
                               : ((title != nullptr && title[0] != '\0') ? title : "Notification");
-    strncpy(item.app, safeApp, sizeof(item.app) - 1);
-    item.app[sizeof(item.app) - 1] = '\0';
-    strncpy(item.title, title ? title : "", sizeof(item.title) - 1);
-    item.title[sizeof(item.title) - 1] = '\0';
-    strncpy(item.body, body, sizeof(item.body) - 1);
-    item.body[sizeof(item.body) - 1] = '\0';
+    copyText(item.app, safeApp);
+    copyText(item.title, title ? title : "");
+    copyText(item.body, body);
     item.ts = ts;
     item.unread = true;
 

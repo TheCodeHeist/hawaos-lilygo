@@ -1,11 +1,14 @@
 # Publishing the companion on Flathub
 
+Not published there for now: the companion ships as a `.flatpak` on each
+GitHub release. These notes are kept for if that changes.
+
 The manifest here builds without network access, as Flathub requires: every
 crate in `companion/Cargo.lock` is a source in `cargo-sources.json`
 (regenerate with `tools/gen_cargo_sources.py`), and cargo builds from that
-vendored copy. `tools/release.sh` writes a Flathub copy of the manifest to
-`dist/<version>/flathub/`, building from the release's git tag instead of the
-working tree.
+vendored copy. `tools/flathub_manifest.py <version> <commit> <out dir>`
+writes a Flathub copy of the manifest, building from the release's git tag
+instead of the working tree.
 
 ## Submitting (once)
 
@@ -15,11 +18,11 @@ working tree.
    `https://thecodeheist.is-a.dev/.well-known/org.flathub.VerifiedApps.txt`
    (see Flathub's verification docs for the current steps).
 2. Fork <https://github.com/flathub/flathub>, branch from `new-pr`, add the two
-   files from `dist/<version>/flathub/`, and open a pull request against
+   files `tools/flathub_manifest.py` wrote, and open a pull request against
    `new-pr`. Paste the permission reasons below into it.
 3. Reviewers build it and may ask for changes. Once merged, Flathub creates
    `github.com/flathub/dev.is_a.thecodeheist.HawaOSCompanion`; later releases
-   are pull requests there with the new manifest from `dist/<version>/flathub/`.
+   are pull requests there with a new manifest from `tools/flathub_manifest.py`.
 
 ## Permissions, and why
 
