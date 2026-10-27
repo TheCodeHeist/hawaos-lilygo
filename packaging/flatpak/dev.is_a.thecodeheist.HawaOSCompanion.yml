@@ -25,6 +25,13 @@ finish-args:
   # Same settings as a non-Flatpak build, and "Start with system".
   - --filesystem=xdg-config/hawaos-companion:create
   - --filesystem=xdg-config/autostart:create
+  # Album art: players hand out file:// URLs to covers in their cache
+  # (~/.cache, ~/.var/app/<player>/cache for Flatpak players), /tmp
+  # (browsers), or next to the music. Read-only.
+  - --filesystem=xdg-cache:ro
+  - --filesystem=~/.var/app:ro
+  - --filesystem=/tmp:ro
+  - --filesystem=xdg-music:ro
 
 cleanup:
   - /include

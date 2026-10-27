@@ -134,7 +134,7 @@ pio device monitor       # serial log at 115200 baud
 
 ### Companion (Linux)
 
-The companion installs as a **Flatpak**: it shows up in your app menu with its own icon, and runs in a sandbox with only the access it needs (serial port, Bluetooth, the session bus for media and notifications, the network).
+The companion installs as a **Flatpak**: it shows up in your app menu with its own icon, and runs in a sandbox with only the access it needs (serial port, Bluetooth, the session bus for media and notifications, the network, and read-only access to the folders where players keep album art).
 
 ```bash
 flatpak install --user flathub org.flatpak.Builder \
