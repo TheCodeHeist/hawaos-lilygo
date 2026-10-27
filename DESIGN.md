@@ -298,7 +298,7 @@ BLE is just another JSON-lines transport: service `48415741-4f53-4000-8000-00000
 
 **Time without WiFi.** Until NTP syncs, the device sets its clock (and TZ from the saved offset) from the `ts` in companion stats, so USB-only devices keep correct time.
 
-**Companion wizard** (Add device page; opens automatically when no device is known; tray "Add Device..."): Connect (USB or Bluetooth discovery) -> Pair (BLE only, code entry) -> Wi-Fi (device's network list, password, or "Skip, use USB only") -> Personalize (accent, theme, clock; pushed live) -> Done. While it runs, the daemon stays off the USB port.
+**Companion wizard** (Add device page; opens automatically when no device is known; tray "Add Device..."): Connect (USB or Bluetooth discovery) -> Pair (BLE only, code entry) -> Wi-Fi (device's network list, password, or "Skip, use USB only") -> Personalize (accent, theme, clock; pushed live, together with every other setting the companion keeps, so a board set up again takes them instead of its defaults, whose acks would otherwise overwrite the companion's) -> Done. While it runs, the daemon stays off the USB port.
 
 **Companion token.** `setup {stage:"done"}` carries a fresh 128-bit token (32 hex): `token` over USB, `token_nonce`/`token_ct` sealed with the pairing key over BLE. The device stores it in `Preferences` (`cmp_token`), the companion in `device_token`. All network traffic is encrypted with keys derived from it (11.6), and firmware update requests are signed with it (11.5). Setup messages (`setup`, `setup_key`, `setup_verify`, `wifi_creds`) are refused over UDP (`auth_error`/`setup_only`), so the token can only be set over USB or a paired BLE link.
 

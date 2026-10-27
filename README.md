@@ -173,7 +173,7 @@ A new HawaOS boots into a **Setup** screen showing its Bluetooth name and a 6-di
 1. **Connect** over a USB-C cable, or over **Bluetooth** with no cable.
 2. **Pair** (Bluetooth only): type the code from the device's screen. It proves you're next to the device, and it keys the encryption for your Wi-Fi password (X25519 + AES-GCM).
 3. **Wi-Fi**: pick from the networks the *device* can see. A wrong password or an out-of-range network is reported straight back. Or choose **Use Bluetooth** to skip the network entirely (see below), or on USB, run over the cable.
-4. **Personalize**: accent, theme and clock format, previewed live on the device.
+4. **Personalize**: accent, theme and clock format, previewed live on the device. Your other settings (brightness, always-on display, wallpaper and the rest) carry over too, so a board you set up again comes back the way you had it.
 
 In Wi-Fi mode Bluetooth only runs while the device is in setup, so it uses no memory afterwards. To set a device up again, use **Settings > Set Up Again** on the device.
 

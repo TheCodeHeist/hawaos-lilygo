@@ -85,24 +85,7 @@ pub fn spawn_daemon_worker(state: SharedState, art_cache: SharedArtCache) {
                         forget_wifi,
                         force_usb,
                     } => {
-                        let mut obj = serde_json::json!({
-                            "type": "config",
-                            "v": cfg.config_version,
-                            "theme": cfg.device_theme,
-                            "accent": cfg.accent,
-                            "brightness": cfg.brightness,
-                            "aod": cfg.aod_enabled,
-                            "aod_timeout_s": cfg.aod_timeout_s,
-                            "aod_off_min": cfg.aod_off_min,
-                            "reduce_motion": cfg.reduce_motion,
-                            "wallpaper": cfg.wallpaper,
-                            "use_24h": cfg.use_24h,
-                            "notify_popup": cfg.notify_popup,
-                            "orientation": cfg.orientation,
-                        });
-                        if cfg.wallpaper == "image" {
-                            obj["wallpaper_hash"] = serde_json::Value::String(cfg.wallpaper_hash.clone());
-                        }
+                        let mut obj = config_message(&cfg);
                         if forget_wifi {
                             obj["forget_wifi"] = serde_json::Value::Bool(true);
                         } else if let (Some(ssid), Some(pass)) = (wifi_ssid.as_ref(), wifi_pass.as_ref()) {
@@ -519,6 +502,31 @@ fn start_ota(
     Ok(if cfg.use_ble { "Bluetooth" } else { "WiFi" })
 }
 
+/// Every device setting in the companion's config as one `config` message
+/// (DESIGN.md Section 11.3). The setup wizard sends it too, so a board set
+/// up (again) takes these instead of its defaults.
+pub fn config_message(cfg: &CompanionConfig) -> serde_json::Value {
+    let mut obj = serde_json::json!({
+        "type": "config",
+        "v": cfg.config_version,
+        "theme": cfg.device_theme,
+        "accent": cfg.accent,
+        "brightness": cfg.brightness,
+        "aod": cfg.aod_enabled,
+        "aod_timeout_s": cfg.aod_timeout_s,
+        "aod_off_min": cfg.aod_off_min,
+        "reduce_motion": cfg.reduce_motion,
+        "wallpaper": cfg.wallpaper,
+        "use_24h": cfg.use_24h,
+        "notify_popup": cfg.notify_popup,
+        "orientation": cfg.orientation,
+    });
+    if cfg.wallpaper == "image" {
+        obj["wallpaper_hash"] = serde_json::Value::String(cfg.wallpaper_hash.clone());
+    }
+    obj
+}
+
 /// Sends a JSON message to the device over its everyday link: UDP, or
 /// Bluetooth in Bluetooth mode (DESIGN.md Section 11.7). Encrypted once the
 /// device has a token (Section 11.6).
@@ -595,5 +603,27 @@ fn open_udp(raw: &str, state: &SharedState) -> Option<String> {
         "sealed" => crate::auth::open_from_device(&token, &v),
         "auth_error" => Some(raw.to_string()),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn config_message_carries_every_device_setting() {
+        let mut cfg = CompanionConfig::default();
+        let msg = config_message(&cfg);
+        // What a board set up again needs so it doesn't keep its defaults.
+        for key in [
+            "type", "v", "theme", "accent", "brightness", "aod", "aod_timeout_s", "aod_off_min",
+            "reduce_motion", "wallpaper", "use_24h", "notify_popup", "orientation",
+        ] {
+            assert!(msg.get(key).is_some(), "missing {key}");
+        }
+        assert!(msg.get("wallpaper_hash").is_none());
+        cfg.wallpaper = "image".into();
+        cfg.wallpaper_hash = "7bb6219d".into();
+        assert_eq!(config_message(&cfg)["wallpaper_hash"], "7bb6219d");
     }
 }

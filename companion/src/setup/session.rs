@@ -304,20 +304,20 @@ async fn on_cmd(cx: &mut Ctx, cmd: Cmd) {
             w.error = None;
         }),
         Cmd::Personalize { accent, theme, use_24h } => {
-            let v = if let Ok(mut g) = cx.daemon.lock() {
-                g.config.accent = accent.clone();
-                g.config.device_theme = theme.clone();
+            // The wizard's picks plus every other setting the companion
+            // keeps, so a board set up again doesn't fall back to defaults
+            // (which its acks would then copy into our config).
+            let msg = if let Ok(mut g) = cx.daemon.lock() {
+                g.config.accent = accent;
+                g.config.device_theme = theme;
                 g.config.use_24h = use_24h;
                 g.config.config_version += 1;
                 save_config(&g.config);
-                g.config.config_version
+                crate::worker::config_message(&g.config)
             } else {
                 return;
             };
-            cx.send(json!({
-                "type": "config", "v": v, "accent": accent, "theme": theme, "use_24h": use_24h,
-            }))
-            .await;
+            cx.send(msg).await;
         }
         Cmd::Finish => finish(cx).await,
         Cmd::Cancel => cx.reset().await,
