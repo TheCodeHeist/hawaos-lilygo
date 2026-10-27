@@ -1,11 +1,11 @@
 <p align="center">
-  <img src="assets/logo.png" width="96" alt="HawaOS logo">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/media/banner-dark.png">
+    <img src="docs/media/banner-light.png" width="420" alt="HawaOS: Breezy Elegance, Materialised">
+  </picture>
 </p>
 
-<h1 align="center">HawaOS</h1>
-
 <p align="center">
-  <em>Breezy Elegance, Materialised.</em><br>
   A tiny desktop-dashboard OS for the LilyGo T-Display-S3, paired with a Rust companion on your PC.
 </p>
 
@@ -247,7 +247,7 @@ hawaos-lilygo/
 │   ├── drivers/      Display (TFT_eSPI + LVGL, boot logo), Buttons
 │   └── ui/           Theme helpers, StatusBar, fonts, icons
 ├── include/          config.h, lv_conf.h, generated theme_tokens.h and boot_logo.h
-├── tools/            gen_theme.py, gen_logo.py, gen_icons.py, release.sh
+├── tools/            gen_theme.py, gen_logo.py, gen_banner.py, gen_icons.py, release.sh
 ├── companion/src/
 │   ├── worker.rs     Daemon loop: stats, media, weather, outbound queue
 │   ├── protocol.rs   Device messages in; media.rs serves album art and firmware
