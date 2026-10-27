@@ -41,7 +41,6 @@ pub enum NavSection {
 pub struct CompanionWindowView {
     pub(crate) state: SharedState,
     pub(crate) active_section: NavSection,
-    pub(crate) logo_image: Arc<Image>,
     pub(crate) ip_input: Entity<InputState>,
     pub(crate) ssid_input: Entity<InputState>,
     pub(crate) pass_input: Entity<InputState>,
@@ -139,18 +138,6 @@ impl CompanionWindowView {
                 .step(100.)
         });
 
-        // Pre-resize logo to 96x96 via Lanczos3 for crisp rendering without pixelation/aliasing
-        let logo_image = if let Ok(img) =
-            image::load_from_memory_with_format(LOGO_PNG_BYTES, image::ImageFormat::Png)
-        {
-            let resized = img.resize_exact(96, 96, image::imageops::FilterType::Lanczos3);
-            let mut buf = Vec::new();
-            let _ = resized.write_to(&mut std::io::Cursor::new(&mut buf), image::ImageFormat::Png);
-            Arc::new(Image::from_bytes(ImageFormat::Png, buf))
-        } else {
-            Arc::new(Image::from_bytes(ImageFormat::Png, LOGO_PNG_BYTES.to_vec()))
-        };
-
         let code_input = cx.new(|cx| {
             InputState::new(window, cx).placeholder("000000")
         });
@@ -165,7 +152,6 @@ impl CompanionWindowView {
             active_section: dev_start_section()
                 .unwrap_or(if has_device { NavSection::Overview } else { NavSection::InitialSetup }),
             state,
-            logo_image,
             ip_input,
             ssid_input,
             pass_input,
@@ -192,6 +178,38 @@ impl CompanionWindowView {
 
 /// Changes the config, saves it, and sends it to the device if auto-sync is
 /// on. For callers without the view, such as a file dialog's callback.
+/// The logo mark in `color` (the theme's accent). The artwork is one colour,
+/// so only its shape is kept and it takes the accent, like on the device.
+/// 96 px (Lanczos, for crisp edges at the sizes shown); one image per colour.
+pub(crate) fn logo(color: Rgba) -> Arc<Image> {
+    use std::collections::HashMap;
+    use std::sync::{Mutex, OnceLock};
+    static SHAPE: OnceLock<Option<image::GrayImage>> = OnceLock::new();
+    static TINTED: OnceLock<Mutex<HashMap<u32, Arc<Image>>>> = OnceLock::new();
+    let to8 = |v: f32| (v.clamp(0.0, 1.0) * 255.0).round() as u8;
+    let (r, g, b) = (to8(color.r), to8(color.g), to8(color.b));
+    let key = u32::from_be_bytes([0, r, g, b]);
+    let tinted = TINTED.get_or_init(Default::default);
+    if let Some(hit) = tinted.lock().ok().and_then(|m| m.get(&key).cloned()) {
+        return hit;
+    }
+    let shape = SHAPE.get_or_init(|| {
+        let img = image::load_from_memory_with_format(LOGO_PNG_BYTES, image::ImageFormat::Png).ok()?;
+        let small = img.resize_exact(96, 96, image::imageops::FilterType::Lanczos3).into_rgba8();
+        Some(image::GrayImage::from_fn(96, 96, |x, y| image::Luma([small.get_pixel(x, y)[3]])))
+    });
+    let mut buf = Vec::new();
+    if let Some(shape) = shape {
+        let out = image::RgbaImage::from_fn(96, 96, |x, y| image::Rgba([r, g, b, shape.get_pixel(x, y)[0]]));
+        let _ = out.write_to(&mut std::io::Cursor::new(&mut buf), image::ImageFormat::Png);
+    }
+    let logo = Arc::new(Image::from_bytes(ImageFormat::Png, buf));
+    if let Ok(mut m) = tinted.lock() {
+        m.insert(key, Arc::clone(&logo));
+    }
+    logo
+}
+
 pub(crate) fn sync_config(state: &SharedState, f: impl FnOnce(&mut CompanionConfig)) {
     if let Ok(mut g) = state.lock() {
         f(&mut g.config);

@@ -95,6 +95,7 @@ modules:
       - install -Dm644 packaging/flatpak/dev.is_a.thecodeheist.HawaOSCompanion.desktop /app/share/applications/dev.is_a.thecodeheist.HawaOSCompanion.desktop
       - install -Dm644 packaging/flatpak/dev.is_a.thecodeheist.HawaOSCompanion.metainfo.xml /app/share/metainfo/dev.is_a.thecodeheist.HawaOSCompanion.metainfo.xml
       - install -Dm644 packaging/flatpak/dev.is_a.thecodeheist.HawaOSCompanion.png /app/share/icons/hicolor/256x256/apps/dev.is_a.thecodeheist.HawaOSCompanion.png
+      - install -Dm644 assets/logo.svg /app/share/icons/hicolor/scalable/apps/dev.is_a.thecodeheist.HawaOSCompanion.svg
     sources:
       # The repo root: the companion embeds ../assets at compile time.
       - type: dir

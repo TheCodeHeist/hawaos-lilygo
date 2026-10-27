@@ -61,28 +61,32 @@ void flushCb(lv_disp_drv_t *disp, const lv_area_t *area, lv_color_t *color_p) {
   lv_disp_flush_ready(disp);
 }
 
-// Blend one straight RGB565 logo pixel over the background (RGB888).
-uint16_t blendOver(uint16_t fg565, uint8_t a, uint32_t bg888) {
-  const uint32_t fr = ((fg565 >> 11) & 0x1F) * 255U / 31U;
-  const uint32_t fg = ((fg565 >> 5) & 0x3F) * 255U / 63U;
-  const uint32_t fb = (fg565 & 0x1F) * 255U / 31U;
+// Blends `fg` (RGB888) at 4-bit coverage `a4` over `bg` (RGB888).
+uint32_t blend888(uint32_t fg, uint8_t a4, uint32_t bg) {
+  if (a4 == 0)
+    return bg;
+  const uint32_t a = a4 * 17U;
   const uint32_t inv = 255U - a;
-  const uint32_t r = (fr * a + ((bg888 >> 16) & 0xFF) * inv + 127U) / 255U;
-  const uint32_t g = (fg * a + ((bg888 >> 8) & 0xFF) * inv + 127U) / 255U;
-  const uint32_t b = (fb * a + (bg888 & 0xFF) * inv + 127U) / 255U;
-  return static_cast<uint16_t>(((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3));
+  uint32_t out = 0;
+  for (int shift = 0; shift <= 16; shift += 8) {
+    const uint32_t c = (((fg >> shift) & 0xFF) * a + ((bg >> shift) & 0xFF) * inv + 127U) / 255U;
+    out |= c << shift;
+  }
+  return out;
+}
+
+uint8_t a4At(const uint8_t *layer, uint32_t i) {
+  const uint8_t b = pgm_read_byte(&layer[i / 2]);
+  return (i % 2 == 0) ? (b >> 4) : (b & 0x0F);
 }
 
 void drawDirectBootLogo() {
-  // The logo carries alpha so it sits on the accent-tinted `bg` of the
-  // persisted theme, not a background baked in at build time.
+  // The lockup is coverage only (gen_logo.py): the mark and "OS" in the
+  // accent, "Hawa" in the text colour, the tagline dimmed, all over the
+  // accent-tinted `bg` of the saved theme.
   const bool useDark = Settings::isDarkThemeEffective();
   const ThemeTokens::Palette &p =
       ThemeTokens::kPalettes[Settings::getAccent()][useDark ? 0 : 1];
-  const uint16_t *logo565 =
-      useDark ? BootLogo::kLogoDark565 : BootLogo::kLogoLight565;
-  const uint8_t *logoA8 =
-      useDark ? BootLogo::kLogoDarkA8 : BootLogo::kLogoLightA8;
 
   s_tft.fillScreen(p.bg565);
   const int16_t x = (Config::LCD_HOR_RES - BootLogo::WIDTH) / 2;
@@ -94,9 +98,13 @@ void drawDirectBootLogo() {
   for (uint16_t ry = 0; ry < BootLogo::HEIGHT; ++ry) {
     const uint32_t base = static_cast<uint32_t>(ry) * BootLogo::WIDTH;
     for (uint16_t rx = 0; rx < BootLogo::WIDTH; ++rx) {
-      const uint8_t a = pgm_read_byte(&logoA8[base + rx]);
-      row[rx] = (a == 0) ? p.bg565
-                         : blendOver(pgm_read_word(&logo565[base + rx]), a, p.bg);
+      const uint32_t i = base + rx;
+      uint32_t c = p.bg;
+      c = blend888(p.textDim, a4At(BootLogo::kDimA4, i), c);
+      c = blend888(p.text, a4At(BootLogo::kTextA4, i), c);
+      c = blend888(p.accent, a4At(BootLogo::kAccentA4, i), c);
+      row[rx] = static_cast<uint16_t>(((c >> 8) & 0xF800) | ((c >> 5) & 0x07E0) |
+                                      ((c & 0xFF) >> 3));
     }
     s_tft.pushImage(x, y + ry, BootLogo::WIDTH, 1, row);
   }

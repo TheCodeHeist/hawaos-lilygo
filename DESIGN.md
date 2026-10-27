@@ -399,12 +399,16 @@ The companion only sends these marks to firmware that reports `"fmt":1` in `conf
 ## 12. Boot logo
 
 Sequence (target: logo visible as soon as the Arduino core hands over control):
-1. First thing in `setup()`: keep the **backlight off**, init the panel, fill with the saved theme's `bg` (read `theme` and `accent` from `Preferences` first; default dark cyan), draw the logo centered, alpha-blended over that `bg` (`gen_logo.py` emits RGB565 + A8).
+1. First thing in `setup()`: keep the **backlight off**, init the panel, fill with the saved theme's `bg` (read `theme` and `accent` from `Preferences` first; default dark cyan), draw the logo centered, blended over that `bg` in the theme's colours (below).
 2. **Ramp backlight** from 0 to the user level over about 300 ms (PWM fade, no redraws; hides the white power-on flash).
 3. Initialize the rest of the system behind it. **Do not block on WiFi or the companion.**
 4. Show the logo for at least about **600 ms**, then go to Home. The status bar shows "connecting" until a transport is up.
 
-Asset: the user supplies the HawaOS logo as **SVG or transparent PNG** (ideally 1x and 2x) at `assets/logo.svg`. Preferred: a **single-color mark rendered as an A8 (alpha-only) bitmap**, tinted with `text`/`primary` at draw time so it works in both themes; at about 200x80 that is about 16 KB. A multi-color logo needs per-theme RGB565A8 variants (about 3 bytes per pixel). Provide `tools/gen_logo.*` that converts the asset to a C array at build time. Draw it before LVGL starts if that is faster (direct `pushImage` or equivalent).
+Asset: `assets/logo.svg`, a **one-colour mark** (a rounded square with the wind swirl cut out; brand colour `#0092B8`), and `assets/logo.png` rendered from it at 1000 px. Because it is one colour, only its shape is used, and it takes the **accent** wherever it appears:
+
+- **Boot lockup** (220x88: the mark, "Hawa" + "OS", and the tagline). `tools/gen_logo.py` (a PlatformIO pre-build script) rasterises the SVG with ImageMagick (or downscales the PNG without it) and emits three **4-bit alpha layers** in `include/boot_logo.h`: the mark and "OS" (drawn in `accent`), "Hawa" (`text`) and the tagline (`textDim`). `Display.cpp` blends them over `bg` of the saved theme and accent with `pushImage`, before LVGL starts. One set of layers serves all 17 accents in both modes: about 29 KB, against 116 KB for the earlier per-mode RGB565 + A8 images.
+- **Companion window** (sidebar and wizard): `ui::logo(pal.accent)` keeps the PNG's alpha at 96 px and fills it with the accent, one cached image per colour, so it changes with the accent.
+- **App icon** (Flatpak, app menu) and **tray icon**: the brand colours, from the SVG (`hicolor/scalable`) and a 256 px PNG; these don't follow a device's theme.
 
 ## 13. Performance and memory
 
@@ -419,7 +423,7 @@ Asset: the user supplies the HawaOS logo as **SVG or transparent PNG** (ideally 
 2. **Button mapping:** which physical button is Next vs Select.
 3. **LVGL version:** 8 vs 9 (APIs differ). Pick one, pin it, keep it consistent.
 4. ~~**Unicode coverage** beyond v1~~: done, as companion-drawn glyphs (11.9).
-5. **Logo asset** format and colors (single-color A8 vs multi-color).
+5. ~~**Logo asset** format and colors~~: one-colour SVG, tinted with the accent (section 12).
 6. **Wallpaper** default (gradient is the suggested default).
 7. **Touch variant:** assumed non-touch.
 

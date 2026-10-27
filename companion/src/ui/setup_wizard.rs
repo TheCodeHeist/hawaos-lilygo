@@ -108,7 +108,7 @@ impl CompanionWindowView {
                     .gap_4()
                     .items_center()
                     // The artwork is already rounded: never clip it.
-                    .child(img(self.logo_image.clone()).size(px(56.)).flex_shrink_0())
+                    .child(img(super::logo(pal.accent)).size(px(56.)).flex_shrink_0())
                     .child(
                         v_flex()
                             .flex_1()

@@ -1,4 +1,3 @@
-use std::sync::Arc;
 use std::time::Duration;
 use gpui_kit::gpui::prelude::*;
 use gpui_kit::gpui::*;
@@ -130,7 +129,7 @@ impl CompanionWindowView {
                             .when(compact, |this| this.justify_center())
                             .when(!compact, |this| this.px_1())
                             .child(
-                                img(Arc::clone(&self.logo_image))
+                                img(super::logo(pal.accent))
                                     .flex_shrink_0()
                                     .w(px(36.))
                                     .h(px(36.)),
