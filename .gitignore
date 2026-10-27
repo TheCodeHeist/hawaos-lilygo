@@ -12,3 +12,4 @@ packaging/flatpak/.flatpak-builder/
 packaging/flatpak/build/
 packaging/flatpak/repo/
 packaging/flatpak/*.flatpak
+dist/
