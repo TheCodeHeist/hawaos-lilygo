@@ -455,6 +455,8 @@ Everything that differs between desktops sits behind `companion/src/platform`: o
 | Glyph fonts (11.9) | the system's (Noto), Noto Emoji for emoji | the system's (Nirmala UI, Yu Gothic, Microsoft YaHei, Malgun Gothic), Segoe UI Symbol for emoji |
 | Package | Flatpak (`install.sh`) | Inno Setup installer, per user, no administrator rights |
 
+**One companion per user** (`single_instance.rs`). The first one listens on a local socket named for the user (an abstract Unix socket on Linux, which the Flatpak shares with the host; a named pipe on Windows), and both disappear with the process, so a crash leaves nothing stale. A later launch connects to it and exits: a normal launch asks it to show its window, an autostart (`--minimized`) one just leaves. Two launches at the same moment can't both claim the name; the loser hands over too. Without this, a second copy fought the first over the device's ports and links.
+
 Bluetooth (`btleplug`: BlueZ / WinRT), serial (`serialport`), system stats (`sysinfo`), the window (gpui) and the network code are cross-platform already. On Windows the release `.exe` runs without a console window and carries the app icon (`build.rs`); the first network use brings up Windows Firewall's prompt, which needs allowing on private networks for the Wi-Fi link.
 
 **Builds.** `.github/workflows/windows.yml` tests and builds the Windows companion on every change and keeps the installer as an artifact; when a release is published (`tools/release.sh`), it attaches `hawaos-companion-<version>-windows-x64-setup.exe` and its checksum. The installer is unsigned for now, so SmartScreen warns on first run; signing (which would also allow notification mirroring) is open for 1.0.0.

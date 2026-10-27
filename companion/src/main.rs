@@ -13,6 +13,7 @@ mod ota;
 mod platform;
 mod protocol;
 mod setup;
+mod single_instance;
 #[cfg(target_os = "linux")]
 mod tray;
 mod tray_actions;
@@ -40,12 +41,20 @@ fn main() {
     let start_minimized = args.iter().any(|a| a == "--minimized" || a == "--tray");
 
     let mut cfg = load_config();
+    let state: SharedState = Arc::new(Mutex::new(SharedDaemonState::new(cfg.clone())));
+
+    // Already running: show that one (unless this is autostart) and leave.
+    if !single_instance::claim(start_minimized, &state) {
+        return;
+    }
+
     if let Some(ip_arg) = args.iter().skip(1).find(|a| !a.starts_with('-')) {
         cfg.target_ip = ip_arg.clone();
         save_config(&cfg);
+        if let Ok(mut g) = state.lock() {
+            g.config.target_ip = ip_arg.clone();
+        }
     }
-
-    let state: SharedState = Arc::new(Mutex::new(SharedDaemonState::new(cfg.clone())));
     let art_cache: SharedArtCache = Arc::new(Mutex::new(HashMap::new()));
 
     spawn_art_http_server(Arc::clone(&art_cache), Arc::clone(&state));
