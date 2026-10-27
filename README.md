@@ -102,13 +102,23 @@ flowchart LR
 
 ## Getting started
 
+### Install the companion
+
+On any Linux with [Flatpak](https://flatpak.org/setup/), one command installs the latest companion for your user (no root):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/TheCodeHeist/hawaos-lilygo/main/install.sh | bash
+```
+
+It downloads the `.flatpak` from the latest release, checks it against the release's `SHA256SUMS`, adds Flathub if needed (the app's runtime comes from there), and installs it. Run it again to update; add `-s -- 0.8.0` after `bash` for a specific version. Then open **HawaOS Companion** from your app menu. It needs a StatusNotifier tray (KDE has one built in; GNOME needs the AppIndicator extension); for setup over USB the script tells you if your user needs the serial port's group (`dialout` on most distributions).
+
 ### Download
 
 Every [release](https://github.com/TheCodeHeist/hawaos-lilygo/releases) has ready-made files, so you don't need any toolchain:
 
 | File | What it's for |
 |---|---|
-| `hawaos-companion-<version>-x86_64.flatpak` | The companion app: `flatpak install --user <file>` (Flathub's runtime downloads automatically) |
+| `hawaos-companion-<version>-x86_64.flatpak` | The companion app, if you'd rather install by hand: `flatpak install --user <file>` |
 | `hawaos-<version>-full.bin` | First install on a new board, at offset `0x0`. **Erases saved settings.** |
 | `hawaos-<version>-update.bin` | Updating a device that already runs HawaOS: companion **Device > Firmware > Install update...** |
 
@@ -134,7 +144,7 @@ pio device monitor       # serial log at 115200 baud
 
 ### Companion (Linux)
 
-The companion installs as a **Flatpak**: it shows up in your app menu with its own icon, and runs in a sandbox with only the access it needs (serial port, Bluetooth, the session bus for media and notifications, the network, and read-only access to the folders where players keep album art).
+To use a release, see [Install the companion](#install-the-companion). To build it yourself: the companion is a **Flatpak**: it shows up in your app menu with its own icon, and runs in a sandbox with only the access it needs (serial port, Bluetooth, the session bus for media and notifications, the network, and read-only access to the folders where players keep album art).
 
 ```bash
 flatpak install --user flathub org.flatpak.Builder \
@@ -142,7 +152,7 @@ flatpak install --user flathub org.flatpak.Builder \
 packaging/flatpak/build.sh       # builds, installs, and writes hawaos-companion.flatpak
 ```
 
-Then open **HawaOS Companion** from your app menu, or `flatpak run dev.is_a.thecodeheist.HawaOSCompanion`. To install on another machine, copy `packaging/flatpak/hawaos-companion.flatpak` over and run `flatpak install --user hawaos-companion.flatpak`. It needs a StatusNotifier tray (KDE has one built in; GNOME needs the AppIndicator extension), and your user in the `dialout` group for the USB serial port.
+Then open **HawaOS Companion** from your app menu, or `flatpak run dev.is_a.thecodeheist.HawaOSCompanion`. To install on another machine, copy `packaging/flatpak/hawaos-companion.flatpak` over and run `flatpak install --user hawaos-companion.flatpak`.
 
 <details>
 <summary><b>Run from source instead</b> (development)</summary>
@@ -259,7 +269,8 @@ hawaos-lilygo/
 │   └── ui/           gpui window: pages, glass components, accent palettes
 ├── packaging/flatpak/ Flatpak manifest, desktop entry, AppStream metadata
 ├── assets/           logo, Inter and Lucide fonts
-├── docs/media/       README captures
+├── docs/media/       README captures and banner
+├── install.sh        One-line companion installer (latest release)
 └── DESIGN.md         Design system: tokens, layouts, motion, protocol
 ```
 
