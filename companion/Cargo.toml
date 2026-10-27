@@ -1,6 +1,6 @@
 [package]
 name = "hawaos-companion"
-version = "0.6.1"
+version = "0.7.0"
 edition = "2024"
 description = "HawaOS Desktop Companion Application & Tray Daemon for LilyGo T-Display-S3"
 license = "MIT"

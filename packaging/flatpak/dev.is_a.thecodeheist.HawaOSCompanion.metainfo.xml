@@ -49,6 +49,11 @@
   <content_rating type="oars-1.1"/>
 
   <releases>
+    <release version="0.7.0" date="2026-10-27">
+      <description>
+        <p>Your own picture as the device's wallpaper, sent over Wi-Fi, Bluetooth or USB and kept through restarts. The screen can turn fully off after a while on the always-on display. Album art that can't be loaded is now explained in the log.</p>
+      </description>
+    </release>
     <release version="0.6.1" date="2026-10-27">
       <description>
         <p>Album art works again in the Flatpak: the companion can now read the cover files media players save.</p>
