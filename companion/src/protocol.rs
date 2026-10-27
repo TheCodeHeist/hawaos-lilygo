@@ -213,6 +213,9 @@ pub fn handle_incoming_json_line(line: &str, state: &SharedState) {
                 if let Some(timeout) = pkt.aod_timeout_s {
                     g.config.aod_timeout_s = timeout;
                 }
+                if let Some(off) = pkt.aod_off_min {
+                    g.config.aod_off_min = off;
+                }
                 if let Some(rm) = pkt.reduce_motion {
                     g.config.reduce_motion = rm;
                 }

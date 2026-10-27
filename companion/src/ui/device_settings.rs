@@ -61,6 +61,7 @@ impl CompanionWindowView {
         let brightness_steps: [u8; 5] = [20, 40, 60, 80, 100];
         let current_accent = accent_by_id(&cfg.accent);
         let aod_timeouts: [u16; 5] = [15, 30, 60, 120, 300];
+        let aod_off_mins: [u16; 5] = [0, 5, 15, 30, 60];
         // Dev aid for screenshots: HAWAOS_DEV_SECTION=firmware puts the card on top.
         let firmware = Some(self.render_firmware_card(pal, cx).into_any_element());
         let (firmware_top, firmware) = if std::env::var("HAWAOS_DEV_SECTION").as_deref() == Ok("firmware") {
@@ -330,6 +331,20 @@ impl CompanionWindowView {
                                     })
                                     .on_click(cx.listener(move |this, _, _, cx| {
                                         this.mutate_config_and_sync(cx, |c| c.aod_timeout_s = secs);
+                                    }))
+                            })),
+                        ))
+                        .child(setting_row(
+                            pal,
+                            "Screen off after",
+                            Some("Turns the backlight off after this long on the always-on display. Stays on while a timer runs."),
+                            button_row().children(aod_off_mins.into_iter().map(|min| {
+                                Button::new(("aod-off", min as usize))
+                                    .small()
+                                    .with_variant(choice(pal, cfg.aod_off_min == min, cx))
+                                    .label(if min == 0 { "Never".to_string() } else { format!("{min}m") })
+                                    .on_click(cx.listener(move |this, _, _, cx| {
+                                        this.mutate_config_and_sync(cx, |c| c.aod_off_min = min);
                                     }))
                             })),
                         ))

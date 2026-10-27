@@ -58,6 +58,10 @@ void setAodEnabled(bool enabled);
 uint16_t getAodTimeoutSec();
 void setAodTimeoutSec(uint16_t sec);
 
+// Minutes in AOD before the backlight goes fully off; 0 = never.
+uint16_t getAodOffMin();
+void setAodOffMin(uint16_t min);
+
 bool getReduceMotion();
 void setReduceMotion(bool reduce);
 

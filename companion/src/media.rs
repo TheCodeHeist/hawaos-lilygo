@@ -6,7 +6,7 @@ use std::fs;
 use std::io::{Read, Write};
 use std::net::TcpListener;
 use std::process::Command;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -117,6 +117,24 @@ pub fn compute_tinted_palette(img: &image::DynamicImage) -> (String, String, Str
     )
 }
 
+/// The newest cover that failed to load and why, reported once per address
+/// (the player asks every second); the worker moves it to the log.
+static ART_ERROR: Mutex<(String, Option<String>)> = Mutex::new((String::new(), None));
+
+fn art_failed<T>(url: &str, why: String) -> Option<T> {
+    if let Ok(mut e) = ART_ERROR.lock() {
+        if e.0 != url {
+            *e = (url.to_string(), Some(format!("Album art: {why}")));
+        }
+    }
+    None
+}
+
+/// A new album-art failure since the last call, for the log.
+pub fn take_art_error() -> Option<String> {
+    ART_ERROR.lock().ok()?.1.take()
+}
+
 pub fn load_and_convert_art(
     art_url: &str,
     cache: &SharedArtCache,
@@ -147,19 +165,28 @@ pub fn load_and_convert_art(
 
     let raw_bytes = if let Some(file_path) = art_url.strip_prefix("file://") {
         let decoded_path = file_path.replace("%20", " ");
-        fs::read(decoded_path).ok()?
+        match fs::read(&decoded_path) {
+            Ok(b) => b,
+            Err(e) => return art_failed(art_url, format!("couldn't read {decoded_path} ({e})")),
+        }
     } else if art_url.starts_with("http://") || art_url.starts_with("https://") {
         let config = ureq::Agent::config_builder()
             .timeout_global(Some(Duration::from_millis(1500)))
             .build();
         let agent: ureq::Agent = config.into();
-        let mut resp = agent.get(art_url).call().ok()?;
-        resp.body_mut().read_to_vec().ok()?
+        let fetched = agent.get(art_url).call().and_then(|mut r| r.body_mut().read_to_vec());
+        match fetched {
+            Ok(b) => b,
+            Err(e) => return art_failed(art_url, format!("couldn't download {art_url} ({e})")),
+        }
     } else {
-        return None;
+        return art_failed(art_url, format!("unsupported address {art_url}"));
     };
 
-    let img = image::load_from_memory(&raw_bytes).ok()?;
+    let img = match image::load_from_memory(&raw_bytes) {
+        Ok(i) => i,
+        Err(e) => return art_failed(art_url, format!("couldn't decode {art_url} ({e})")),
+    };
     let (bg_top, bg_bottom, ink) = compute_tinted_palette(&img);
 
     let (w, h) = img.dimensions();
@@ -411,3 +438,21 @@ pub fn spawn_art_http_server(cache: SharedArtCache, state: SharedState) {
 // ============================================================================
 // System Tray Service (ksni StatusNotifierItem)
 // ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn unreadable_art_is_reported_once_per_cover() {
+        let cache: SharedArtCache = Arc::new(Mutex::new(std::collections::HashMap::new()));
+        // What a sandboxed companion sees for a cover in the player's cache.
+        let url = "file:///nonexistent/hawaos-test/cover.jpg";
+        assert!(load_and_convert_art(url, &cache).is_none());
+        let e = take_art_error().expect("reported");
+        assert!(e.contains("couldn't read /nonexistent/hawaos-test/cover.jpg"), "{e}");
+        // The player re-sends the same cover every second: no repeat.
+        assert!(load_and_convert_art(url, &cache).is_none());
+        assert!(take_art_error().is_none());
+    }
+}

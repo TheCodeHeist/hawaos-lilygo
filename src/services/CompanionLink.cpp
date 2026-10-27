@@ -742,6 +742,9 @@ void handleJsonMessage(const char *payload, size_t len, Link link,
     if (doc["aod_timeout_s"].is<uint16_t>()) {
       Settings::setAodTimeoutSec(doc["aod_timeout_s"].as<uint16_t>());
     }
+    if (doc["aod_off_min"].is<uint16_t>()) {
+      Settings::setAodOffMin(doc["aod_off_min"].as<uint16_t>());
+    }
     if (doc["reduce_motion"].is<bool>()) {
       Settings::setReduceMotion(doc["reduce_motion"].as<bool>());
     }
@@ -973,14 +976,14 @@ void flushPendingOutbound() {
     const char *orientStr =
         Settings::getOrientationInverted() ? "inverted" : "normal";
 
-    char buf[600];
+    char buf[768];
     snprintf(buf, sizeof(buf),
              "{\"type\":\"config_ack\",\"id\":\"%s\",\"model\":\"%s\","
              "\"fw\":\"%s\",\"setup\":%s,"
              "\"v\":%lu,\"ip\":\"%s\",\"wifi\":%s,"
              "\"ssid\":\"%s\",\"theme\":\"%s\",\"accent\":\"%s\","
              "\"brightness\":%u,\"aod\":%s,"
-             "\"aod_timeout_s\":%u,\"reduce_motion\":%s,\"wallpaper\":\"%s\","
+             "\"aod_timeout_s\":%u,\"aod_off_min\":%u,\"reduce_motion\":%s,\"wallpaper\":\"%s\","
              "\"wallpaper_hash\":\"%s\","
              "\"use_24h\":%s,\"notify_popup\":%s,\"orientation\":\"%s\","
              "\"link\":\"%s\"}",
@@ -992,6 +995,7 @@ void flushPendingOutbound() {
              static_cast<unsigned>(Settings::getBrightnessPct()),
              Settings::getAodEnabled() ? "true" : "false",
              static_cast<unsigned>(Settings::getAodTimeoutSec()),
+             static_cast<unsigned>(Settings::getAodOffMin()),
              Settings::getReduceMotion() ? "true" : "false", wpStr,
              Wallpaper::storedHash(),
              Settings::getUse24Hour() ? "true" : "false",

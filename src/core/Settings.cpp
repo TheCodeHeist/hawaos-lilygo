@@ -25,6 +25,7 @@ ThemeMode s_themeMode = ThemeMode::Dark;
 volatile uint8_t s_accent = ThemeTokens::kDefaultAccent;
 bool s_aodEnabled = true;
 uint16_t s_aodTimeoutSec = Config::DEFAULT_AOD_TIMEOUT_S;
+uint16_t s_aodOffMin = 0;
 bool s_reduceMotion = false;
 WallpaperMode s_wallpaperMode = WallpaperMode::Gradient;
 bool s_notifyPopupEnabled = true;
@@ -97,6 +98,7 @@ void begin() {
                               : ThemeTokens::kDefaultAccent;
   s_aodEnabled = s_prefs.getBool("aod_en", true);
   s_aodTimeoutSec = s_prefs.getUShort("aod_sec", Config::DEFAULT_AOD_TIMEOUT_S);
+  s_aodOffMin = s_prefs.getUShort("aod_off", 0);
   if (s_aodTimeoutSec < 10) {
     s_aodTimeoutSec = Config::DEFAULT_AOD_TIMEOUT_S;
   }
@@ -270,6 +272,13 @@ void setAodTimeoutSec(uint16_t sec) {
     sec = 10;
   s_aodTimeoutSec = sec;
   s_prefs.putUShort("aod_sec", s_aodTimeoutSec);
+}
+
+uint16_t getAodOffMin() { return s_aodOffMin; }
+
+void setAodOffMin(uint16_t min) {
+  s_aodOffMin = min;
+  s_prefs.putUShort("aod_off", s_aodOffMin);
 }
 
 bool getReduceMotion() { return s_reduceMotion; }

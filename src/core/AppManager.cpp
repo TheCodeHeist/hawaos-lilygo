@@ -96,6 +96,9 @@ lv_obj_t *s_aodAlertBadgeLbl = nullptr;
 lv_obj_t *s_aodAlertTitleLbl = nullptr;
 lv_obj_t *s_aodAlertBodyLbl = nullptr;
 bool s_aodAlertActive = false;
+// Backlight fully off after Settings::getAodOffMin() in AOD (DESIGN.md 10).
+uint32_t s_aodLitSinceMs = 0;
+bool s_backlightOff = false;
 uint32_t s_aodAlertStartMs = 0;
 constexpr uint32_t kAodAlertDurationMs = 4500;
 
@@ -1103,6 +1106,8 @@ void enterAod() {
   lv_obj_t *newScr = createAndSwapScreen(false, true);
   buildAodScreen(newScr);
   Display::setBrightness(Config::AOD_BRIGHTNESS_STEP);
+  s_aodLitSinceMs = millis();
+  s_backlightOff = false;
   Serial.println("[AppManager] Entered AOD mode");
 }
 
@@ -1111,6 +1116,7 @@ void exitAod() {
     return;
   dismissAodNotificationAlert();
   s_lastInputMs = millis();
+  s_backlightOff = false;
   Display::setBrightness(Settings::getBrightnessStep());
   Serial.println("[AppManager] Woke from AOD mode");
 
@@ -1223,8 +1229,10 @@ void showAodNotificationAlert(const char *app, const char *title,
     lv_obj_move_foreground(s_aodAlertCard);
   }
 
-  // Maintain dim backlight for AOD
+  // Dim AOD backlight, back on if it had gone off; the off timer restarts.
   Display::setBrightness(Config::AOD_BRIGHTNESS_STEP);
+  s_aodLitSinceMs = millis();
+  s_backlightOff = false;
   lv_obj_set_style_bg_color(s_aodScreen, lv_color_hex(0x000000), LV_PART_MAIN);
   lv_obj_set_style_bg_grad_dir(s_aodScreen, LV_GRAD_DIR_NONE, LV_PART_MAIN);
   lv_obj_invalidate(s_aodScreen);
@@ -1469,6 +1477,20 @@ void tick(uint32_t nowMs) {
               // displayed
     }
     const bool clockToolsRunning = DataStore::isClockToolRunning();
+    if (s_backlightOff) {
+      return; // nothing to draw on a dark screen
+    }
+    // Backlight off after the set time; a running timer or stopwatch keeps
+    // it lit so it can be glanced at.
+    const uint16_t offMin = Settings::getAodOffMin();
+    if (clockToolsRunning || offMin == 0) {
+      s_aodLitSinceMs = nowMs;
+    } else if (nowMs - s_aodLitSinceMs >= offMin * 60000UL) {
+      Display::setBrightness(0);
+      s_backlightOff = true;
+      Serial.printf("[AppManager] Backlight off after %u min in AOD\n", offMin);
+      return;
+    }
     if (clockToolsRunning) {
       if (nowMs - s_aodLastSubSecMs >= 50) {
         s_aodLastSubSecMs = nowMs;
@@ -1505,6 +1527,12 @@ void handleButton(Button b, Press p) {
   if (s_viewState == ViewState::Aod) {
     if (s_aodAlertActive) {
       dismissAodNotificationAlert();
+      return;
+    }
+    // A press on a dark screen only wakes it, so it can't toggle a timer
+    // unseen.
+    if (s_backlightOff) {
+      exitAod();
       return;
     }
 

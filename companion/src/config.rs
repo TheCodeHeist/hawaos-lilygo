@@ -37,6 +37,7 @@ pub struct CompanionConfig {
     pub brightness: u8,       // 20 | 40 | 60 | 80 | 100
     pub aod_enabled: bool,    // true | false
     pub aod_timeout_s: u16,   // 15 | 30 | 60 | 120 | 300
+    pub aod_off_min: u16,     // backlight off after this long in AOD: 0 (never) | 5 | 15 | 30 | 60
     pub reduce_motion: bool,  // true | false
     pub wallpaper: String,    // "gradient" | "solid" | "image"
     pub wallpaper_hash: String, // the picture for "image" (see wallpaper.rs)
@@ -76,6 +77,7 @@ impl Default for CompanionConfig {
             brightness: 80,
             aod_enabled: true,
             aod_timeout_s: 30,
+            aod_off_min: 0,
             reduce_motion: false,
             wallpaper: "gradient".to_string(),
             wallpaper_hash: String::new(),

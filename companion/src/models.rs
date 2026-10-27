@@ -112,6 +112,7 @@ pub struct IncomingPacket {
     pub brightness: Option<u8>,
     pub aod: Option<bool>,
     pub aod_timeout_s: Option<u16>,
+    pub aod_off_min: Option<u16>,
     pub reduce_motion: Option<bool>,
     pub wallpaper: Option<String>,
     pub use_24h: Option<bool>,

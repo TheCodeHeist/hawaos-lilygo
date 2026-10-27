@@ -41,7 +41,7 @@
   <tr>
     <td><img src="docs/media/screen-launcher.png" alt="Launcher"><br><b>Launcher</b>: carousel of every app</td>
     <td valign="top"><br><b>Also on board</b><br>
-      Always-on display that dims to a clock and shifts to the album's tint while music plays<br>
+      Always-on display that dims to a clock and shifts to the album's tint while music plays, and can turn the screen fully off after a while<br>
       Control Center (press both buttons): brightness, theme, Wi-Fi, AOD<br>
       On-device Settings: accent, theme, orientation, AOD timeout, clock format
     </td>

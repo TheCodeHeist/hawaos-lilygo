@@ -93,6 +93,7 @@ pub fn spawn_daemon_worker(state: SharedState, art_cache: SharedArtCache) {
                             "brightness": cfg.brightness,
                             "aod": cfg.aod_enabled,
                             "aod_timeout_s": cfg.aod_timeout_s,
+                            "aod_off_min": cfg.aod_off_min,
                             "reduce_motion": cfg.reduce_motion,
                             "wallpaper": cfg.wallpaper,
                             "use_24h": cfg.use_24h,
@@ -329,6 +330,12 @@ pub fn spawn_daemon_worker(state: SharedState, art_cache: SharedArtCache) {
                     .as_secs();
 
                 let (cur_media, cur_art_img, cur_player) = query_mpris_media(&art_cache);
+                if let Some(e) = crate::media::take_art_error() {
+                    eprintln!("[Daemon] {e}");
+                    if let Ok(mut g) = state.lock() {
+                        g.push_log(e);
+                    }
+                }
 
                 let (target_ip, stream_usb, usb_port, token, use_ble) = if let Ok(mut g) = state.lock() {
                     g.cpu_pct = cpu_pct;

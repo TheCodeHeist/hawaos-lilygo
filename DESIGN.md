@@ -246,7 +246,7 @@ Concept: after an idle timeout the UI dims into a low-power ambient mode. When m
   ----------o----------------------  thin 3 px progress, full width, 20 px margins
 ```
 - **Animation:** one value `t` (0 to 1) animated with `lv_anim`, 450 ms ease-out; each frame sets the background gradient colors via `lv_color_mix(from, to, t)`. Content (art, text) appears on the last frame or with a short opacity step on small objects only. Track changes tween from the previous tint to the new tint with the same function. Exit: 180 ms back to the normal UI.
-- **Power:** AOD is always dark regardless of theme. It is an LCD, so black does not save power and burn-in is not a concern. Savings come from **backlight PWM at about 15 to 25%**, UI timer at about **5 Hz**, and 1 Hz progress updates. Do not use light sleep (it would drop WiFi/USB). Optional later: a companion setting to switch the backlight fully off after N minutes.
+- **Power:** AOD is always dark regardless of theme. It is an LCD, so black does not save power and burn-in is not a concern. Savings come from **backlight PWM at about 15 to 25%**, UI timer at about **5 Hz**, and 1 Hz progress updates. Do not use light sleep (it would drop WiFi/USB). **Screen off:** `aod_off_min` (companion: Behavior > Screen off after; 0 = never, the default, or 5/15/30/60) turns the backlight fully off after that long in AOD, and stops drawing. A running timer or stopwatch keeps it lit and restarts the count. A notification lights it again (and restarts the count); a button press on the dark screen wakes the device fully, so it can't toggle a timer unseen.
 
 ## 11. Companion contract (media, config)
 
@@ -273,7 +273,7 @@ Device to companion: `{"type":"cmd","cmd":"play_pause|next|prev|seek","pos_ms":0
 Companion to device (persisted in `Preferences`, acknowledged with `config_ack`):
 ```json
 {"type":"config","v":3,"theme":"dark|light|auto","accent":"cyan","brightness":60,
- "aod":true,"aod_timeout_s":60,"reduce_motion":false,"wallpaper":"gradient|solid|image",
+ "aod":true,"aod_timeout_s":60,"aod_off_min":0,"reduce_motion":false,"wallpaper":"gradient|solid|image",
  "wallpaper_hash":"7bb6219d"}
 ```
 `wallpaper_hash` is sent with `image` only (11.8); `config_ack` reports the saved picture's hash (`""` if none).
