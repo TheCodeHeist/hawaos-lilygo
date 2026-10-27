@@ -6,8 +6,10 @@ mod notifications;
 mod auth;
 mod ble_daemon;
 mod ota;
+mod platform;
 mod protocol;
 mod setup;
+#[cfg(target_os = "linux")]
 mod tray;
 mod wallpaper;
 mod ui;
@@ -24,8 +26,7 @@ use std::time::Duration;
 use crate::config::{load_config, save_config};
 use crate::media::spawn_art_http_server;
 use crate::models::{SharedArtCache, SharedDaemonState, SharedState};
-use crate::notifications::spawn_notification_listener;
-use crate::tray::spawn_system_tray;
+use crate::platform::{spawn_notification_listener, spawn_system_tray};
 use crate::ui::{apply_hawaos_gpui_theme, open_companion_window};
 use crate::worker::spawn_daemon_worker;
 

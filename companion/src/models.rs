@@ -5,8 +5,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 pub use crate::config::{CompanionConfig, DiscoveredWifi};
-use crate::config::scan_wifi_networks;
-use crate::protocol::scan_serial_ports;
+use crate::platform::{scan_wifi_networks, serial_ports as scan_serial_ports};
 
 // ============================================================================
 // Wire Protocol Messages (DESIGN.md Section 11)

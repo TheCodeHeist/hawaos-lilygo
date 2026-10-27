@@ -8,8 +8,8 @@ use gpui_kit::component::{h_flex, v_flex, Sizable, StyledExt};
 
 use crate::config::{save_config, UDP_PORT};
 use crate::models::OutboundAction;
-use crate::config::{sanitize_ip_str, scan_wifi_networks, CompanionConfig};
-use crate::protocol::scan_serial_ports;
+use crate::config::{sanitize_ip_str, CompanionConfig};
+use crate::platform::{scan_wifi_networks, serial_ports as scan_serial_ports};
 use crate::ui::components::{
     button_row, card_header, choice, divider, glass_card, pill, setting_row,
 };

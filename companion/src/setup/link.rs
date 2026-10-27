@@ -16,7 +16,7 @@ use tokio::sync::mpsc::{UnboundedReceiver, unbounded_channel};
 use uuid::Uuid;
 
 use crate::config::USB_BAUD;
-use crate::protocol::scan_serial_ports;
+use crate::platform::serial_ports as scan_serial_ports;
 
 pub const SERVICE_UUID: Uuid = Uuid::from_u128(0x48415741_4f53_4000_8000_000000000001);
 const RX_UUID: Uuid = Uuid::from_u128(0x48415741_4f53_4000_8000_000000000002);

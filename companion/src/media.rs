@@ -5,7 +5,6 @@ use sha1::{Digest, Sha1};
 use std::fs;
 use std::io::{Read, Write};
 use std::net::TcpListener;
-use std::process::Command;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -13,6 +12,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use gpui_kit::gpui::Image;
 use crate::config::{ART_DIM, ART_HTTP_PORT};
 use crate::models::{ArtEntry, MediaMsg, SharedArtCache, SharedState};
+use crate::platform::{self, Art};
 
 fn rgb_to_hsv(r: f32, g: f32, b: f32) -> (f32, f32, f32) {
     let max = r.max(g).max(b);
@@ -129,28 +129,16 @@ fn art_failed<T>(url: &str, why: String) -> Option<T> {
     None
 }
 
-/// In the Flatpak, a cover outside the folders it may read looks missing:
-/// say how to allow the folder it's in.
-fn sandbox_hint(path: &str) -> String {
-    if !std::path::Path::new("/.flatpak-info").exists() {
-        return String::new();
-    }
-    let dir = std::path::Path::new(path).parent().map(|d| d.display().to_string()).unwrap_or_default();
-    format!(
-        ". The Flatpak may not see that folder; to allow it: flatpak override --user --filesystem={dir}:ro {}",
-        crate::config::APP_ID
-    )
-}
-
 /// A new album-art failure since the last call, for the log.
 pub fn take_art_error() -> Option<String> {
     ART_ERROR.lock().ok()?.1.take()
 }
 
 pub fn load_and_convert_art(
-    art_url: &str,
+    art: &Art,
     cache: &SharedArtCache,
 ) -> Option<(String, String, String, String, Vec<u8>)> {
+    let art_url = art.key();
     if art_url.is_empty() {
         return None;
     }
@@ -175,11 +163,13 @@ pub fn load_and_convert_art(
         }
     }
 
-    let raw_bytes = if let Some(file_path) = art_url.strip_prefix("file://") {
+    let raw_bytes = if let Art::Image { bytes, .. } = art {
+        bytes.to_vec()
+    } else if let Some(file_path) = art_url.strip_prefix("file://") {
         let decoded_path = file_path.replace("%20", " ");
         match fs::read(&decoded_path) {
             Ok(b) => b,
-            Err(e) => return art_failed(art_url, format!("couldn't read {decoded_path} ({e}){}", sandbox_hint(&decoded_path))),
+            Err(e) => return art_failed(art_url, format!("couldn't read {decoded_path} ({e}){}", platform::art_access_hint(&decoded_path))),
         }
     } else if art_url.starts_with("http://") || art_url.starts_with("https://") {
         let config = ureq::Agent::config_builder()
@@ -239,139 +229,51 @@ pub fn load_and_convert_art(
     Some((short_hash, bg_top, bg_bottom, ink, png_bytes))
 }
 
-pub fn query_mpris_media(
-    cache: &SharedArtCache,
-) -> (MediaMsg, Option<Arc<Image>>, Option<String>) {
-    let ts = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis() as u64;
-
-    let out = Command::new("playerctl")
-        .args([
-            "-a",
-            "metadata",
-            "--format",
-            "{{playerName}}\t{{status}}\t{{title}}\t{{artist}}\t{{album}}\t{{position}}\t{{mpris:length}}\t{{mpris:artUrl}}",
-        ])
-        .output();
-
-    if let Ok(output) = out {
-        if output.status.success() {
-            let text = String::from_utf8_lossy(&output.stdout);
-            let mut players: Vec<(String, String, String, String, String, u64, u64, String)> =
-                Vec::new();
-
-            for line in text.lines() {
-                let parts: Vec<&str> = line.trim().split('\t').collect();
-                if parts.len() >= 7 {
-                    let player_name = parts[0].trim().to_string();
-                    let raw_status = parts[1].trim().to_lowercase();
-                    // As the player gave them; the worker fits them to the
-                    // device (glyphs.rs).
-                    let title = parts[2].trim().to_string();
-                    let artist = parts[3].trim().to_string();
-                    let album = parts[4].trim().to_string();
-                    let pos_us: u64 = parts[5].trim().parse().unwrap_or(0);
-                    let dur_us: u64 = parts[6].trim().parse().unwrap_or(0);
-                    let art_url = if parts.len() >= 8 {
-                        parts[7].trim().to_string()
-                    } else {
-                        String::new()
-                    };
-                    players.push((
-                        player_name, raw_status, title, artist, album, pos_us, dur_us, art_url,
-                    ));
-                }
-            }
-
-            // Select active player:
-            // 1. First player with status == "playing"
-            // 2. First player with status == "paused" and non-empty title
-            // 3. First available player
-            let selected = players
-                .iter()
-                .find(|p| p.1 == "playing")
-                .or_else(|| players.iter().find(|p| p.1 == "paused" && !p.2.is_empty()))
-                .or_else(|| players.first());
-
-            if let Some((
-                player_name,
-                raw_status,
-                title,
-                artist,
-                album,
-                pos_us,
-                dur_us,
-                art_url,
-            )) = selected
-            {
-                let state = match raw_status.as_str() {
-                    "playing" => "playing",
-                    "paused" => "paused",
-                    _ => "stopped",
-                };
-
-                let (art_hash, bg_top, bg_bottom, ink, art_img) =
-                    match load_and_convert_art(art_url, cache) {
-                        Some((h, t, b, i, png)) if !png.is_empty() => (
-                            h,
-                            t,
-                            b,
-                            i,
-                            Some(Arc::new(Image::from_bytes(ImageFormat::Png, png))),
-                        ),
-                        Some((h, t, b, i, _)) => (h, t, b, i, None),
-                        None => (
-                            String::new(),
-                            "#0f3a44".to_string(),
-                            "#05090b".to_string(),
-                            "light".to_string(),
-                            None,
-                        ),
-                    };
-
-                return (
-                    MediaMsg {
-                        msg_type: "media".to_string(),
-                        state: state.to_string(),
-                        title: title.clone(),
-                        artist: artist.clone(),
-                        album: album.clone(),
-                        pos_ms: (pos_us / 1000) as u32,
-                        dur_ms: (dur_us / 1000) as u32,
-                        ts,
-                        art: art_hash,
-                        bg_top,
-                        bg_bottom,
-                        ink,
-                        host_ip: Some(get_local_lan_ip()),
-                    },
-                    art_img,
-                    Some(player_name.clone()),
-                );
-            }
+/// What's playing, for the device and the window: the message, the cover
+/// for the window, and the player (for media keys).
+pub fn query_media(cache: &SharedArtCache) -> (MediaMsg, Option<Arc<Image>>, Option<String>) {
+    let Some(player) = platform::active_player(platform::players()) else {
+        return (MediaMsg::default(), None, None);
+    };
+    let ts = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis() as u64;
+    let state = match player.status.as_str() {
+        "playing" => "playing",
+        "paused" => "paused",
+        _ => "stopped",
+    };
+    let (art_hash, bg_top, bg_bottom, ink, art_img) = match load_and_convert_art(&player.art, cache) {
+        Some((h, t, b, i, png)) if !png.is_empty() => {
+            (h, t, b, i, Some(Arc::new(Image::from_bytes(ImageFormat::Png, png))))
         }
-    }
-
-    (MediaMsg::default(), None, None)
+        Some((h, t, b, i, _)) => (h, t, b, i, None),
+        None => (String::new(), "#0f3a44".to_string(), "#05090b".to_string(), "light".to_string(), None),
+    };
+    (
+        MediaMsg {
+            msg_type: "media".to_string(),
+            state: state.to_string(),
+            title: player.title,
+            artist: player.artist,
+            album: player.album,
+            pos_ms: (player.pos_us / 1000) as u32,
+            dur_ms: (player.dur_us / 1000) as u32,
+            ts,
+            art: art_hash,
+            bg_top,
+            bg_bottom,
+            ink,
+            host_ip: Some(get_local_lan_ip()),
+        },
+        art_img,
+        Some(player.name),
+    )
 }
 
+/// A media key from the device (`play_pause`, `next`, `prev`).
 pub fn handle_device_command(cmd: &str, active_player: Option<&str>) {
-    let arg = match cmd {
-        "play_pause" => "play-pause",
-        "next" => "next",
-        "prev" => "previous",
-        _ => return,
-    };
-    let mut command = Command::new("playerctl");
-    if let Some(player) = active_player {
-        if !player.is_empty() {
-            command.args(["-p", player]);
-        }
+    if let Some(cmd) = platform::MediaCommand::from_device(cmd) {
+        platform::media_command(cmd, active_player);
     }
-    command.arg(arg);
-    let _ = command.spawn();
 }
 
 /// Serves album art and staged firmware. Once the device has a token, art is
@@ -465,12 +367,12 @@ mod tests {
     fn unreadable_art_is_reported_once_per_cover() {
         let cache: SharedArtCache = Arc::new(Mutex::new(std::collections::HashMap::new()));
         // What a sandboxed companion sees for a cover in the player's cache.
-        let url = "file:///nonexistent/hawaos-test/cover.jpg";
-        assert!(load_and_convert_art(url, &cache).is_none());
+        let url = Art::Url("file:///nonexistent/hawaos-test/cover.jpg".into());
+        assert!(load_and_convert_art(&url, &cache).is_none());
         let e = take_art_error().expect("reported");
         assert!(e.contains("couldn't read /nonexistent/hawaos-test/cover.jpg"), "{e}");
         // The player re-sends the same cover every second: no repeat.
-        assert!(load_and_convert_art(url, &cache).is_none());
+        assert!(load_and_convert_art(&url, &cache).is_none());
         assert!(take_art_error().is_none());
     }
 }

@@ -1,5 +1,4 @@
 use std::io::{BufRead, BufReader, Write};
-use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use unicode_normalization::UnicodeNormalization;
@@ -7,21 +6,6 @@ use unicode_normalization::UnicodeNormalization;
 use crate::config::{save_config, sanitize_ip_str, USB_BAUD};
 use crate::media::handle_device_command;
 use crate::models::{IncomingPacket, SharedState};
-
-pub fn scan_serial_ports() -> Vec<String> {
-    let mut list = Vec::new();
-    if let Ok(ports) = serialport::available_ports() {
-        for p in ports {
-            if p.port_name.contains("ttyACM") || p.port_name.contains("ttyUSB") {
-                list.push(p.port_name);
-            }
-        }
-    }
-    if list.is_empty() && PathBuf::from("/dev/ttyACM0").exists() {
-        list.push("/dev/ttyACM0".to_string());
-    }
-    list
-}
 
 /// Cuts `s` to at most `max_bytes` on a char boundary: the device's field
 /// size (DataStore.h, minus the terminator). Keeps signed packets in one

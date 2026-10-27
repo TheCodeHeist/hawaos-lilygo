@@ -4,7 +4,8 @@ use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 
-use crate::config::{save_config, set_autostart_installed, DEFAULT_DEVICE_IP, LOGO_PNG_BYTES};
+use crate::config::{save_config, DEFAULT_DEVICE_IP, LOGO_PNG_BYTES};
+use crate::platform::set_autostart_installed;
 use crate::models::{OutboundAction, SharedState};
 use crate::ui::accents::ACCENTS;
 use crate::ui::theme::accent_by_id;

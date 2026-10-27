@@ -5,7 +5,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use sysinfo::{Networks, System};
 
 use crate::config::{CompanionConfig, save_config};
-use crate::media::query_mpris_media;
+use crate::media::query_media;
 use crate::config::{get_local_lan_ip, ART_HTTP_PORT, DEFAULT_DEVICE_IP, UDP_PORT, USB_BAUD};
 use crate::models::{
     MediaMsg, OtaProgress, OutboundAction, SharedArtCache, SharedState, StatsMsg, WeatherMsg,
@@ -325,7 +325,7 @@ pub fn spawn_daemon_worker(state: SharedState, art_cache: SharedArtCache) {
                     .unwrap_or_default()
                     .as_secs();
 
-                let (cur_media, cur_art_img, cur_player) = query_mpris_media(&art_cache);
+                let (cur_media, cur_art_img, cur_player) = query_media(&art_cache);
                 if let Some(e) = crate::media::take_art_error() {
                     eprintln!("[Daemon] {e}");
                     if let Ok(mut g) = state.lock() {

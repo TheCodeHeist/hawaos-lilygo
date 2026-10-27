@@ -12,7 +12,7 @@ use image::imageops::FilterType;
 use image::{GenericImageView, RgbImage};
 use sha1::{Digest, Sha1};
 
-use crate::config::config_file_path;
+use crate::platform::config_file_path;
 
 pub const WP_W: u32 = 320;
 pub const WP_H: u32 = 170;

@@ -6,7 +6,8 @@ use gpui_kit::component::switch::Switch;
 use gpui_kit::component::theme::ActiveTheme;
 use gpui_kit::component::{h_flex, v_flex, Sizable};
 
-use crate::config::{config_file_path, save_config, set_autostart_installed, CompanionConfig};
+use crate::config::{save_config, CompanionConfig};
+use crate::platform::{config_file_path, set_autostart_installed};
 use crate::ui::components::{
     button_row, card_header, choice, divider, glass_card, page_header, setting_row,
 };
