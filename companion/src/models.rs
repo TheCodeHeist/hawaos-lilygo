@@ -203,6 +203,10 @@ pub struct SharedDaemonState {
     pub outbound_queue: VecDeque<OutboundAction>,
     pub logs: VecDeque<String>,
     pub open_window_requested: bool,
+    /// A link for the window to open in the browser (the tray can't).
+    pub open_url_requested: Option<String>,
+    /// A newer release's version, once update_check.rs finds one.
+    pub update_available: Option<String>,
     /// Tray "Add device...": show the setup wizard when the window opens.
     pub open_setup_requested: bool,
     pub quit_requested: bool,
@@ -289,6 +293,8 @@ impl SharedDaemonState {
             outbound_queue: VecDeque::new(),
             logs: VecDeque::with_capacity(40),
             open_window_requested: false,
+            open_url_requested: None,
+            update_available: None,
             open_setup_requested: false,
             quit_requested: false,
             weather: None,

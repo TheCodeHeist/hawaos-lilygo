@@ -343,7 +343,7 @@ Every message carries a counter, so a captured one can't be sent again, and the 
 - USB is trusted as it is: whoever holds the cable holds the device, and setup over USB sends the Wi-Fi password over the cable unencrypted.
 - A device set up before encryption existed has no secret and keeps talking in plain text until you run **Add device** again.
 
-**Outside services.** The companion asks [Open-Meteo](https://open-meteo.com) for weather and, with automatic location on, [ip-api.com](https://ip-api.com) for your rough location; pick a city to turn that off. The device itself only talks to the companion and an NTP server.
+**Outside services.** The companion asks [Open-Meteo](https://open-meteo.com) for weather and, with automatic location on, [ip-api.com](https://ip-api.com) for your rough location; pick a city to turn that off. Twice a day it asks GitHub for the latest HawaOS release, to tell you when there's a new one (only the request itself, nothing about you or the device); turn that off in **Background > Check for updates**. The device itself only talks to the companion and an NTP server.
 
 The full protocol, key derivation and replay rules are in [`DESIGN.md`](DESIGN.md) §11.4–11.6.
 

@@ -90,6 +90,22 @@ impl CompanionWindowView {
                             })),
                     ))
                     .child(divider(pal))
+                    .child(setting_row(
+                        pal,
+                        "Check for updates",
+                        Some("Asks GitHub for the latest HawaOS release twice a day. Nothing about you or your device is sent."),
+                        Switch::new("check-updates-switch")
+                            .checked(cfg.check_updates)
+                            .on_change(cx.listener(|this, checked: &bool, _, cx| {
+                                let val = *checked;
+                                if let Ok(mut g) = this.state.lock() {
+                                    g.config.check_updates = val;
+                                    save_config(&g.config);
+                                }
+                                cx.notify();
+                            })),
+                    ))
+                    .child(divider(pal))
                     .child(
                         h_flex()
                             .w_full()

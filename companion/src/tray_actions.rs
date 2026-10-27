@@ -18,6 +18,27 @@ pub struct TrayView {
     pub active_player: Option<String>,
     /// The tooltip: device address, load, and the track.
     pub tooltip: String,
+    /// A newer release to mention (update_check.rs).
+    pub update: Option<String>,
+}
+
+/// The newer release to tell the user about: found, checks on, and not
+/// dismissed.
+pub fn update_to_show(g: &crate::models::SharedDaemonState) -> Option<String> {
+    g.update_available
+        .clone()
+        .filter(|v| g.config.check_updates && *v != g.config.update_dismissed)
+}
+
+pub fn update_label(version: &str) -> String {
+    format!("HawaOS {version} is available...")
+}
+
+/// The release page, opened by the window (the tray has no browser access).
+pub fn open_release_page(state: &SharedState) {
+    if let Ok(mut g) = state.lock() {
+        g.open_url_requested = Some(crate::update_check::RELEASES_URL.to_string());
+    }
 }
 
 pub fn view(state: &SharedState) -> Option<TrayView> {
@@ -42,6 +63,7 @@ pub fn view(state: &SharedState) -> Option<TrayView> {
             "HawaOS Companion ({})\nCPU {}% · RAM {}% · {}",
             g.config.target_ip, g.cpu_pct, g.ram_pct, playing
         ),
+        update: update_to_show(&g),
     })
 }
 

@@ -17,6 +17,7 @@ mod single_instance;
 #[cfg(target_os = "linux")]
 mod tray;
 mod tray_actions;
+mod update_check;
 mod wallpaper;
 mod ui;
 mod weather;
@@ -62,6 +63,7 @@ fn main() {
     ble_daemon::spawn(Arc::clone(&state));
     spawn_notification_listener(Arc::clone(&state));
     spawn_system_tray(Arc::clone(&state));
+    update_check::spawn(Arc::clone(&state));
 
     gpui_kit::application()
         .with_assets(AllAssets)
@@ -86,13 +88,13 @@ fn main() {
                         .await;
                     tick_count = tick_count.wrapping_add(1);
 
-                    let (want_open, want_quit, look, live) = if let Ok(mut g) = poll_state.lock() {
+                    let (want_open, want_quit, look, live, url) = if let Ok(mut g) = poll_state.lock() {
                         let open = g.open_window_requested;
                         g.open_window_requested = false;
                         let look = (g.config.companion_dark_mode, g.config.accent.clone());
-                        (open, g.quit_requested, Some(look), g.wizard_active)
+                        (open, g.quit_requested, Some(look), g.wizard_active, g.open_url_requested.take())
                     } else {
-                        (false, false, None, false)
+                        (false, false, None, false, None)
                     };
                     let look_changed = look.is_some() && look != last_look;
                     if look_changed {
@@ -104,6 +106,9 @@ fn main() {
                         if want_quit {
                             cx.quit();
                             return;
+                        }
+                        if let Some(url) = url.as_deref() {
+                            cx.open_url(url);
                         }
                         if let (true, Some((dark, accent))) = (look_changed, look.as_ref()) {
                             apply_hawaos_gpui_theme(*dark, accent, cx);

@@ -17,7 +17,7 @@ use gpui_kit::component::button::{Button, ButtonVariants};
 use gpui_kit::assets::IconName;
 use gpui_kit::component::input::InputState;
 use gpui_kit::component::scroll::ScrollableElement;
-use gpui_kit::component::{h_flex, v_flex, Sizable};
+use gpui_kit::component::{h_flex, v_flex, Sizable, StyledExt};
 
 /// Below this window width the sidebar collapses to icons only.
 const COMPACT_SIDEBAR_BELOW: f32 = 920.;
@@ -228,7 +228,7 @@ pub(crate) fn sync_config(state: &SharedState, f: impl FnOnce(&mut CompanionConf
 
 impl Render for CompanionWindowView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let (dark_mode, translucent, accent, needs_setup) = if let Ok(mut g) = self.state.lock() {
+        let (dark_mode, translucent, accent, needs_setup, update) = if let Ok(mut g) = self.state.lock() {
             if std::mem::take(&mut g.open_setup_requested) {
                 self.active_section = NavSection::InitialSetup;
             }
@@ -240,9 +240,10 @@ impl Render for CompanionWindowView {
                 use_translucent_window(&g.config.window_transparency),
                 g.config.accent.clone(),
                 g.device_needs_setup,
+                crate::tray_actions::update_to_show(&g),
             )
         } else {
-            (true, false, accents::DEFAULT_ACCENT.to_string(), false)
+            (true, false, accents::DEFAULT_ACCENT.to_string(), false, None)
         };
         let setup_prompt = needs_setup && self.active_section != NavSection::InitialSetup;
         // Leaving the page mid-wizard cancels it, so it can't keep the USB
@@ -337,6 +338,71 @@ impl Render for CompanionWindowView {
                                                     this.status_banner = None;
                                                     cx.notify();
                                                 })),
+                                        ),
+                                )
+                            })
+                            .when_some(update, |this, version| {
+                                this.child(
+                                    h_flex()
+                                        .w_full()
+                                        .gap_3()
+                                        .pl_4()
+                                        .pr_2()
+                                        .py_2()
+                                        .rounded(px(components::CARD_RADIUS))
+                                        .bg(pal.primary.opacity(0.14))
+                                        .border_1()
+                                        .border_color(pal.primary.opacity(0.35))
+                                        .justify_between()
+                                        .items_center()
+                                        .child(
+                                            h_flex()
+                                                .gap_3()
+                                                .min_w_0()
+                                                .items_center()
+                                                .child(div().flex_shrink_0().text_color(pal.accent).child(IconName::ArrowUp))
+                                                .child(
+                                                    v_flex()
+                                                        .min_w_0()
+                                                        .child(
+                                                            div()
+                                                                .text_sm()
+                                                                .font_semibold()
+                                                                .text_color(pal.text)
+                                                                .child(format!("HawaOS {version} is available")),
+                                                        )
+                                                        .child(
+                                                            div()
+                                                                .text_xs()
+                                                                .text_color(pal.text_dim)
+                                                                .child(crate::update_check::how_to_update()),
+                                                        ),
+                                                ),
+                                        )
+                                        .child(
+                                            h_flex()
+                                                .flex_shrink_0()
+                                                .gap_1()
+                                                .child(
+                                                    Button::new("update-whats-new")
+                                                        .small()
+                                                        .primary()
+                                                        .label("What's new")
+                                                        .on_click(|_, _, cx| cx.open_url(crate::update_check::RELEASES_URL)),
+                                                )
+                                                .child(
+                                                    Button::new("update-dismiss")
+                                                        .small()
+                                                        .ghost()
+                                                        .icon(IconName::Close)
+                                                        .on_click(cx.listener(move |this, _, _, cx| {
+                                                            if let Ok(mut g) = this.state.lock() {
+                                                                g.config.update_dismissed = version.clone();
+                                                                save_config(&g.config);
+                                                            }
+                                                            cx.notify();
+                                                        })),
+                                                ),
                                         ),
                                 )
                             })

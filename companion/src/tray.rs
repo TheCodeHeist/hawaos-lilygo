@@ -79,7 +79,19 @@ impl ksni::Tray for HawaTray {
         let play_target = view.active_player.clone();
         let next_target = view.active_player.clone();
 
-        vec![
+        let mut items: Vec<ksni::MenuItem<Self>> = Vec::new();
+        if let Some(version) = &view.update {
+            items.push(
+                StandardItem {
+                    label: tray_actions::update_label(version),
+                    activate: Box::new(|this: &mut Self| tray_actions::open_release_page(&this.state)),
+                    ..Default::default()
+                }
+                .into(),
+            );
+            items.push(MenuItem::Separator);
+        }
+        items.extend([
             StandardItem {
                 label: "Open HawaOS Companion".into(),
                 activate: Box::new(|this: &mut Self| tray_actions::open_window(&this.state)),
@@ -138,7 +150,8 @@ impl ksni::Tray for HawaTray {
                 ..Default::default()
             }
             .into(),
-        ]
+        ]);
+        items
     }
 }
 
@@ -154,11 +167,11 @@ pub fn spawn_system_tray(state: SharedState) {
     // window and from device ACKs, so re-publish whenever what the menu shows
     // (theme, accent, track) differs from the last published menu.
     thread::spawn(move || {
-        let mut shown: Option<(String, String, String)> = None;
+        let mut shown: Option<(String, String, String, Option<String>)> = None;
         loop {
             thread::sleep(Duration::from_millis(500));
             let Some(v) = tray_actions::view(&state) else { continue };
-            let now = (v.theme, v.accent.to_string(), v.track);
+            let now = (v.theme, v.accent.to_string(), v.track, v.update);
             if shown.as_ref() != Some(&now) {
                 shown = Some(now);
                 if handle.update(|_| {}).is_none() {

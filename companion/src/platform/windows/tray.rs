@@ -45,6 +45,9 @@ pub fn spawn_system_tray(state: SharedState) {
         }
         let autostart = CheckMenuItem::new("Start Companion with System", true, view.autostart, None);
         let quit = MenuItem::new("Quit HawaOS Daemon", true, None);
+        // At the top, while a newer release is out (tray_actions::update_to_show).
+        let update = MenuItem::new("", true, None);
+        let update_sep = PredefinedMenuItem::separator();
 
         let menu = Menu::new();
         let sep = PredefinedMenuItem::separator;
@@ -66,7 +69,7 @@ pub fn spawn_system_tray(state: SharedState) {
         }
 
         let mut builder = TrayIconBuilder::new()
-            .with_menu(Box::new(menu))
+            .with_menu(Box::new(menu.clone()))
             .with_menu_on_left_click(false)
             .with_tooltip(tooltip(&view));
         if let Some(icon) = icon() {
@@ -74,6 +77,17 @@ pub fn spawn_system_tray(state: SharedState) {
         }
         let Ok(tray) = builder.build() else { return };
 
+        let show_update = |menu: &Menu, version: Option<&String>| match version {
+            Some(v) => {
+                update.set_text(tray_actions::update_label(v));
+                let _ = menu.prepend_items(&[&update, &update_sep]);
+            }
+            None => {
+                let _ = menu.remove(&update);
+                let _ = menu.remove(&update_sep);
+            }
+        };
+        show_update(&menu, view.update.as_ref());
         let mut shown = view;
         let mut since_refresh = Duration::ZERO;
         let tick = Duration::from_millis(50);
@@ -108,6 +122,8 @@ pub fn spawn_system_tray(state: SharedState) {
                     tray_actions::toggle_device_theme(&state);
                 } else if id == autostart.id() {
                     tray_actions::toggle_autostart(&state);
+                } else if id == update.id() {
+                    tray_actions::open_release_page(&state);
                 } else if id == quit.id() {
                     tray_actions::quit(&state);
                 } else if let Some(i) = accents.iter().position(|a| a.id() == id) {
@@ -128,6 +144,10 @@ pub fn spawn_system_tray(state: SharedState) {
                             item.set_checked(i == now.accent);
                         }
                         autostart.set_checked(now.autostart);
+                        if now.update != shown.update {
+                            show_update(&menu, None);
+                            show_update(&menu, now.update.as_ref());
+                        }
                         let _ = tray.set_tooltip(Some(tooltip(&now)));
                         shown = now;
                     }

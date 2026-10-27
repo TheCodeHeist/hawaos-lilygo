@@ -25,6 +25,10 @@ pub struct CompanionConfig {
     pub close_to_tray: bool,
     pub companion_dark_mode: bool,
     pub window_transparency: String, // "auto" | "on" | "off"
+    /// Ask GitHub for new releases (update_check.rs).
+    pub check_updates: bool,
+    /// The release whose notice was dismissed; a later one shows again.
+    pub update_dismissed: String,
 
     // Device configuration fields (DESIGN.md Section 11.3)
     pub config_version: u32,
@@ -66,6 +70,8 @@ impl Default for CompanionConfig {
             auto_sync_settings: true,
             autostart_enabled: crate::platform::is_autostart_installed(),
             close_to_tray: true,
+            check_updates: true,
+            update_dismissed: String::new(),
             companion_dark_mode: true,
             window_transparency: "auto".to_string(),
             config_version: 1,
