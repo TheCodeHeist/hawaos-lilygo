@@ -63,7 +63,7 @@ A frosted-glass Rust app (gpui) that lives in your tray. It streams stats, media
 
 ## Make it yours
 
-Pick one of **17 Tailwind accents** from the companion, its tray menu or on-device Settings. The choice syncs both ways. The whole UI takes on the accent in both themes. In dark mode the wallpaper falls from a near-black of the accent into a deep tint of it (rose turns wine, amber turns espresso). In light mode it's a pale wash (blush, cream, mint), and cards, text and borders share the same undertone.
+Pick one of **17 Tailwind accents** from the companion, its tray menu or on-device Settings. The choice syncs both ways. The whole UI takes on the accent in both themes. In dark mode the wallpaper falls from a near-black of the accent into a deep tint of it (rose turns wine, amber turns espresso). In light mode it's a pale wash (blush, cream, mint), and cards, text and borders share the same undertone. Or put your own picture behind Home and Clock: **Device > Home screen > Image** crops it to the screen, dithers it for the 16-bit panel and sends it over the encrypted link. The device keeps it through restarts and updates, and tints it toward the theme so text stays readable.
 
 <p align="center">
   <img src="docs/media/accent-swatches.png" width="640" alt="The 17 accent colors">
@@ -345,8 +345,8 @@ The full protocol, key derivation and replay rules are in [`DESIGN.md`](DESIGN.m
 - [x] Encrypted, authenticated network traffic with replay protection
 - [x] Bluetooth as an everyday link instead of Wi-Fi, with album art over Bluetooth and USB
 - [x] Companion packaged as a Flatpak, with prebuilt firmware in every release
+- [x] Image wallpapers pushed from the companion, over Wi-Fi, Bluetooth or USB
 - [ ] Windows companion
-- [ ] Image wallpapers pushed from the companion
 
 ## License
 

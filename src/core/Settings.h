@@ -12,6 +12,7 @@ enum class ThemeMode : uint8_t {
 enum class WallpaperMode : uint8_t {
   Gradient = 0,
   Solid = 1,
+  Image = 2, // the companion's picture (services/Wallpaper.h); gradient until it arrives
 };
 
 // How the companion reaches the device day to day (USB works in both).

@@ -361,16 +361,20 @@ pub fn spawn_art_http_server(cache: SharedArtCache, state: SharedState) {
                 let first_line = req.lines().next().unwrap_or("");
                 let parts: Vec<&str> = first_line.split_whitespace().collect();
                 if parts.len() >= 2 && parts[0] == "GET" {
-                    if let Some(hash) = parts[1].strip_prefix("/art/") {
-                        let hash_clean = hash.trim();
-                        let bytes_opt = cache_ref
-                            .lock()
-                            .ok()
-                            .and_then(|g| g.get(hash_clean).map(|e| e.rgb565_le.clone()));
-
+                    // Album art and the wallpaper, by hash: /art/<h>, /wp/<h>.
+                    let found = if let Some(hash) = parts[1].strip_prefix("/art/") {
+                        let hash = hash.trim();
+                        let px = cache_ref.lock().ok().and_then(|g| g.get(hash).map(|e| e.rgb565_le.clone()));
+                        Some(("art", hash, px))
+                    } else {
+                        parts[1]
+                            .strip_prefix("/wp/")
+                            .map(|h| ("wp", h.trim(), crate::wallpaper::pixels(h.trim())))
+                    };
+                    if let Some((kind, hash_clean, bytes_opt)) = found {
                         let bytes_opt = match bytes_opt {
                             Some(b) if !token.is_empty() => {
-                                crate::auth::seal_blob(&token, &format!("art:{hash_clean}"), &b)
+                                crate::auth::seal_blob(&token, &format!("{kind}:{hash_clean}"), &b)
                             }
                             other => other,
                         };

@@ -16,6 +16,7 @@
 #include "drivers/Buttons.h"
 #include "drivers/Display.h"
 #include "services/SetupService.h"
+#include "services/Wallpaper.h"
 #include "services/WifiService.h"
 #include "ui/StatusBar.h"
 #include "ui/Theme.h"
@@ -102,6 +103,7 @@ void drainEvents() {
       break;
     }
     case EventType::SettingsChanged:
+      Wallpaper::applyPending(); // a new picture, if one just arrived
       if (!AppManager::isInAod()) {
         Display::setBrightness(Settings::getBrightnessStep());
       }
@@ -216,6 +218,7 @@ void begin() {
   logMemoryStats("boot-logo-shown");
 
   DataStore::begin();
+  Wallpaper::begin();
   EventBus::begin();
   Buttons::begin();
 

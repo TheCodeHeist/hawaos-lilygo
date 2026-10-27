@@ -160,6 +160,10 @@ pub enum OutboundAction {
     SendArt {
         hash: String,
     },
+    /// Push the wallpaper to a device that can't pull it over HTTP (wp_req).
+    SendWallpaper {
+        hash: String,
+    },
     SendClockAction {
         action: String,
         duration_sec: u32,

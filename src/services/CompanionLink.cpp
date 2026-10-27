@@ -9,6 +9,7 @@
 #include "services/NtpService.h"
 #include "services/OtaService.h"
 #include "services/SetupService.h"
+#include "services/Wallpaper.h"
 #include "services/WifiService.h"
 #include "ui/Theme.h"
 
@@ -42,20 +43,28 @@ char s_serialLine[1024] = {0};
 char s_bleLine[1460] = {0};
 size_t s_serialLen = 0;
 
-char s_pendingArtHash[16] = {0};
-char s_loadedArtHash[16] = {0};
-uint32_t s_lastArtAttemptMs = 0;
-// Art pushed in art_data chunks (BLE, USB): iv and tag land here, the
-// ciphertext straight in the art buffer.
-size_t s_pushGot = 0;
-uint8_t s_pushIv[12];
-uint8_t s_pushTag[16];
+// An image the companion serves by hash: album art or the wallpaper. Pulled
+// over HTTP on Wi-Fi, else pushed in <kind>_data chunks (Bluetooth, USB).
+struct ImageSlot {
+  const char *kind;  // "art" | "wp": URL path, message prefix and AAD
+  const char *label; // for the log
+  size_t bytes;
+  uint8_t *(*buffer)();               // where the pixels land
+  void (*done)(const char *hash);     // called once authentic
+  uint32_t pullTimeoutMs;
+  char pending[16];
+  char loaded[16]; // what the buffer holds
+  uint32_t lastAttemptMs;
+  uint8_t failures; // gives up after a few (finishImage)
+  // Pushed chunks: iv and tag land here, the ciphertext straight in the buffer.
+  size_t pushGot;
+  uint8_t iv[12];
+  uint8_t tag[16];
+};
 // Last sealed message over the everyday Bluetooth link, and last stats over
 // USB (isLinked()).
 volatile uint32_t s_lastBleRxMs = 0;
 volatile uint32_t s_lastUsbStatsMs = 0;
-// Failed art loads for the pending hash; gives up after a few (finishArt).
-uint8_t s_artFailures = 0;
 // A link-mode change applies shortly after its config_ack goes out.
 uint32_t s_linkApplyAtMs = 0;
 
@@ -192,89 +201,114 @@ void replyAuthError(Link link, const char *reason, const char *forType) {
   s_udp.endPacket();
 }
 
-// Paired: art arrives as iv || ciphertext || tag (DESIGN.md Section 11.6).
-size_t artWireBytes() {
-  return DataStore::ALBUM_ART_BYTES +
-         (CompanionAuth::hasToken() ? sizeof(s_pushIv) + sizeof(s_pushTag) : 0);
+uint8_t *artBuffer() {
+  return reinterpret_cast<uint8_t *>(DataStore::albumArtBuffer());
 }
 
-// Decrypts the art buffer if paired and publishes it, or forgets it.
-void finishArt(bool complete, const uint8_t *iv, const uint8_t *tag) {
-  uint16_t *artBuf = DataStore::albumArtBuffer();
-  bool authentic = complete && artBuf != nullptr;
+void artDone(const char *hash) {
+  DataStore::setAlbumArtReady(hash, true);
+  postDataUpdated();
+}
+
+void wallpaperDone(const char *hash) {
+  Wallpaper::commit(hash);
+  postSettingsChanged(); // the UI swaps it in and redraws
+}
+
+ImageSlot s_art{"art", "128x128 RGB565 art", DataStore::ALBUM_ART_BYTES,
+                artBuffer, artDone, 1500};
+ImageSlot s_wp{"wp", "320x170 wallpaper", Wallpaper::BYTES,
+               Wallpaper::stagingBuffer, wallpaperDone, 4000};
+
+// Paired: images arrive as iv || ciphertext || tag (DESIGN.md Section 11.6).
+size_t wireBytes(const ImageSlot &s) {
+  return s.bytes + (CompanionAuth::hasToken() ? sizeof(s.iv) + sizeof(s.tag) : 0);
+}
+
+void wantImage(ImageSlot &s, const char *hash) {
+  if (hash[0] == '\0') {
+    s.pending[0] = '\0';
+  } else if (strncmp(hash, s.pending, sizeof(s.pending)) != 0) {
+    s.failures = 0;
+    strncpy(s.pending, hash, sizeof(s.pending) - 1);
+    s.pending[sizeof(s.pending) - 1] = '\0';
+  }
+}
+
+// Decrypts the buffer if paired and publishes it, or forgets it.
+void finishImage(ImageSlot &s, bool complete, const uint8_t *iv,
+                 const uint8_t *tag) {
+  uint8_t *buf = s.buffer();
+  bool authentic = complete && buf != nullptr;
   if (authentic && CompanionAuth::hasToken()) {
     char aad[24];
-    snprintf(aad, sizeof(aad), "art:%s", s_pendingArtHash);
-    authentic = CompanionAuth::openInPlace(aad, iv,
-                                           reinterpret_cast<uint8_t *>(artBuf),
-                                           DataStore::ALBUM_ART_BYTES, tag);
+    snprintf(aad, sizeof(aad), "%s:%s", s.kind, s.pending);
+    authentic = CompanionAuth::openInPlace(aad, iv, buf, s.bytes, tag);
   }
   if (authentic) {
-    s_artFailures = 0;
-    strncpy(s_loadedArtHash, s_pendingArtHash, sizeof(s_loadedArtHash) - 1);
-    s_loadedArtHash[sizeof(s_loadedArtHash) - 1] = '\0';
-    DataStore::setAlbumArtReady(s_loadedArtHash, true);
-    s_pendingArtHash[0] = '\0';
-    Serial.printf("[CompanionLink] Pulled 128x128 RGB565 art (%s)\n",
-                  s_loadedArtHash);
-    postDataUpdated();
+    s.failures = 0;
+    strncpy(s.loaded, s.pending, sizeof(s.loaded) - 1);
+    s.loaded[sizeof(s.loaded) - 1] = '\0';
+    s.pending[0] = '\0';
+    Serial.printf("[CompanionLink] Pulled %s (%s)\n", s.label, s.loaded);
+    s.done(s.loaded);
   } else {
-    // The buffer no longer holds the art it was loaded with.
-    s_loadedArtHash[0] = '\0';
-    Serial.printf("[CompanionLink] Art %s (%s)\n",
+    // The buffer no longer holds what it was loaded with.
+    s.loaded[0] = '\0';
+    Serial.printf("[CompanionLink] %s %s (%s)\n", s.kind,
                   complete ? "failed authentication" : "read truncated",
-                  s_pendingArtHash);
+                  s.pending);
     // A key mismatch fails the same way every time: stop asking.
-    if (++s_artFailures >= 3) {
-      s_artFailures = 0;
-      s_pendingArtHash[0] = '\0';
-      Serial.println("[CompanionLink] Giving up on this art");
+    if (++s.failures >= 3) {
+      s.failures = 0;
+      s.pending[0] = '\0';
+      Serial.printf("[CompanionLink] Giving up on this %s\n", s.kind);
     }
   }
 }
 
-// art_data {hash, off, b64}: in-order pieces of the wire blob, pushed where
-// the device can't pull over HTTP (art_req).
-void handleArtData(JsonDocument &doc) {
-  uint8_t *art = reinterpret_cast<uint8_t *>(DataStore::albumArtBuffer());
-  if (art == nullptr || s_pendingArtHash[0] == '\0' ||
-      strcmp(doc["hash"] | "", s_pendingArtHash) != 0) {
+// <kind>_data {hash, off, b64}: in-order pieces of the wire blob, pushed where
+// the device can't pull over HTTP (<kind>_req).
+void handleImageData(ImageSlot &s, JsonDocument &doc) {
+  uint8_t *buf = s.buffer();
+  if (buf == nullptr || s.pending[0] == '\0' ||
+      strcmp(doc["hash"] | "", s.pending) != 0) {
     return;
   }
   const size_t off = doc["off"] | 0U;
   if (off == 0) {
-    s_pushGot = 0;
-  } else if (off != s_pushGot) {
-    s_pushGot = 0; // a piece went missing; the next art_req starts over
+    s.pushGot = 0;
+  } else if (off != s.pushGot) {
+    s.pushGot = 0; // a piece went missing; the next request starts over
     return;
   }
   const char *b64 = doc["b64"] | "";
   uint8_t chunk[768];
   size_t n = 0;
-  const size_t wire = artWireBytes();
+  const size_t wire = wireBytes(s);
   if (mbedtls_base64_decode(chunk, sizeof(chunk), &n,
                             reinterpret_cast<const uint8_t *>(b64),
                             strlen(b64)) != 0 ||
       off + n > wire) {
-    s_pushGot = 0;
+    s.pushGot = 0;
     return;
   }
-  const size_t ivLen = CompanionAuth::hasToken() ? sizeof(s_pushIv) : 0;
+  const size_t ivLen = CompanionAuth::hasToken() ? sizeof(s.iv) : 0;
   for (size_t i = 0; i < n; ++i) {
     const size_t at = off + i;
     if (at < ivLen) {
-      s_pushIv[at] = chunk[i];
-    } else if (at < ivLen + DataStore::ALBUM_ART_BYTES) {
-      art[at - ivLen] = chunk[i];
+      s.iv[at] = chunk[i];
+    } else if (at < ivLen + s.bytes) {
+      buf[at - ivLen] = chunk[i];
     } else {
-      s_pushTag[at - ivLen - DataStore::ALBUM_ART_BYTES] = chunk[i];
+      s.tag[at - ivLen - s.bytes] = chunk[i];
     }
   }
-  s_pushGot = off + n;
-  s_lastArtAttemptMs = millis(); // progress: don't ask again mid-transfer
-  if (s_pushGot == wire) {
-    s_pushGot = 0;
-    finishArt(true, s_pushIv, s_pushTag);
+  s.pushGot = off + n;
+  s.lastAttemptMs = millis(); // progress: don't ask again mid-transfer
+  if (s.pushGot == wire) {
+    s.pushGot = 0;
+    finishImage(s, true, s.iv, s.tag);
   }
 }
 
@@ -421,8 +455,9 @@ void handleJsonMessage(const char *payload, size_t len, Link link,
         replyAuthError(link, "setup_only", type);
         return;
       }
-      // Art chunks are pieces of an encrypted blob, checked when complete.
-      if (!trusted && strcmp(type, "art_data") != 0) {
+      // Image chunks are pieces of an encrypted blob, checked when complete.
+      if (!trusted && strcmp(type, "art_data") != 0 &&
+          strcmp(type, "wp_data") != 0) {
         replyAuthError(link, "plaintext", type);
         return;
       }
@@ -476,7 +511,11 @@ void handleJsonMessage(const char *payload, size_t len, Link link,
   }
 
   if (strcmp(type, "art_data") == 0) {
-    handleArtData(doc);
+    handleImageData(s_art, doc);
+    return;
+  }
+  if (strcmp(type, "wp_data") == 0) {
+    handleImageData(s_wp, doc);
     return;
   }
 
@@ -558,16 +597,12 @@ void handleJsonMessage(const char *payload, size_t len, Link link,
     DataStore::updateMedia(state, title, artist, album, posMs, durMs, artHash,
                            bgTop, bgBot, inkLight);
 
-    if (artHash[0] != '\0') {
-      if (strncmp(artHash, s_loadedArtHash, sizeof(s_loadedArtHash)) == 0) {
-        DataStore::setAlbumArtReady(artHash, true);
-      } else {
-        s_artFailures = 0;
-        strncpy(s_pendingArtHash, artHash, sizeof(s_pendingArtHash) - 1);
-        s_pendingArtHash[sizeof(s_pendingArtHash) - 1] = '\0';
-      }
+    if (artHash[0] != '\0' &&
+        strncmp(artHash, s_art.loaded, sizeof(s_art.loaded)) == 0) {
+      DataStore::setAlbumArtReady(artHash, true);
+      s_art.pending[0] = '\0';
     } else {
-      s_pendingArtHash[0] = '\0';
+      wantImage(s_art, artHash);
     }
 
     postDataUpdated();
@@ -712,9 +747,16 @@ void handleJsonMessage(const char *payload, size_t len, Link link,
     }
     if (doc["wallpaper"].is<const char *>()) {
       const char *wp = doc["wallpaper"];
-      Settings::setWallpaperMode((strcmp(wp, "solid") == 0)
-                                     ? WallpaperMode::Solid
-                                     : WallpaperMode::Gradient);
+      if (strcmp(wp, "image") == 0) {
+        Settings::setWallpaperMode(WallpaperMode::Image);
+        // Fetched unless it's the saved one; gradient until it arrives.
+        const char *hash = doc["wallpaper_hash"] | "";
+        wantImage(s_wp, strcmp(hash, Wallpaper::storedHash()) == 0 ? "" : hash);
+      } else {
+        Settings::setWallpaperMode(strcmp(wp, "solid") == 0
+                                       ? WallpaperMode::Solid
+                                       : WallpaperMode::Gradient);
+      }
     }
     if (doc["use_24h"].is<bool>()) {
       Settings::setUse24Hour(doc["use_24h"].as<bool>());
@@ -766,15 +808,11 @@ void handleJsonMessage(const char *payload, size_t len, Link link,
   }
 }
 
-void fetchPendingAlbumArt() {
-  if (s_pendingArtHash[0] == '\0')
+void fetchPending(ImageSlot &s) {
+  if (s.pending[0] == '\0')
     return;
-  if (strncmp(s_pendingArtHash, s_loadedArtHash, sizeof(s_loadedArtHash)) ==
-      0) {
-    DataStore::setAlbumArtReady(s_pendingArtHash, true);
-    s_pendingArtHash[0] = '\0';
-    return;
-  }
+  if (&s == &s_wp && !Wallpaper::canStage())
+    return; // the UI hasn't taken the last one yet
 
   const uint32_t nowMs = millis();
   // Without HTTP (Bluetooth or USB), ask the companion to push it.
@@ -782,66 +820,67 @@ void fetchPendingAlbumArt() {
   const bool canPush =
       (BleLink::isConnected() && !SetupService::isActive()) || s_lastRxViaUsb;
   if (!canPull && canPush) {
-    if (nowMs - s_lastArtAttemptMs < 5000)
+    if (nowMs - s.lastAttemptMs < 5000)
       return;
-    s_lastArtAttemptMs = nowMs;
-    s_pushGot = 0;
+    s.lastAttemptMs = nowMs;
+    s.pushGot = 0;
     char req[64];
-    snprintf(req, sizeof(req), "{\"type\":\"art_req\",\"hash\":\"%s\"}",
-             s_pendingArtHash);
+    snprintf(req, sizeof(req), "{\"type\":\"%s_req\",\"hash\":\"%s\"}",
+             s.kind, s.pending);
     sendJsonPacket(req);
     return;
   }
   if (!canPull) {
-    static uint32_t s_lastArtDiagMs = 0;
-    if (nowMs - s_lastArtDiagMs >= 3000) {
-      s_lastArtDiagMs = nowMs;
+    static uint32_t s_lastDiagMs = 0;
+    if (nowMs - s_lastDiagMs >= 3000) {
+      s_lastDiagMs = nowMs;
       Serial.printf(
-          "[CompanionLink] Pending art '%s' waiting (wifi=%d, peer=%d, "
+          "[CompanionLink] Pending %s '%s' waiting (wifi=%d, peer=%d, "
           "companionIp=%s)\n",
-          s_pendingArtHash, WiFi.status() == WL_CONNECTED ? 1 : 0,
+          s.kind, s.pending, WiFi.status() == WL_CONNECTED ? 1 : 0,
           s_hasCompanionPeer ? 1 : 0, s_companionIp.toString().c_str());
     }
     return;
   }
 
-  if (nowMs - s_lastArtAttemptMs < 1200)
+  if (nowMs - s.lastAttemptMs < 1200)
     return;
-  s_lastArtAttemptMs = nowMs;
+  s.lastAttemptMs = nowMs;
 
-  uint16_t *artBuf = DataStore::albumArtBuffer();
-  if (artBuf == nullptr)
+  uint8_t *dst = s.buffer();
+  if (dst == nullptr)
     return;
 
   char url[96];
-  snprintf(url, sizeof(url), "http://%s:%u/art/%s",
+  snprintf(url, sizeof(url), "http://%s:%u/%s/%s",
            s_companionIp.toString().c_str(),
-           static_cast<unsigned>(Config::COMPANION_ART_PORT), s_pendingArtHash);
+           static_cast<unsigned>(Config::COMPANION_ART_PORT), s.kind,
+           s.pending);
 
   HTTPClient http;
   http.setTimeout(1500);
   if (!http.begin(url)) {
-    Serial.printf("[CompanionLink] Art HTTP begin failed: %s\n", url);
+    Serial.printf("[CompanionLink] HTTP begin failed: %s\n", url);
     return;
   }
 
   // Paired: iv || ciphertext || tag, bound to the hash (DESIGN.md 11.6).
-  const bool sealedArt = CompanionAuth::hasToken();
+  const bool sealed = CompanionAuth::hasToken();
   constexpr size_t kIv = 12;
   constexpr size_t kTag = 16;
-  const size_t wireBytes = artWireBytes();
 
   const int code = http.GET();
   if (code == HTTP_CODE_OK &&
-      http.getSize() == static_cast<int>(wireBytes)) {
+      http.getSize() == static_cast<int>(wireBytes(s))) {
     WiFiClient *stream = http.getStreamPtr();
     const uint32_t startMs = millis();
-    auto readExact = [&](uint8_t *dst, size_t want) -> size_t {
+    auto readExact = [&](uint8_t *out, size_t want) -> size_t {
       size_t got = 0;
-      while (http.connected() && got < want && (millis() - startMs) < 1500) {
+      while (http.connected() && got < want &&
+             (millis() - startMs) < s.pullTimeoutMs) {
         const size_t avail = stream->available();
         if (avail > 0) {
-          const int r = stream->readBytes(dst + got, min(avail, want - got));
+          const int r = stream->readBytes(out + got, min(avail, want - got));
           if (r > 0)
             got += static_cast<size_t>(r);
         } else {
@@ -853,18 +892,21 @@ void fetchPendingAlbumArt() {
 
     uint8_t iv[kIv];
     uint8_t tag[kTag];
-    uint8_t *dst = reinterpret_cast<uint8_t *>(artBuf);
-    const bool complete =
-        (!sealedArt || readExact(iv, kIv) == kIv) &&
-        readExact(dst, DataStore::ALBUM_ART_BYTES) ==
-            DataStore::ALBUM_ART_BYTES &&
-        (!sealedArt || readExact(tag, kTag) == kTag);
-    finishArt(complete, iv, tag);
+    const bool complete = (!sealed || readExact(iv, kIv) == kIv) &&
+                          readExact(dst, s.bytes) == s.bytes &&
+                          (!sealed || readExact(tag, kTag) == kTag);
+    finishImage(s, complete, iv, tag);
   } else {
-    Serial.printf("[CompanionLink] Art GET failed: %s code=%d size=%d\n", url,
+    Serial.printf("[CompanionLink] GET failed: %s code=%d size=%d\n", url,
                   code, http.getSize());
   }
   http.end();
+}
+
+// Album art first: it changes with every track; the wallpaper rarely.
+void fetchPendingImages() {
+  fetchPending(s_art);
+  fetchPending(s_wp);
 }
 
 void flushPendingOutbound() {
@@ -919,9 +961,10 @@ void flushPendingOutbound() {
     } else if (tm == ThemeMode::Auto) {
       themeStr = "auto";
     }
-    const char *wpStr = (Settings::getWallpaperMode() == WallpaperMode::Solid)
-                            ? "solid"
-                            : "gradient";
+    const WallpaperMode wpMode = Settings::getWallpaperMode();
+    const char *wpStr = wpMode == WallpaperMode::Solid   ? "solid"
+                        : wpMode == WallpaperMode::Image ? "image"
+                                                         : "gradient";
     const String ipStr = WifiService::isConnected() ? WiFi.localIP().toString()
                                                     : String("0.0.0.0");
     char ssidBuf[33] = {0};
@@ -938,6 +981,7 @@ void flushPendingOutbound() {
              "\"ssid\":\"%s\",\"theme\":\"%s\",\"accent\":\"%s\","
              "\"brightness\":%u,\"aod\":%s,"
              "\"aod_timeout_s\":%u,\"reduce_motion\":%s,\"wallpaper\":\"%s\","
+             "\"wallpaper_hash\":\"%s\","
              "\"use_24h\":%s,\"notify_popup\":%s,\"orientation\":\"%s\","
              "\"link\":\"%s\"}",
              SetupService::deviceId(), Config::DEVICE_MODEL, Config::FW_VERSION,
@@ -949,6 +993,7 @@ void flushPendingOutbound() {
              Settings::getAodEnabled() ? "true" : "false",
              static_cast<unsigned>(Settings::getAodTimeoutSec()),
              Settings::getReduceMotion() ? "true" : "false", wpStr,
+             Wallpaper::storedHash(),
              Settings::getUse24Hour() ? "true" : "false",
              Settings::getNotifyPopupEnabled() ? "true" : "false",
              orientStr,
@@ -1033,14 +1078,14 @@ void poll() {
     }
 
     flushPendingOutbound();
-    fetchPendingAlbumArt();
+    fetchPendingImages();
   } else {
     if (s_udpStarted) {
       s_udp.stop();
       s_udpStarted = false;
     }
     flushPendingOutbound();
-    fetchPendingAlbumArt(); // pushed over Bluetooth or USB (art_req)
+    fetchPendingImages(); // pushed over Bluetooth or USB (<kind>_req)
   }
 }
 

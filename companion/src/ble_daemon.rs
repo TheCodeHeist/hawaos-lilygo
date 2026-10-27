@@ -16,8 +16,8 @@ use crate::setup::link::{BleLink, Link, ble_adapter, ble_devices, ble_start_scan
 /// Lines for the device while connected; `None` otherwise.
 static TX: Mutex<Option<UnboundedSender<String>>> = Mutex::new(None);
 
-/// Queues a line for the device. Callers seal it first (except art_data,
-/// which carries an already-encrypted blob). false when not connected.
+/// Queues a line for the device. Callers seal it first (except art_data and
+/// wp_data, which carry an already-encrypted blob). false when not connected.
 pub fn send_line(line: String) -> bool {
     TX.lock().ok().and_then(|g| g.as_ref().map(|tx| tx.send(line).is_ok())).unwrap_or(false)
 }

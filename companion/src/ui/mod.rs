@@ -185,20 +185,26 @@ impl CompanionWindowView {
         cx: &mut Context<Self>,
         f: impl FnOnce(&mut CompanionConfig),
     ) {
-        if let Ok(mut g) = self.state.lock() {
-            f(&mut g.config);
-            g.config.config_version += 1;
-            save_config(&g.config);
-            if g.config.auto_sync_settings {
-                g.outbound_queue.push_back(OutboundAction::PushConfig {
-                    wifi_ssid: None,
-                    wifi_pass: None,
-                    forget_wifi: false,
-                    force_usb: false,
-                });
-            }
-        }
+        sync_config(&self.state, f);
         cx.notify();
+    }
+}
+
+/// Changes the config, saves it, and sends it to the device if auto-sync is
+/// on. For callers without the view, such as a file dialog's callback.
+pub(crate) fn sync_config(state: &SharedState, f: impl FnOnce(&mut CompanionConfig)) {
+    if let Ok(mut g) = state.lock() {
+        f(&mut g.config);
+        g.config.config_version += 1;
+        save_config(&g.config);
+        if g.config.auto_sync_settings {
+            g.outbound_queue.push_back(OutboundAction::PushConfig {
+                wifi_ssid: None,
+                wifi_pass: None,
+                forget_wifi: false,
+                force_usb: false,
+            });
+        }
     }
 }
 

@@ -1,6 +1,7 @@
 #include "ui/Theme.h"
 #include "config.h"
 #include "core/Settings.h"
+#include "services/Wallpaper.h"
 #include <string.h>
 
 namespace Theme {
@@ -46,8 +47,17 @@ void styleScreen(lv_obj_t *scr, bool withWallpaper, bool forceDark) {
   lv_obj_set_style_bg_color(scr, lv_color_hex(p.bg), LV_PART_MAIN);
   lv_obj_set_style_bg_opa(scr, LV_OPA_COVER, LV_PART_MAIN);
 
-  if (withWallpaper &&
-      Settings::getWallpaperMode() == WallpaperMode::Gradient) {
+  const WallpaperMode mode = Settings::getWallpaperMode();
+  const lv_img_dsc_t *picture =
+      (withWallpaper && mode == WallpaperMode::Image) ? Wallpaper::image()
+                                                      : nullptr;
+  lv_obj_set_style_bg_img_src(scr, picture, LV_PART_MAIN);
+  if (picture != nullptr) {
+    // Tinted toward the theme's background so text and cards stay legible.
+    lv_obj_set_style_bg_img_recolor(scr, lv_color_hex(p.bg), LV_PART_MAIN);
+    lv_obj_set_style_bg_img_recolor_opa(scr, kWallpaperScrim, LV_PART_MAIN);
+    lv_obj_set_style_bg_grad_dir(scr, LV_GRAD_DIR_NONE, LV_PART_MAIN);
+  } else if (withWallpaper && mode != WallpaperMode::Solid) {
     lv_obj_set_style_bg_grad_color(scr, lv_color_hex(p.bgGradEnd),
                                    LV_PART_MAIN);
     lv_obj_set_style_bg_grad_dir(scr, LV_GRAD_DIR_VER, LV_PART_MAIN);

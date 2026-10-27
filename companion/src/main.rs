@@ -8,6 +8,7 @@ mod ota;
 mod protocol;
 mod setup;
 mod tray;
+mod wallpaper;
 mod ui;
 mod weather;
 mod worker;

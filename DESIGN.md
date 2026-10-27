@@ -115,9 +115,9 @@ Used **only on Home and Launcher**; apps use solid `bg`. Cards on top are solid.
 Options, cheapest first (default = 1):
 1. **LVGL vertical gradient** from `bg` to `bgGradEnd` (zero memory, dithered). In dark mode both follow the accent hue.
 2. **Static image from flash**, 320x170 RGB565 (about 109 KB), one per theme. Loaded straight from flash or copied once into PSRAM.
-3. **Companion-pushed wallpaper**, saved to LittleFS and selected in companion settings (same format and size).
+3. **Companion-pushed picture** (`wallpaper:"image"`), picked in the companion's Device settings, same format and size, saved in flash (11.8).
 
-No alpha-blended overlays on top of wallpapers.
+No alpha-blended overlays on top of wallpapers. The picture is recolored toward `bg` (50%) as it is drawn, in the same pass, so text and cards stay legible in either theme; until it has arrived the gradient shows.
 
 ## 7. Motion
 
@@ -273,8 +273,10 @@ Device to companion: `{"type":"cmd","cmd":"play_pause|next|prev|seek","pos_ms":0
 Companion to device (persisted in `Preferences`, acknowledged with `config_ack`):
 ```json
 {"type":"config","v":3,"theme":"dark|light|auto","accent":"cyan","brightness":60,
- "aod":true,"aod_timeout_s":60,"reduce_motion":false,"wallpaper":"gradient"}
+ "aod":true,"aod_timeout_s":60,"reduce_motion":false,"wallpaper":"gradient|solid|image",
+ "wallpaper_hash":"7bb6219d"}
 ```
+`wallpaper_hash` is sent with `image` only (11.8); `config_ack` reports the saved picture's hash (`""` if none).
 `v` is a version counter; the device applies and stores the highest version it has seen. `accent` is a Tailwind color id (3.4); unknown ids are ignored. The companion keeps `v` in step with acks and ignores the accent in an ack older than its latest push, so quick changes never flash an old color back.
 
 ### 11.4 First-run setup and provisioning
@@ -345,20 +347,27 @@ A device can talk to the companion over **Bluetooth instead of Wi-Fi**. `Setting
 | BLE | setup only | always on, advertising `paired` |
 | Wi-Fi radio | joins the saved network | off; the saved network is kept |
 | Clock | NTP | `ts` in companion stats |
-| Album art | device pulls over HTTP | companion pushes `art_data` |
+| Album art, wallpaper | device pulls over HTTP | companion pushes `art_data`, `wp_data` |
 | Firmware update | as 11.5 | Wi-Fi turns on for the download, then off again |
 
 **Switching.** The device stores the new mode, acks it over the current link, and applies it 1.5 s later: Bluetooth mode starts BLE and switches Wi-Fi off; Wi-Fi mode stops BLE and rejoins. `ble` is refused without a token, since the everyday BLE traffic is sealed with it, and `wifi` without a saved network, which would leave the device reachable only over USB (the companion disables that button too). Saving a network in Bluetooth mode (`wifi_join`, `config.wifi_ssid`) only stores it and answers `wifi_status {state:"saved"}`; the wizard takes that as done and its finish switches the device to Wi-Fi. During setup (Set Up Again) Wi-Fi may always join, and the wizard always ends by stating `link`, saving whatever the device's ack confirms.
 
 **Finding each other again.** The companion queries every 20 s over its current link. If the device has been silent for 45 s, it also tries the other transport: in Bluetooth mode a sealed UDP query, in Wi-Fi mode a Bluetooth scan every 30 s. The device's ack carries `link`, so a switch whose ack was lost heals within about a minute.
 
-**Security.** Outside setup, BLE follows the UDP rules of 11.6. The GATT link is open, so anyone nearby can take the one connection (denial of service only: nothing is accepted from them), and the daemon ignores a device advertising that it is in setup. The rules: with a token, only `sealed` envelopes are accepted (same keys and replay counter), except `art_data` chunks, which are pieces of an encrypted blob checked when complete. Plaintext is answered `auth_error`/`plaintext`, setup messages `setup_only`, and the device's own messages over BLE are sealed. The GATT link itself is unauthenticated; everything rides on the app-layer encryption.
+**Security.** Outside setup, BLE follows the UDP rules of 11.6. The GATT link is open, so anyone nearby can take the one connection (denial of service only: nothing is accepted from them), and the daemon ignores a device advertising that it is in setup. The rules: with a token, only `sealed` envelopes are accepted (same keys and replay counter), except `art_data` and `wp_data` chunks, which are pieces of an encrypted blob checked when complete. Plaintext is answered `auth_error`/`plaintext`, setup messages `setup_only`, and the device's own messages over BLE are sealed. The GATT link itself is unauthenticated; everything rides on the app-layer encryption.
 
 **Companion.** `ble_daemon.rs` keeps a connection to `HawaOS-<device_id>` while `use_ble` is set and the wizard isn't running, reconnecting every few seconds when it drops. It writes without response (link-layer acknowledged) and the device asks for a 7.5–15 ms connection interval, so a 32 KB cover arrives in about a second. A firmware update or link switch requested while the link is reconnecting waits up to 15 s for it.
 
 **Firmware update over Bluetooth mode.** The `ota` request arrives sealed over BLE; `OtaService` calls `WifiService::holdForUpdate(true)`, waits up to 25 s for the saved network, then downloads as in 11.5. Without a saved network it fails with `no_wifi`.
 
 **Not connected.** Apps that show live companion data (`App::needsCompanion()`: Stats, Media, Weather) are covered by a "Not connected" card with `bluetooth-off` while `CompanionLink::isLinked()` is false: in Bluetooth mode, no sealed BLE message and no USB stats in the last 8 s (a link can stay "connected" on the PC side after the companion quits). The status bar shows `bluetooth` (accent) or `bluetooth-off` (dim) in place of the Wi-Fi icon, and Home's chip says "Linked over Bluetooth" or "Waiting for the companion (Bluetooth)".
+
+### 11.8 Image wallpaper
+The companion turns a picked picture into the device's wallpaper (`wallpaper.rs`): the largest centered crop with the screen's 320:170 ratio, Lanczos-resized, then Floyd-Steinberg dithered to RGB565 so photos don't band. It keeps the result as `wallpaper-<hash>.png` next to `config.json`, already in the device's colors, and serves the pixels from it; `<hash>` is the first 4 bytes of SHA-1 over the RGB565 data, as for art.
+
+Transfer works like album art (11.2), with `wp` for `art`: the device pulls `GET /wp/<hash>` over Wi-Fi, or asks with `{"type":"wp_req","hash"}` and receives `wp_data` chunks over Bluetooth or USB. Paired, the blob is `iv || ciphertext || tag` with AAD `wp:<hash>`, 108 828 bytes; about 3.5 s over Bluetooth, 2 s over USB. Both use one transfer engine on each side (`ImageSlot` in `CompanionLink.cpp`, `image_chunks` in `worker.rs`), each image with its own buffer, so a cover and a wallpaper can arrive at the same time.
+
+The device keeps it in the `spiffs` data partition of the default table, which nothing else uses and which OTA updates don't touch: a header in the first 4 KB sector (magic `HWP1`, size, hash, CRC-32 of the pixels), the pixels from 4 KB. The header is written last, so an interrupted save reads back as no picture. Downloads land in a PSRAM staging buffer; `Wallpaper::commit()` saves it (the erase pauses flash access, and so drawing, for about a second) and the UI task swaps it in on `SettingsChanged`, so the screen never shows half a picture. At boot the saved picture is loaded into PSRAM if its CRC checks out. A device on older firmware treats `image` as `gradient`, and its ack moves the companion back to that.
 
 ## 12. Boot logo
 

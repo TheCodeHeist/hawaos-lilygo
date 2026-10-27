@@ -35,6 +35,8 @@ uint32_t resolveMediaTintBottom(uint32_t bgBottom);
 // Deep accent tints sit below one RGB565 step per channel and would band (or
 // lose their hue) without dithering; error diffusion hides both.
 constexpr lv_dither_mode_t kGradientDither = LV_DITHER_ERR_DIFF;
+// Image wallpaper: share of the theme background laid over the picture.
+constexpr lv_opa_t kWallpaperScrim = LV_OPA_50;
 
 // Apply theme to root screen (solid `bg` or vertical gradient wallpaper if
 // `withWallpaper` is true)

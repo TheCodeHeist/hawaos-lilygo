@@ -8,7 +8,8 @@ use gpui_kit::gpui::prelude::*;
 use gpui_kit::gpui::*;
 
 use crate::models::{CompanionConfig, OutboundAction};
-use crate::ui::CompanionWindowView;
+use crate::ui::{sync_config, CompanionWindowView};
+use crate::wallpaper;
 use crate::ui::accents::ACCENTS;
 use crate::ui::components::{
     accent_swatch, button_row, card_header, card_row, choice, divider, glass_card, page_header,
@@ -17,6 +18,35 @@ use crate::ui::components::{
 use crate::ui::theme::{accent_by_id, HawaPalette};
 
 impl CompanionWindowView {
+    /// Asks for a picture, turns it into the device's wallpaper, and sends it.
+    fn pick_wallpaper(&mut self, cx: &mut Context<Self>) {
+        let picked = cx.prompt_for_paths(PathPromptOptions {
+            files: true,
+            directories: false,
+            multiple: false,
+            prompt: Some("Use as wallpaper".into()),
+        });
+        let state = self.state.clone();
+        cx.spawn(async move |this, cx| {
+            let Ok(Ok(Some(paths))) = picked.await else { return };
+            let Some(path) = paths.into_iter().next() else { return };
+            let res = cx.background_spawn(async move { wallpaper::import(&path) }).await;
+            match res {
+                Ok(hash) => sync_config(&state, |c| {
+                    c.wallpaper = "image".into();
+                    c.wallpaper_hash = hash;
+                }),
+                Err(e) => {
+                    if let Ok(mut g) = state.lock() {
+                        g.notice = Some(e);
+                    }
+                }
+            }
+            let _ = this.update(cx, |_, cx| cx.notify());
+        })
+        .detach();
+    }
+
     pub(crate) fn render_device_settings(
         &mut self,
         pal: HawaPalette,
@@ -153,8 +183,43 @@ impl CompanionWindowView {
                                             .on_click(cx.listener(|this, _, _, cx| {
                                                 this.mutate_config_and_sync(cx, |c| c.wallpaper = "solid".into());
                                             })),
+                                    )
+                                    .child(
+                                        Button::new("wp-image")
+                                            .small()
+                                            .with_variant(choice(pal, cfg.wallpaper == "image", cx))
+                                            .label("Image")
+                                            .on_click(cx.listener(|this, _, _, cx| {
+                                                // Back to the last picture, or pick one.
+                                                let hash = this.state.lock().map(|g| g.config.wallpaper_hash.clone()).unwrap_or_default();
+                                                if wallpaper::preview(&hash).is_some() {
+                                                    this.mutate_config_and_sync(cx, |c| c.wallpaper = "image".into());
+                                                } else {
+                                                    this.pick_wallpaper(cx);
+                                                }
+                                            })),
                                     ),
                             ))
+                            .when(cfg.wallpaper == "image", |card| {
+                                card.child(setting_row(
+                                    pal,
+                                    "Picture",
+                                    None,
+                                    h_flex()
+                                        .gap_3()
+                                        .items_center()
+                                        .when_some(wallpaper::preview(&cfg.wallpaper_hash), |row, pic| {
+                                            // The device's aspect ratio, 320x170.
+                                            row.child(img(pic).w(px(96.)).h(px(51.)).rounded(px(6.)))
+                                        })
+                                        .child(
+                                            Button::new("wp-change")
+                                                .small()
+                                                .label("Change...")
+                                                .on_click(cx.listener(|this, _, _, cx| this.pick_wallpaper(cx))),
+                                        ),
+                                ))
+                            })
                             .child(setting_row(
                                 pal,
                                 "Time format",

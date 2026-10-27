@@ -112,6 +112,10 @@ pub fn handle_incoming_json_line(line: &str, state: &SharedState) {
             if let (Some(hash), Ok(mut g)) = (pkt.hash.clone(), state.lock()) {
                 g.outbound_queue.push_back(crate::models::OutboundAction::SendArt { hash });
             }
+        } else if pkt.msg_type == "wp_req" {
+            if let (Some(hash), Ok(mut g)) = (pkt.hash.clone(), state.lock()) {
+                g.outbound_queue.push_back(crate::models::OutboundAction::SendWallpaper { hash });
+            }
         } else if pkt.msg_type == "auth_error" {
             if let Ok(mut g) = state.lock() {
                 // Stats go out every second; one log line and banner a minute is plenty.

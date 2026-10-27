@@ -99,6 +99,9 @@ pub fn spawn_daemon_worker(state: SharedState, art_cache: SharedArtCache) {
                             "notify_popup": cfg.notify_popup,
                             "orientation": cfg.orientation,
                         });
+                        if cfg.wallpaper == "image" {
+                            obj["wallpaper_hash"] = serde_json::Value::String(cfg.wallpaper_hash.clone());
+                        }
                         if forget_wifi {
                             obj["forget_wifi"] = serde_json::Value::Bool(true);
                         } else if let (Some(ssid), Some(pass)) = (wifi_ssid.as_ref(), wifi_pass.as_ref()) {
@@ -202,14 +205,14 @@ pub fn spawn_daemon_worker(state: SharedState, art_cache: SharedArtCache) {
                     }
                     OutboundAction::SendArt { hash } => {
                         let art = art_cache.lock().ok().and_then(|c| c.get(&hash).map(|e| e.rgb565_le.clone()));
-                        if let Some(lines) = art.and_then(|a| art_chunks(&hash, &a, &cfg.device_token)) {
-                            if cfg.use_ble {
-                                for l in lines {
-                                    crate::ble_daemon::send_line(l);
-                                }
-                            } else if std::path::Path::new(&cfg.usb_port).exists() {
-                                send_usb_lines(&cfg.usb_port, &lines, &state);
-                            }
+                        if let Some(lines) = art.and_then(|a| image_chunks("art", &hash, &a, &cfg.device_token)) {
+                            push_lines(&lines, &cfg, &state);
+                        }
+                    }
+                    OutboundAction::SendWallpaper { hash } => {
+                        let px = crate::wallpaper::pixels(&hash);
+                        if let Some(lines) = px.and_then(|p| image_chunks("wp", &hash, &p, &cfg.device_token)) {
+                            push_lines(&lines, &cfg, &state);
                         }
                     }
                     OutboundAction::StartOta { path } => {
@@ -531,21 +534,22 @@ fn send_udp(udp: &UdpSocket, addr: SocketAddr, json: &str, token: &str, ble: boo
     udp.send_to(pkt.as_bytes(), addr).map(|_| ())
 }
 
-/// Album art as art_data chunks for a device that asked with art_req: the
-/// sealed blob (or raw pixels without a token), in order.
-fn art_chunks(hash: &str, art: &[u8], token: &str) -> Option<Vec<String>> {
+/// An image as `<kind>_data` chunks for a device that asked with
+/// `<kind>_req` (kind "art" or "wp"): the sealed blob (or raw pixels without
+/// a token), in order.
+fn image_chunks(kind: &str, hash: &str, px: &[u8], token: &str) -> Option<Vec<String>> {
     use base64::Engine;
     let wire = if token.is_empty() {
-        art.to_vec()
+        px.to_vec()
     } else {
-        crate::auth::seal_blob(token, &format!("art:{hash}"), art)?
+        crate::auth::seal_blob(token, &format!("{kind}:{hash}"), px)?
     };
     Some(
         wire.chunks(ART_CHUNK)
             .enumerate()
             .map(|(i, c)| {
                 serde_json::json!({
-                    "type": "art_data",
+                    "type": format!("{kind}_data"),
                     "hash": hash,
                     "off": i * ART_CHUNK,
                     "b64": base64::engine::general_purpose::STANDARD.encode(c),
@@ -556,7 +560,18 @@ fn art_chunks(hash: &str, art: &[u8], token: &str) -> Option<Vec<String>> {
     )
 }
 
-/// Raw bytes per art_data line: 684 base64 characters, well inside the
+/// Pushed lines go over Bluetooth in Bluetooth mode, else USB.
+fn push_lines(lines: &[String], cfg: &CompanionConfig, state: &SharedState) {
+    if cfg.use_ble {
+        for l in lines {
+            crate::ble_daemon::send_line(l.clone());
+        }
+    } else if std::path::Path::new(&cfg.usb_port).exists() {
+        send_usb_lines(&cfg.usb_port, lines, state);
+    }
+}
+
+/// Raw bytes per *_data line: 684 base64 characters, well inside the
 /// device's 1460-byte line.
 const ART_CHUNK: usize = 512;
 
