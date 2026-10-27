@@ -130,6 +130,19 @@ fn art_failed<T>(url: &str, why: String) -> Option<T> {
     None
 }
 
+/// In the Flatpak, a cover outside the folders it may read looks missing:
+/// say how to allow the folder it's in.
+fn sandbox_hint(path: &str) -> String {
+    if !std::path::Path::new("/.flatpak-info").exists() {
+        return String::new();
+    }
+    let dir = std::path::Path::new(path).parent().map(|d| d.display().to_string()).unwrap_or_default();
+    format!(
+        ". The Flatpak may not see that folder; to allow it: flatpak override --user --filesystem={dir}:ro {}",
+        crate::config::APP_ID
+    )
+}
+
 /// A new album-art failure since the last call, for the log.
 pub fn take_art_error() -> Option<String> {
     ART_ERROR.lock().ok()?.1.take()
@@ -167,7 +180,7 @@ pub fn load_and_convert_art(
         let decoded_path = file_path.replace("%20", " ");
         match fs::read(&decoded_path) {
             Ok(b) => b,
-            Err(e) => return art_failed(art_url, format!("couldn't read {decoded_path} ({e})")),
+            Err(e) => return art_failed(art_url, format!("couldn't read {decoded_path} ({e}){}", sandbox_hint(&decoded_path))),
         }
     } else if art_url.starts_with("http://") || art_url.starts_with("https://") {
         let config = ureq::Agent::config_builder()

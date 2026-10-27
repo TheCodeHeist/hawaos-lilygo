@@ -26,9 +26,13 @@ finish-args:
   - --filesystem=xdg-config/hawaos-companion:create
   - --filesystem=xdg-config/autostart:create
   # Album art: players hand out file:// URLs to covers in their cache
-  # (~/.cache, ~/.var/app/<player>/cache for Flatpak players), /tmp
-  # (browsers), or next to the music. Read-only.
-  - --filesystem=xdg-cache:ro
+  # (~/.var/app/<player>/cache for Flatpak players, known ~/.cache folders),
+  # /tmp (browsers), or next to the music. Read-only. Flathub doesn't allow
+  # all of ~/.cache; for another player the companion's log names the
+  # folder and the `flatpak override` that grants it.
+  - --filesystem=xdg-cache/kdeconnect.daemon:ro
+  - --filesystem=xdg-cache/vlc:ro
+  - --filesystem=xdg-cache/rhythmbox:ro
   - --filesystem=~/.var/app:ro
   - --filesystem=/tmp:ro
   - --filesystem=xdg-music:ro
@@ -83,13 +87,10 @@ modules:
     build-options:
       append-path: /usr/lib/sdk/rust-stable/bin
       env:
+        # Holds the vendored crates and the config pointing cargo at them.
         CARGO_HOME: /run/build/hawaos-companion/cargo
-      # Crates are fetched at build time. Fine for local bundles; Flathub
-      # would need them vendored (flatpak-cargo-generator).
-      build-args:
-        - --share=network
     build-commands:
-      - cd companion && cargo build --release --locked
+      - cd companion && cargo --offline build --release --locked
       - install -Dm755 companion/target/release/hawaos-companion /app/bin/hawaos-companion
       - install -Dm644 packaging/flatpak/dev.is_a.thecodeheist.HawaOSCompanion.desktop /app/share/applications/dev.is_a.thecodeheist.HawaOSCompanion.desktop
       - install -Dm644 packaging/flatpak/dev.is_a.thecodeheist.HawaOSCompanion.metainfo.xml /app/share/metainfo/dev.is_a.thecodeheist.HawaOSCompanion.metainfo.xml
@@ -108,3 +109,6 @@ modules:
           - src
           - include
           - docs
+      # Every crate in Cargo.lock, so the build needs no network (Flathub's
+      # rule). Regenerate with tools/gen_cargo_sources.py.
+      - cargo-sources.json

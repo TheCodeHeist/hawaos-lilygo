@@ -11,7 +11,7 @@
 #
 # Assets land in dist/<version>/: hawaos-X-full.bin (flash at 0x0, new
 # boards), hawaos-X-update.bin (OTA), hawaos-companion-X-x86_64.flatpak and
-# SHA256SUMS.
+# SHA256SUMS; flathub/ holds the manifest for the Flathub repo.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -58,6 +58,7 @@ python3 "$ESPTOOL" --chip esp32s3 merge_bin -o "$OUT/hawaos-$VER-full.bin" \
 cp "$BUILD/firmware.bin" "$OUT/hawaos-$VER-update.bin"
 
 echo "== Companion"
+tools/gen_cargo_sources.py # Flatpak builds offline from these
 packaging/flatpak/build.sh
 cp packaging/flatpak/hawaos-companion.flatpak "$OUT/hawaos-companion-$VER-x86_64.flatpak"
 
@@ -71,9 +72,13 @@ if [[ $DRY == --dry-run ]]; then
 fi
 
 echo "== Publish"
-git add companion/Cargo.toml companion/Cargo.lock include/config.h "$META"
+git add companion/Cargo.toml companion/Cargo.lock include/config.h "$META" \
+  packaging/flatpak/cargo-sources.json
 git commit -q -m "Release $VER"
 git tag "v$VER"
 git push origin main "v$VER"
-gh release create "v$VER" --title "HawaOS $VER" --notes-file "$NOTES" "$OUT"/*
+gh release create "v$VER" --title "HawaOS $VER" --notes-file "$NOTES" \
+  "$OUT"/*.bin "$OUT"/*.flatpak "$OUT"/SHA256SUMS
+# For the Flathub repo: the same manifest, building from this tag.
+tools/flathub_manifest.py "$VER" "$(git rev-parse HEAD)" "$OUT/flathub"
 echo "Released v$VER"
