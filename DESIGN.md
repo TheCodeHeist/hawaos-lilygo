@@ -384,6 +384,18 @@ The device fetches packs like album art (11.2), with `gl` for `art` (`GET /gl/<h
 
 The companion only sends glyphs to firmware that says it can draw them (`"gl":1` in `config_ack`); older firmware gets the cleaned-up text of section 4. A message's text is converted once and cached, so the 5 s media heartbeat costs nothing and names the same pack, which the device already has.
 
+### 11.10 Notification formatting
+Notification bodies may carry markup (the freedesktop spec's `body-markup`; KDE advertises it, and browsers and chat apps use it). The companion parses it (`notifications.rs`) instead of throwing it away:
+
+- `<b>`, `<strong>`, `<i>`, `<em>`, `<u>` become one emphasised run between `U+0002` and `U+0003`; nested ones merge, an unclosed one is closed.
+- `<br>`, and the end of `<p>`, `<div>`, `<li>`, `<tr>`, and newlines in the text become line breaks (`\n`); blank lines are dropped.
+- Links show their text, images their `alt`, other tags nothing. Entities (`&amp;`, `&#233;`, `&#x1F600;` …) are decoded here. A `<` that doesn't start a tag is text.
+- The app name and summary are flattened to one plain line.
+
+The device (`Theme::formatText`) draws emphasis in the theme's **accent colour** rather than a heavier weight: an LVGL label can't mix fonts, and a colour works everywhere, including the popup's scrolling line, with no extra font. Labels showing bodies have recolor on, so a run becomes `#RRGGBB text#` and a literal `#` is written `##` (closing and reopening a run around it). The Notifications list and the always-on alert keep line breaks (the list shows two lines); the popup's single line shows them as ` · `. Text is cut on character boundaries and a cut run is always closed.
+
+The companion only sends these marks to firmware that reports `"fmt":1` in `config_ack`; older firmware gets one flat line. They pass through glyph conversion (11.9) untouched.
+
 ## 12. Boot logo
 
 Sequence (target: logo visible as soon as the Arduino core hands over control):

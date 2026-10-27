@@ -962,6 +962,7 @@ void buildAodScreen(lv_obj_t *root, bool keepBackdrop = false) {
   lv_obj_set_style_text_font(s_aodAlertBodyLbl, Theme::fontCaption(), LV_PART_MAIN);
   lv_obj_set_style_text_color(s_aodAlertBodyLbl, lv_color_hex(0xD0DCE0), LV_PART_MAIN);
   lv_label_set_long_mode(s_aodAlertBodyLbl, LV_LABEL_LONG_WRAP);
+  lv_label_set_recolor(s_aodAlertBodyLbl, true);
   lv_obj_set_width(s_aodAlertBodyLbl, 276);
   lv_obj_set_pos(s_aodAlertBodyLbl, 4, 54);
 
@@ -1144,10 +1145,11 @@ void showAodNotificationAlert(const char *app, const char *title,
 
   char cleanApp[32] = {0};
   char cleanTitle[64] = {0};
-  char cleanBody[160] = {0};
+  char cleanBody[192] = {0};
   Theme::sanitizeText(app, cleanApp, sizeof(cleanApp));
   Theme::sanitizeText(title, cleanTitle, sizeof(cleanTitle));
-  Theme::sanitizeText(body, cleanBody, sizeof(cleanBody));
+  // Wrapped, with recolor on: line breaks kept, emphasis in the accent.
+  Theme::formatText(body, cleanBody, sizeof(cleanBody), true, &p.accent);
 
   const char *appName =
       (cleanApp[0] != '\0')

@@ -137,7 +137,9 @@ pub fn spawn_daemon_worker(state: SharedState, art_cache: SharedArtCache) {
                             .duration_since(UNIX_EPOCH)
                             .unwrap_or_default()
                             .as_secs();
-                        let glyphs = state.lock().is_ok_and(|g| g.device_glyphs);
+                        let (glyphs, markup) =
+                            state.lock().map_or((false, false), |g| (g.device_glyphs, g.device_markup));
+                        let body = if markup { body } else { crate::notifications::flatten(&body) };
                         let text = crate::glyphs::for_device(&[(&app, 31), (&title, 47), (&body, 95)], glyphs);
                         let pkt = with_glyphs(
                             serde_json::json!({

@@ -61,8 +61,13 @@ uint8_t luminance(uint32_t rgb888);
 bool isColorLight(uint32_t rgb888);
 uint32_t tintAccent(uint32_t bgTop, uint32_t fallbackRgb);
 
-// String sanitizer for incoming notifications / metadata (strips HTML tags and
-// entities, collapses newlines)
+// Companion text for a label (DESIGN.md Section 11.10): spaces collapsed,
+// never cut inside a character. Line breaks stay (multiline) or become " · ".
+// With `accent`, for a label with recolor on: emphasised runs (0x02..0x03)
+// are drawn in that colour and '#' is escaped; without, the marks are dropped.
+void formatText(const char *in, char *out, size_t outSize, bool multiline,
+                const uint32_t *accent);
+// One plain line (app names, titles).
 void sanitizeText(const char *in, char *out, size_t outSize);
 
 // Typography role helpers (DESIGN.md Section 4)

@@ -173,6 +173,7 @@ pub fn handle_incoming_json_line(line: &str, state: &SharedState) {
                 }
                 g.device_needs_setup = pkt.setup.unwrap_or(false);
                 g.device_glyphs = pkt.gl.unwrap_or(0) >= 1;
+                g.device_markup = pkt.fmt.unwrap_or(0) >= 1;
                 // Follow the device's link mode (Device page switch, wizard).
                 if let Some(link) = pkt.link.as_deref() {
                     let ble = link == "ble";

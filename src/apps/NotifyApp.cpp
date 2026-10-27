@@ -91,7 +91,10 @@ void NotifyApp::onEnter(lv_obj_t *root) {
     lv_obj_set_style_text_font(body, Theme::fontCaption(), LV_PART_MAIN);
     lv_obj_set_style_text_color(body, lv_color_hex(p.textDim), LV_PART_MAIN);
     lv_label_set_long_mode(body, LV_LABEL_LONG_DOT);
-    lv_obj_set_size(body, 244, 30); // Up to 2 lines of caption
+    lv_label_set_recolor(body, true); // emphasis in the accent (11.10)
+    // Two caption lines (17 px each), drawn 3 px closer so they fit the card.
+    lv_obj_set_style_text_line_space(body, -3, LV_PART_MAIN);
+    lv_obj_set_size(body, 244, 32);
     lv_obj_align(body, LV_ALIGN_TOP_LEFT, 34, 20);
 
     m_cards[i] = card;
@@ -183,8 +186,13 @@ void NotifyApp::refreshList(const DataSnapshot &d) {
     if (itemIdx < d.notifyCount) {
       const NotificationItem &item = d.notifications[itemIdx];
       lv_obj_clear_flag(m_cards[slot], LV_OBJ_FLAG_HIDDEN);
-      lv_label_set_text(m_titles[slot], item.title);
-      lv_label_set_text(m_bodies[slot], item.body);
+      char title[96];
+      char body[192];
+      const uint32_t accent = Theme::active().accent;
+      Theme::sanitizeText(item.title, title, sizeof(title));
+      Theme::formatText(item.body, body, sizeof(body), true, &accent);
+      lv_label_set_text(m_titles[slot], title);
+      lv_label_set_text(m_bodies[slot], body);
 
       char relBuf[16];
       formatRelativeTime(item.ts, relBuf, sizeof(relBuf));

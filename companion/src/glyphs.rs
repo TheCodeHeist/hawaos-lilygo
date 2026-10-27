@@ -16,6 +16,7 @@ use cosmic_text::{Attrs, Buffer, Family, FontSystem, Metrics, Shaping, SwashCach
 use sha1::{Digest, Sha1};
 use unicode_normalization::UnicodeNormalization;
 
+use crate::notifications::{EMPH_OFF, EMPH_ON};
 use crate::protocol::{device_has_glyph, fit_bytes};
 
 /// The device's text sizes (font_inter_{12,14,18}); each glyph goes at all of
@@ -121,12 +122,20 @@ pub fn pack(hash: &str) -> Option<Arc<Vec<u8>>> {
     e.packs.iter().find(|(h, _)| h == hash).map(|(_, p)| Arc::clone(p))
 }
 
-/// Composed, with line breaks and tabs as spaces and control characters
-/// dropped: the device shows one line per field.
+/// Line breaks and emphasis marks in notification bodies (notifications.rs),
+/// which the device formats itself.
+fn is_format(c: char) -> bool {
+    matches!(c, '\n' | EMPH_ON | EMPH_OFF)
+}
+
+/// Composed, with tabs and other spacing as spaces and control characters
+/// other than the format marks dropped.
 fn tidy(text: &str) -> String {
     let mut s = String::with_capacity(text.len());
     for c in text.nfc() {
-        if c.is_whitespace() {
+        if is_format(c) {
+            s.push(c);
+        } else if c.is_whitespace() {
             s.push(' ');
         } else if !c.is_control() {
             s.push(c);
@@ -143,10 +152,22 @@ impl Engine {
             return hit.clone();
         }
         let tidy = tidy(text);
-        let result = if tidy.chars().all(device_has_glyph) {
+        let result = if tidy.chars().all(|c| device_has_glyph(c) || is_format(c)) {
             (tidy, Vec::new())
         } else {
-            self.shape(&tidy)
+            // Shaped between format marks, which pass through as they are.
+            let mut out = String::with_capacity(tidy.len());
+            let mut used = Vec::new();
+            for (i, part) in tidy.split(is_format).enumerate() {
+                if i > 0 {
+                    let at: usize = tidy.split(is_format).take(i).map(|p| p.len() + 1).sum::<usize>() - 1;
+                    out.push(tidy[at..].chars().next().unwrap_or(' '));
+                }
+                let (shaped, cps) = self.shape(part);
+                out.push_str(&shaped);
+                used.extend(cps);
+            }
+            (out, used)
         };
         if self.texts.len() >= TEXTS_KEPT {
             self.texts.clear();
@@ -195,7 +216,7 @@ impl Engine {
                 }
             }
         }
-        (out.trim().to_string(), used)
+        (out, used)
     }
 
     /// A cluster that drew nothing, again in a one-colour emoji font: colour
@@ -356,6 +377,17 @@ mod tests {
         let t = for_device(&[("Señorita", 63), ("Shawn Mendes", 47)], true);
         assert_eq!(t.fields, ["Señorita", "Shawn Mendes"]);
         assert!(t.pack.is_none());
+    }
+
+    #[test]
+    fn format_marks_pass_through() {
+        let body = "moved to \u{2}3 PM\u{3}\n東京 ok";
+        let t = for_device(&[(body, 95)], true);
+        let f: Vec<char> = t.fields[0].chars().collect();
+        assert_eq!(f[..9].iter().collect::<String>(), "moved to ");
+        assert_eq!(f[9], '\u{2}');
+        assert_eq!(f[10..16].iter().collect::<String>(), "3 PM\u{3}\n");
+        assert_eq!(f[18..].iter().collect::<String>(), " ok");
     }
 
     #[test]

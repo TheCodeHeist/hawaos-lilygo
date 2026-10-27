@@ -117,6 +117,7 @@ pub struct IncomingPacket {
     /// went back to the firmware it had (DESIGN.md 11.5).
     pub rolled_back: Option<String>,
     pub gl: Option<u8>,
+    pub fmt: Option<u8>,
     pub reduce_motion: Option<bool>,
     pub wallpaper: Option<String>,
     pub use_24h: Option<bool>,
@@ -226,6 +227,9 @@ pub struct SharedDaemonState {
     /// The device's firmware has a glyph cache (`gl` in config_ack), so text
     /// in other scripts goes as glyphs (glyphs.rs) instead of being dropped.
     pub device_glyphs: bool,
+    /// The device formats notification bodies (`fmt` in config_ack): line
+    /// breaks and emphasis (notifications.rs).
+    pub device_markup: bool,
     pub ota: Option<OtaProgress>,
     /// One-shot message for the window's banner (taken when shown).
     pub notice: Option<String>,
@@ -302,6 +306,7 @@ impl SharedDaemonState {
             device_needs_setup: false,
             device_fw: None,
             device_glyphs: false,
+            device_markup: false,
             ota: None,
             notice: None,
             last_auth_notice: None,

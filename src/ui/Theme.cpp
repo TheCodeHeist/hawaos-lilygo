@@ -2,6 +2,7 @@
 #include "config.h"
 #include "core/Settings.h"
 #include "services/Wallpaper.h"
+#include <stdio.h>
 #include <string.h>
 
 namespace Theme {
@@ -155,84 +156,116 @@ uint32_t tintAccent(uint32_t bgTop, uint32_t fallbackRgb) {
   return (r << 16) | (g << 8) | b;
 }
 
-void sanitizeText(const char *in, char *out, size_t outSize) {
+namespace {
+
+// UTF-8 sequence length from its first byte.
+size_t utf8Len(uint8_t b) {
+  return (b >= 0xF0) ? 4 : (b >= 0xE0) ? 3 : (b >= 0xC0) ? 2 : 1;
+}
+
+} // namespace
+
+void formatText(const char *in, char *out, size_t outSize, bool multiline,
+                const uint32_t *accent) {
   if (out == nullptr || outSize == 0)
     return;
   out[0] = '\0';
   if (in == nullptr)
     return;
 
+  char open[10] = "";
+  if (accent != nullptr) {
+    snprintf(open, sizeof(open), "#%06lX ",
+             static_cast<unsigned long>(*accent & 0xFFFFFF));
+  }
   size_t o = 0;
-  bool inTag = false;
-  bool lastWasSpace = false;
-
-  for (size_t i = 0; in[i] != '\0' && o + 1 < outSize; ++i) {
-    char c = in[i];
-    if (c == '<') {
-      inTag = true;
-      continue;
+  bool emph = false;
+  bool full = false;
+  // Appends n bytes if they fit with room left to close a run and terminate.
+  auto put = [&](const char *s, size_t n) {
+    if (full || o + n + (emph ? 1 : 0) + 1 > outSize) {
+      full = true;
+      return false;
     }
-    if (inTag) {
-      if (c == '>') {
-        inTag = false;
-        if (!lastWasSpace && o + 1 < outSize) {
-          out[o++] = ' ';
-          lastWasSpace = true;
+    memcpy(out + o, s, n);
+    o += n;
+    return true;
+  };
+  // Pending separator: collapsed spaces, or a line break.
+  enum { None, Space, Break } gap = None;
+  auto flushGap = [&]() {
+    if (o > 0 && gap == Space) {
+      put(" ", 1);
+    } else if (o > 0 && gap == Break) {
+      if (multiline) {
+        put("\n", 1);
+      } else {
+        put(" \xC2\xB7 ", 4); // " · "
+      }
+    }
+    gap = None;
+  };
+
+  for (size_t i = 0; in[i] != '\0' && !full;) {
+    const uint8_t c = static_cast<uint8_t>(in[i]);
+    if (c == '\n') {
+      gap = Break;
+      ++i;
+    } else if (c == ' ' || c == '\t' || c == '\r') {
+      if (gap == None)
+        gap = Space;
+      ++i;
+    } else if (c == 0x02 || c == 0x03) { // emphasis on / off (11.10)
+      const bool on = (c == 0x02);
+      if (accent != nullptr && on != emph) {
+        if (on) {
+          flushGap();
+          emph = true; // so put() keeps room for the closing '#'
+          if (!put(open, strlen(open)))
+            emph = false;
+        } else {
+          emph = false;
+          out[o++] = '#'; // room was kept for it
         }
       }
-      continue;
-    }
-    // HTML entities
-    if (c == '&') {
-      if (strncmp(&in[i], "&amp;", 5) == 0) {
-        c = '&';
-        i += 4;
-      } else if (strncmp(&in[i], "&lt;", 4) == 0) {
-        c = '<';
-        i += 3;
-      } else if (strncmp(&in[i], "&gt;", 4) == 0) {
-        c = '>';
-        i += 3;
-      } else if (strncmp(&in[i], "&quot;", 6) == 0) {
-        c = '"';
-        i += 5;
-      } else if (strncmp(&in[i], "&apos;", 6) == 0 ||
-                 strncmp(&in[i], "&#39;", 5) == 0) {
-        c = '\'';
-        i += (in[i + 1] == '#') ? 4 : 5;
-      } else if (strncmp(&in[i], "&nbsp;", 6) == 0) {
-        c = ' ';
-        i += 5;
-      }
-    }
-    // Collapse newlines, carriage returns, tabs, multiple spaces
-    if (c == '\r' || c == '\n' || c == '\t' || c == ' ') {
-      if (!lastWasSpace && o > 0) {
-        out[o++] = ' ';
-        lastWasSpace = true;
-      }
+      ++i;
     } else {
-      out[o++] = c;
-      lastWasSpace = false;
+      flushGap();
+      if (c == '#' && accent != nullptr) {
+        // Escaped as "##"; a run can't contain it, so close and reopen.
+        if (emph) {
+          emph = false;
+          out[o++] = '#';
+          if (put("##", 2)) {
+            emph = true;
+            if (!put(open, strlen(open)))
+              emph = false;
+          }
+        } else {
+          put("##", 2);
+        }
+        ++i;
+        continue;
+      }
+      size_t n = utf8Len(c);
+      for (size_t k = 1; k < n; ++k) {
+        if (in[i + k] == '\0') {
+          n = k;
+          break;
+        }
+      }
+      put(in + i, n); // whole characters only
+      i += n;
     }
   }
-  // A full buffer may end partway through a UTF-8 character; drop that part.
-  size_t lead = o;
-  while (lead > 0 && (static_cast<uint8_t>(out[lead - 1]) & 0xC0) == 0x80) {
-    --lead;
-  }
-  if (lead > 0 && (static_cast<uint8_t>(out[lead - 1]) & 0x80) != 0) {
-    const uint8_t b = static_cast<uint8_t>(out[lead - 1]);
-    const size_t want = (b >= 0xF0) ? 4 : (b >= 0xE0) ? 3 : 2;
-    if (o - (lead - 1) < want) {
-      o = lead - 1;
-    }
-  }
-  // Trim trailing space if any
-  while (o > 0 && out[o - 1] == ' ') {
-    --o;
+  if (emph) {
+    out[o++] = '#';
   }
   out[o] = '\0';
+}
+
+void sanitizeText(const char *in, char *out, size_t outSize) {
+  formatText(in, out, outSize, false, nullptr);
 }
 
 } // namespace Theme

@@ -1057,7 +1057,7 @@ void flushPendingOutbound() {
     char buf[768];
     snprintf(buf, sizeof(buf),
              "{\"type\":\"config_ack\",\"id\":\"%s\",\"model\":\"%s\","
-             "\"fw\":\"%s\",\"gl\":1,\"setup\":%s,"
+             "\"fw\":\"%s\",\"gl\":1,\"fmt\":1,\"setup\":%s,"
              "\"v\":%lu,\"ip\":\"%s\",\"wifi\":%s,"
              "\"ssid\":\"%s\",\"theme\":\"%s\",\"accent\":\"%s\","
              "\"brightness\":%u,\"aod\":%s,"

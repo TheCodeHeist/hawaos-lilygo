@@ -145,6 +145,7 @@ void begin() {
   lv_obj_set_style_text_font(s_popupBodyLbl, Theme::fontCaption(),
                              LV_PART_MAIN);
   lv_label_set_long_mode(s_popupBodyLbl, LV_LABEL_LONG_SCROLL_CIRCULAR);
+  lv_label_set_recolor(s_popupBodyLbl, true);
   lv_obj_set_style_anim_speed(s_popupBodyLbl, 28, LV_PART_MAIN);
   lv_obj_set_width(s_popupBodyLbl, 256);
   lv_obj_align(s_popupBodyLbl, LV_ALIGN_BOTTOM_LEFT, 34, 0);
@@ -240,12 +241,15 @@ void showNotificationPopup(const char *app, const char *title, const char *body,
 
   stylePopupCard();
 
+  // The body line has recolor on: emphasis in the accent, '#' escaped, and
+  // line breaks shown as " · " (DESIGN.md Section 11.10).
+  const uint32_t accent = Theme::active().accent;
   char cleanApp[32] = {0};
-  char cleanTitle[64] = {0};
-  char cleanBody[160] = {0};
+  char cleanTitle[96] = {0};
+  char cleanBody[192] = {0};
   Theme::sanitizeText(app, cleanApp, sizeof(cleanApp));
-  Theme::sanitizeText(title, cleanTitle, sizeof(cleanTitle));
-  Theme::sanitizeText(body, cleanBody, sizeof(cleanBody));
+  Theme::formatText(title, cleanTitle, sizeof(cleanTitle), false, &accent);
+  Theme::formatText(body, cleanBody, sizeof(cleanBody), false, &accent);
 
   const char *appName =
       (cleanApp[0] != '\0')
@@ -269,7 +273,7 @@ void showNotificationPopup(const char *app, const char *title, const char *body,
            (count > 0 ? count : 1), appName);
   lv_label_set_text(s_popupTitleLbl, headerBuf);
 
-  char bodyBuf[160] = {0};
+  char bodyBuf[sizeof(cleanTitle) + sizeof(cleanBody)] = {0};
   if (cleanTitle[0] != '\0' && strcmp(cleanTitle, appName) != 0) {
     if (cleanBody[0] != '\0') {
       snprintf(bodyBuf, sizeof(bodyBuf), "%s: %s", cleanTitle, cleanBody);
