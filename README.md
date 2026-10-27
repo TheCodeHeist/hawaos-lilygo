@@ -104,7 +104,13 @@ flowchart LR
 
 ### Install the companion
 
-**Windows 10 or 11** (from 0.9.0): download `hawaos-companion-<version>-windows-x64-setup.exe` from the [latest release](https://github.com/TheCodeHeist/hawaos-lilygo/releases/latest) and run it. It installs for your user only (no administrator rights) and can start the companion when you sign in. The installer isn't signed yet, so Windows SmartScreen asks first: choose **More info**, then **Run anyway**. On first launch, allow the companion through Windows Firewall on private networks (the device talks to it over Wi-Fi). Everything works as on Linux except mirroring desktop notifications to the device, which Windows only allows for signed apps.
+**Windows 10 or 11** (from 0.9.0): in PowerShell, one command installs the latest companion for your user (no administrator rights):
+
+```powershell
+irm https://raw.githubusercontent.com/TheCodeHeist/hawaos-lilygo/main/install.ps1 | iex
+```
+
+It downloads the installer from the latest release, checks it against the release's `SHA256SUMS-windows`, installs it silently and starts the companion. Run it again to update (your settings and startup choice are kept); for a specific version, run `$env:HAWAOS_VERSION = "0.9.0"` first. Or download `hawaos-companion-<version>-windows-x64-setup.exe` from the [latest release](https://github.com/TheCodeHeist/hawaos-lilygo/releases/latest) and run it; it isn't signed yet, so Windows SmartScreen asks first: choose **More info**, then **Run anyway**. Either way it installs under your user and starts the companion when you sign in. On first launch, allow the companion through Windows Firewall on private networks (the device talks to it over Wi-Fi). Everything works as on Linux except mirroring desktop notifications to the device, which Windows only allows for signed apps.
 
 **Linux:** on any distribution with [Flatpak](https://flatpak.org/setup/), one command installs the latest companion for your user (no root):
 

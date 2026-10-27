@@ -41,7 +41,9 @@ SolidCompression=yes
 CloseApplications=yes
 
 [Tasks]
-Name: "autostart"; Description: "Start HawaOS Companion when I sign in"; GroupDescription: "Startup:"
+; Offered on a first install only: afterwards the companion's own switch owns
+; it, and an update (install.ps1 runs one silently) mustn't turn it back on.
+Name: "autostart"; Description: "Start HawaOS Companion when I sign in"; GroupDescription: "Startup:"; Check: not IsUpgrade
 Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription: "Shortcuts:"; Flags: unchecked
 
 [Files]
@@ -63,6 +65,12 @@ Filename: "{app}\hawaos-companion.exe"; Description: "Open HawaOS Companion"; Fl
 Filename: "{sys}\taskkill.exe"; Parameters: "/IM hawaos-companion.exe /F"; Flags: runhidden; RunOnceId: "StopCompanion"
 
 [Code]
+// An earlier version is installed (for this user).
+function IsUpgrade: Boolean;
+begin
+  Result := RegValueExists(HKCU, 'Software\Microsoft\Windows\CurrentVersion\Uninstall\{56F6AE17-FD41-4877-9265-22F68EC5CBEA}_is1', 'UninstallString');
+end;
+
 // The autostart value, also when the companion's own switch wrote it.
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 begin

@@ -453,7 +453,7 @@ Everything that differs between desktops sits behind `companion/src/platform`: o
 | Board's serial port | `/dev/ttyACM*`, `/dev/ttyUSB*` | COM ports with Espressif's USB vendor id `303a` |
 | Settings | `~/.config/hawaos-companion` | `%APPDATA%\hawaos-companion` |
 | Glyph fonts (11.9) | the system's (Noto), Noto Emoji for emoji | the system's (Nirmala UI, Yu Gothic, Microsoft YaHei, Malgun Gothic), Segoe UI Symbol for emoji |
-| Package | Flatpak (`install.sh`) | Inno Setup installer, per user, no administrator rights |
+| Package | Flatpak (`install.sh`) | Inno Setup installer (`install.ps1`), per user, no administrator rights |
 
 **Update notice** (`update_check.rs`). Thirty seconds after start and then every 12 hours, unless **Check for updates** is off, the companion asks GitHub's API for the latest release (drafts and pre-releases aren't "latest") and compares its version numerically with its own. A newer one shows as a card at the top of the window (how to update this kind of install, **What's new** opening the release page, and a close button that hides it until the next version) and as the first tray menu entry. The tray asks the window to open the page (`open_url_requested`), since only gpui can open a browser on every platform.
 
@@ -461,5 +461,5 @@ Everything that differs between desktops sits behind `companion/src/platform`: o
 
 Bluetooth (`btleplug`: BlueZ / WinRT), serial (`serialport`), system stats (`sysinfo`), the window (gpui) and the network code are cross-platform already. On Windows the release `.exe` runs without a console window and carries the app icon (`build.rs`); the first network use brings up Windows Firewall's prompt, which needs allowing on private networks for the Wi-Fi link.
 
-**Builds.** `.github/workflows/windows.yml` tests and builds the Windows companion on every change and keeps the installer as an artifact; when a release is published (`tools/release.sh`), it attaches `hawaos-companion-<version>-windows-x64-setup.exe` and its checksum. The installer is unsigned for now, so SmartScreen warns on first run; signing (which would also allow notification mirroring) is open for 1.0.0.
+**Builds.** `.github/workflows/windows.yml` tests and builds the Windows companion on every change and keeps the installer as an artifact; when a release is published (`tools/release.sh`), it attaches `hawaos-companion-<version>-windows-x64-setup.exe` and its checksum. The installer is unsigned for now, so SmartScreen warns when it's run from a browser download; `install.ps1` downloads it itself (no mark of the web, so no warning), checks the checksum, and runs it silently. The workflow tests that script: a first install, an update, and uninstall. Updates leave the autostart choice alone (the installer offers it on a first install only). Signing (which would also allow notification mirroring) is open for 1.0.0.
 

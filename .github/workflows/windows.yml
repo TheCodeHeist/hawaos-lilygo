@@ -10,6 +10,7 @@ on:
       - "companion/**"
       - "assets/**"
       - "packaging/windows/**"
+      - "install.ps1"
       - ".github/workflows/windows.yml"
   release:
     types: [published]
@@ -52,6 +53,39 @@ jobs:
           }
           & $iscc /DAppVersion=$version packaging/windows/hawaos-companion.iss
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      # install.ps1 as users run it (piped into iex, in Windows PowerShell
+      # 5.1), with this installer: a first install, then an update after the
+      # user switched autostart off (it must stay off), then uninstall.
+      - name: Install script
+        shell: powershell
+        env:
+          HAWAOS_NO_LAUNCH: "1"
+        run: |
+          $ErrorActionPreference = "Stop"
+          $env:HAWAOS_SETUP = "dist/hawaos-companion-$env:VERSION-windows-x64-setup.exe"
+          $key = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\{56F6AE17-FD41-4877-9265-22F68EC5CBEA}_is1"
+          $run = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run"
+          function Installed { (Get-ItemProperty $key -ErrorAction SilentlyContinue).DisplayVersion }
+          function Autostart { [bool](Get-ItemProperty $run -Name "HawaOS Companion" -ErrorAction SilentlyContinue) }
+
+          Get-Content install.ps1 -Raw | Invoke-Expression
+          if ((Installed) -ne $env:VERSION) { throw "first install: version is '$(Installed)'" }
+          if (-not (Autostart)) { throw "first install: autostart wasn't set up" }
+          $exe = Join-Path (Get-ItemProperty $key).InstallLocation "hawaos-companion.exe"
+          if (-not (Test-Path $exe)) { throw "first install: $exe is missing" }
+
+          Remove-ItemProperty $run -Name "HawaOS Companion"
+          Get-Content install.ps1 -Raw | Invoke-Expression
+          if ((Installed) -ne $env:VERSION) { throw "update: version is '$(Installed)'" }
+          if (Autostart) { throw "update: autostart came back on" }
+
+          $uninstaller = Join-Path (Get-ItemProperty $key).InstallLocation "unins000.exe"
+          Start-Process $uninstaller -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES" -Wait
+          # The uninstaller hands over to a copy of itself and returns early.
+          for ($i = 0; (Installed) -and $i -lt 30; $i++) { Start-Sleep -Seconds 1 }
+          if (Installed) { throw "uninstall: still registered" }
+          Write-Host "install.ps1: install, update and uninstall OK"
 
       - uses: actions/upload-artifact@v4
         with:
