@@ -256,7 +256,16 @@ mod tests {
         assert_eq!(cyan.success, rose.success);
     }
 
-    // One test so the env mutations can't race each other.
+    // One test so the env mutations can't race each other. Detection only
+    // varies on Linux; elsewhere the window always blurs.
+    #[cfg(windows)]
+    #[test]
+    fn windows_blurs_unless_turned_off() {
+        assert!(use_translucent_window("auto"));
+        assert!(!use_translucent_window("off"));
+    }
+
+    #[cfg(target_os = "linux")]
     #[test]
     fn transparency_setting_and_detection() {
         let set = |session: &str, display: &str, desktop: &str, kde_full: &str| unsafe {
