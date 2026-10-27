@@ -356,13 +356,17 @@ impl Render for CompanionWindowView {
                                         .justify_between()
                                         .items_center()
                                         .child(
+                                            // flex_1: the text takes what the buttons leave and
+                                            // wraps there (without it, it shrinks to nothing).
                                             h_flex()
+                                                .flex_1()
                                                 .gap_3()
                                                 .min_w_0()
                                                 .items_center()
                                                 .child(div().flex_shrink_0().text_color(pal.accent).child(IconName::ArrowUp))
                                                 .child(
                                                     v_flex()
+                                                        .flex_1()
                                                         .min_w_0()
                                                         .child(
                                                             div()
