@@ -1,0 +1,71 @@
+# The Windows companion: tests and a release build on every change, the
+# installer as a downloadable artifact, and attached to each published
+# release (tools/release.sh publishes the Linux files; this adds Windows).
+name: Windows companion
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "companion/**"
+      - "assets/**"
+      - "packaging/windows/**"
+      - ".github/workflows/windows.yml"
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: write # attaching the installer to a release
+
+jobs:
+  build:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Rust
+        run: rustup update stable --no-self-update && rustup default stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: companion
+
+      - name: Test
+        working-directory: companion
+        run: cargo test --locked
+
+      - name: Build
+        working-directory: companion
+        run: cargo build --release --locked
+
+      - name: Installer
+        run: |
+          $version = (Select-String -Path companion/Cargo.toml -Pattern '^version = "(.+)"').Matches[0].Groups[1].Value
+          "VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Append
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) {
+            choco install innosetup --no-progress -y
+          }
+          & $iscc /DAppVersion=$version packaging/windows/hawaos-companion.iss
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hawaos-companion-${{ env.VERSION }}-windows-x64
+          path: |
+            dist/hawaos-companion-*-windows-x64-setup.exe
+            companion/target/release/hawaos-companion.exe
+
+      - name: Attach to the release
+        if: github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $setup = "dist/hawaos-companion-$env:VERSION-windows-x64-setup.exe"
+          $hash = (Get-FileHash $setup -Algorithm SHA256).Hash.ToLower()
+          "$hash  $(Split-Path $setup -Leaf)" | Out-File -FilePath dist/SHA256SUMS-windows -Encoding ascii
+          gh release upload "${{ github.event.release.tag_name }}" $setup dist/SHA256SUMS-windows --clobber

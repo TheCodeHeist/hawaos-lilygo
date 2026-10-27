@@ -170,8 +170,12 @@ mod tests {
     fn import_crops_to_the_screen_and_serves_by_hash() {
         let home = std::env::temp_dir().join(format!("hawaos-wp-test-{}", std::process::id()));
         std::fs::create_dir_all(&home).unwrap();
-        // SAFETY: the only test that touches HOME.
-        unsafe { std::env::set_var("HOME", &home) };
+        // SAFETY: the only test that touches HOME and APPDATA (the config
+        // folder on Linux and on Windows).
+        unsafe {
+            std::env::set_var("HOME", &home);
+            std::env::set_var("APPDATA", &home);
+        }
         let src = home.join("tall.png");
         RgbImage::from_fn(300, 900, |_, y| image::Rgb([0, if y < 450 { 40 } else { 200 }, 0])).save(&src).unwrap();
 

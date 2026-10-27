@@ -220,17 +220,21 @@ impl Engine {
     }
 
     /// A cluster that drew nothing, again in a one-colour emoji font: colour
-    /// emoji fonts (COLRv1) don't rasterise here.
+    /// emoji fonts (COLRv1) don't rasterise here. Noto Emoji on Linux, Segoe
+    /// UI Symbol on Windows.
     fn monochrome(&mut self, text: &str) -> Option<u32> {
-        let mut buffer = Buffer::new(&mut self.fonts, Metrics::new(SHAPE_PX, SHAPE_PX * 1.4));
-        buffer.set_size(None, None);
-        buffer.set_text(text, &Attrs::new().family(Family::Name("Noto Emoji")), Shaping::Advanced, None);
-        buffer.shape_until_scroll(&mut self.fonts, false);
-        let glyphs: Vec<cosmic_text::LayoutGlyph> = buffer.layout_runs().flat_map(|r| r.glyphs.to_vec()).collect();
-        if glyphs.is_empty() {
-            return None;
+        for family in ["Noto Emoji", "Segoe UI Symbol"] {
+            let mut buffer = Buffer::new(&mut self.fonts, Metrics::new(SHAPE_PX, SHAPE_PX * 1.4));
+            buffer.set_size(None, None);
+            buffer.set_text(text, &Attrs::new().family(Family::Name(family)), Shaping::Advanced, None);
+            buffer.shape_until_scroll(&mut self.fonts, false);
+            let glyphs: Vec<cosmic_text::LayoutGlyph> =
+                buffer.layout_runs().flat_map(|r| r.glyphs.to_vec()).collect();
+            if let Some(cp) = (!glyphs.is_empty()).then(|| self.cluster(&glyphs)).flatten() {
+                return Some(cp);
+            }
         }
-        self.cluster(&glyphs)
+        None
     }
 
     /// The character standing for these glyphs, drawn at every size; None

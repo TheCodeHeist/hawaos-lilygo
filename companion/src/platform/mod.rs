@@ -35,6 +35,7 @@ pub enum Art {
     #[default]
     None,
     /// `file://` or `http(s)://` (MPRIS).
+    #[cfg_attr(windows, allow(dead_code))]
     Url(String),
     /// The image itself (Windows hands over a stream); `key` names this
     /// cover so it's decoded once.

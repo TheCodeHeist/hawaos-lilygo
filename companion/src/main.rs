@@ -1,3 +1,7 @@
+// A window app on Windows: no console window alongside it (release builds;
+// debug builds keep the console for the log).
+#![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
+
 mod config;
 mod glyphs;
 mod media;
@@ -11,6 +15,7 @@ mod protocol;
 mod setup;
 #[cfg(target_os = "linux")]
 mod tray;
+mod tray_actions;
 mod wallpaper;
 mod ui;
 mod weather;

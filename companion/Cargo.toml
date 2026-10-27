@@ -19,7 +19,6 @@ image = { version = "0.25", default-features = false, features = [
   "jpeg",
   "webp",
 ] }
-ksni = { version = "0.3", features = ["blocking"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 serialport = { version = "4.10.1", default-features = false }
@@ -31,3 +30,26 @@ unicode-normalization = "0.1"
 ureq = "3.5.0"
 uuid = "1"
 x25519-dalek = { version = "3.0.0", features = ["getrandom"] }
+
+# The tray over StatusNotifierItem (D-Bus).
+[target.'cfg(target_os = "linux")'.dependencies]
+ksni = { version = "0.3", features = ["blocking"] }
+
+# Media sessions (WinRT), the WLAN API, autostart in the registry, the tray.
+# windows 0.62 is the version gpui, btleplug and sysinfo already use.
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.62", features = [
+  "Foundation",
+  "Foundation_Collections",
+  "Media_Control",
+  "Storage_Streams",
+  "Win32_Foundation",
+  "Win32_NetworkManagement_WiFi",
+  "Win32_System_WinRT",
+  "Win32_UI_WindowsAndMessaging",
+] }
+windows-registry = "0.6"
+tray-icon = "0.26"
+
+[build-dependencies]
+winresource = "0.1"

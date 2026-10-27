@@ -2,6 +2,9 @@
 //! emphasis marks. Listening for notifications is per platform
 //! (platform::spawn_notification_listener).
 
+// Windows has no notification listener yet (platform/windows).
+#![cfg_attr(windows, allow(dead_code))]
+
 /// Start and end of emphasised text (`<b>`, `<i>`, `<u>`) in a body for the
 /// device, which draws it in the accent colour (DESIGN.md Section 11.10).
 pub const EMPH_ON: char = '\u{2}';

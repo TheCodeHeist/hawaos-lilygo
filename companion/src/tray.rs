@@ -4,11 +4,10 @@ use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 
-use crate::config::{save_config, DEFAULT_DEVICE_IP, LOGO_PNG_BYTES};
-use crate::platform::set_autostart_installed;
-use crate::models::{OutboundAction, SharedState};
+use crate::config::LOGO_PNG_BYTES;
+use crate::models::SharedState;
+use crate::tray_actions;
 use crate::ui::accents::ACCENTS;
-use crate::ui::theme::accent_by_id;
 
 struct HawaTray {
     state: SharedState,
@@ -58,150 +57,68 @@ impl ksni::Tray for HawaTray {
     }
 
     fn tool_tip(&self) -> ksni::ToolTip {
-        let (ip, cpu, ram, track) = if let Ok(g) = self.state.lock() {
-            let t = if g.media.title.is_empty() {
-                "Idle".to_string()
-            } else {
-                format!("{} — {}", g.media.title, g.media.artist)
-            };
-            (g.config.target_ip.clone(), g.cpu_pct, g.ram_pct, t)
-        } else {
-            (DEFAULT_DEVICE_IP.to_string(), 0, 0, "Idle".to_string())
-        };
-
+        let tip = tray_actions::view(&self.state).map(|v| v.tooltip).unwrap_or_default();
+        let (title, description) = tip.split_once('\n').unwrap_or((tip.as_str(), ""));
         ksni::ToolTip {
             icon_name: String::new(),
             icon_pixmap: self.icon_pixmap.clone(),
-            title: format!("HawaOS Companion ({})", ip),
-            description: format!("CPU {}% · RAM {}% · {}", cpu, ram, track),
+            title: title.to_string(),
+            description: description.to_string(),
         }
     }
 
     fn activate(&mut self, _x: i32, _y: i32) {
-        if let Ok(mut g) = self.state.lock() {
-            g.open_window_requested = true;
-        }
+        tray_actions::open_window(&self.state);
     }
 
     fn menu(&self) -> Vec<ksni::MenuItem<Self>> {
         use ksni::menu::*;
-        let (autostart, device_theme, accent, track_summary, active_player) =
-            if let Ok(g) = self.state.lock() {
-                let summary = if g.media.title.is_empty() {
-                    "Media: No active track".to_string()
-                } else {
-                    format!("♪ {} — {}", g.media.title, g.media.artist)
-                };
-                (
-                    g.config.autostart_enabled,
-                    g.config.device_theme.clone(),
-                    g.config.accent.clone(),
-                    summary,
-                    g.active_player.clone(),
-                )
-            } else {
-                (false, "dark".to_string(), String::new(), "Media: Idle".to_string(), None)
-            };
-
-        let play_target = active_player.clone();
-        let next_target = active_player.clone();
+        let Some(view) = tray_actions::view(&self.state) else {
+            return Vec::new();
+        };
+        let play_target = view.active_player.clone();
+        let next_target = view.active_player.clone();
 
         vec![
             StandardItem {
                 label: "Open HawaOS Companion".into(),
-                activate: Box::new(|this: &mut Self| {
-                    if let Ok(mut g) = this.state.lock() {
-                        g.open_window_requested = true;
-                    }
-                }),
+                activate: Box::new(|this: &mut Self| tray_actions::open_window(&this.state)),
                 ..Default::default()
             }
             .into(),
             StandardItem {
                 label: "Add Device...".into(),
-                activate: Box::new(|this: &mut Self| {
-                    if let Ok(mut g) = this.state.lock() {
-                        g.open_window_requested = true;
-                        g.open_setup_requested = true;
-                    }
-                }),
+                activate: Box::new(|this: &mut Self| tray_actions::add_device(&this.state)),
                 ..Default::default()
             }
             .into(),
             MenuItem::Separator,
-            StandardItem {
-                label: track_summary,
-                enabled: false,
-                ..Default::default()
-            }
-            .into(),
+            StandardItem { label: view.track.clone(), enabled: false, ..Default::default() }.into(),
             StandardItem {
                 label: "Play / Pause Media".into(),
-                activate: Box::new(move |_| {
-                    handle_device_command("play_pause", play_target.as_deref())
-                }),
+                activate: Box::new(move |_| handle_device_command("play_pause", play_target.as_deref())),
                 ..Default::default()
             }
             .into(),
             StandardItem {
                 label: "Next Track".into(),
-                activate: Box::new(move |_| {
-                    handle_device_command("next", next_target.as_deref())
-                }),
+                activate: Box::new(move |_| handle_device_command("next", next_target.as_deref())),
                 ..Default::default()
             }
             .into(),
             MenuItem::Separator,
             StandardItem {
-                label: format!(
-                    "Switch Device Theme (Current: {})",
-                    device_theme.to_uppercase()
-                ),
-                activate: Box::new(|this: &mut Self| {
-                    if let Ok(mut g) = this.state.lock() {
-                        g.config.device_theme = if g.config.device_theme == "dark" {
-                            "light".to_string()
-                        } else {
-                            "dark".to_string()
-                        };
-                        g.config.config_version += 1;
-                        save_config(&g.config);
-                        g.outbound_queue.push_back(OutboundAction::PushConfig {
-                            wifi_ssid: None,
-                            wifi_pass: None,
-                            forget_wifi: false,
-                            force_usb: false,
-                        });
-                    }
-                }),
+                label: tray_actions::theme_label(&view),
+                activate: Box::new(|this: &mut Self| tray_actions::toggle_device_theme(&this.state)),
                 ..Default::default()
             }
             .into(),
             SubMenu {
                 label: "Accent Color".into(),
                 submenu: vec![RadioGroup {
-                    selected: ACCENTS.iter().position(|a| a.id == accent_by_id(&accent).id).unwrap_or(0),
-                    select: Box::new(|this: &mut Self, idx| {
-                        let Some(picked) = ACCENTS.get(idx) else { return };
-                        if let Ok(mut g) = this.state.lock() {
-                            g.config.accent = picked.id.to_string();
-                            g.config.config_version += 1;
-                            save_config(&g.config);
-                            g.outbound_queue.push_back(OutboundAction::PushConfig {
-                                wifi_ssid: None,
-                                wifi_pass: None,
-                                forget_wifi: false,
-                                force_usb: false,
-                            });
-                        }
-                    }),
-                    options: ACCENTS
-                        .iter()
-                        .map(|a| RadioItem {
-                            label: a.label.into(),
-                            ..Default::default()
-                        })
-                        .collect(),
+                    selected: view.accent,
+                    select: Box::new(|this: &mut Self, idx| tray_actions::set_accent(&this.state, idx)),
+                    options: ACCENTS.iter().map(|a| RadioItem { label: a.label.into(), ..Default::default() }).collect(),
                 }
                 .into()],
                 ..Default::default()
@@ -209,27 +126,15 @@ impl ksni::Tray for HawaTray {
             .into(),
             CheckmarkItem {
                 label: "Start Companion with System".into(),
-                checked: autostart,
-                activate: Box::new(|this: &mut Self| {
-                    if let Ok(mut g) = this.state.lock() {
-                        let next = !g.config.autostart_enabled;
-                        if set_autostart_installed(next).is_ok() {
-                            g.config.autostart_enabled = next;
-                            save_config(&g.config);
-                        }
-                    }
-                }),
+                checked: view.autostart,
+                activate: Box::new(|this: &mut Self| tray_actions::toggle_autostart(&this.state)),
                 ..Default::default()
             }
             .into(),
             MenuItem::Separator,
             StandardItem {
                 label: "Quit HawaOS Daemon".into(),
-                activate: Box::new(|this: &mut Self| {
-                    if let Ok(mut g) = this.state.lock() {
-                        g.quit_requested = true;
-                    }
-                }),
+                activate: Box::new(|this: &mut Self| tray_actions::quit(&this.state)),
                 ..Default::default()
             }
             .into(),
@@ -252,14 +157,8 @@ pub fn spawn_system_tray(state: SharedState) {
         let mut shown: Option<(String, String, String)> = None;
         loop {
             thread::sleep(Duration::from_millis(500));
-            let now = match state.lock() {
-                Ok(g) => (
-                    g.config.device_theme.clone(),
-                    g.config.accent.clone(),
-                    g.media.title.clone(),
-                ),
-                Err(_) => continue,
-            };
+            let Some(v) = tray_actions::view(&state) else { continue };
+            let now = (v.theme, v.accent.to_string(), v.track);
             if shown.as_ref() != Some(&now) {
                 shown = Some(now);
                 if handle.update(|_| {}).is_none() {
