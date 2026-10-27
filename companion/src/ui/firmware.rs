@@ -103,6 +103,7 @@ fn friendly_error(code: Option<&str>) -> String {
         "unauthorized" => "The device didn't accept this computer. Run Add device again to re-pair it.".into(),
         "no_response" => "The device stopped answering. It keeps its current firmware; try again.".into(),
         "rejected" => "The device is busy or the request was invalid.".into(),
+        "verifying" => "The device is still checking the firmware it just installed. Try again in a few minutes.".into(),
         "no_wifi" => "The device needs a Wi-Fi network to download updates. Run Add device and pick one.".into(),
         "http_error" | "bad_url" => "The device couldn't download from this computer. Check your firewall (port 7778).".into(),
         "checksum" | "incomplete" | "size_mismatch" => "The download was damaged. Try again.".into(),

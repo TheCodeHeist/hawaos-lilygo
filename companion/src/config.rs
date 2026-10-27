@@ -41,6 +41,7 @@ pub struct CompanionConfig {
     pub reduce_motion: bool,  // true | false
     pub wallpaper: String,    // "gradient" | "solid" | "image"
     pub wallpaper_hash: String, // the picture for "image" (see wallpaper.rs)
+    pub rollback_seen: String,  // last rolled_back id we told the user about
     pub use_24h: bool,        // true | false
     pub notify_popup: bool,   // true | false
     pub wifi_ssid: String,
@@ -81,6 +82,7 @@ impl Default for CompanionConfig {
             reduce_motion: false,
             wallpaper: "gradient".to_string(),
             wallpaper_hash: String::new(),
+            rollback_seen: String::new(),
             use_24h: true,
             notify_popup: true,
             wifi_ssid: String::new(),

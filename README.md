@@ -199,7 +199,7 @@ Switching back to Wi-Fi rejoins the saved network. Linux needs BlueZ and a Bluet
   <img src="docs/media/companion-firmware.png" width="640" alt="Firmware card in the companion downloading an update to the device">
 </p>
 
-After the first USB flash, updates can go over Wi-Fi. Build with `pio run`, then in the companion open **Device > Firmware > Install update...** and pick `.pio/build/tdisplay-s3/firmware.bin`.
+After the first USB flash, updates can go over Wi-Fi. Build with `pio run`, then in the companion open **Device > Firmware > Install update...** and pick `.pio/build/tdisplay-s3/firmware.bin`. A new firmware runs on trial: if it crashes, or hasn't reached the companion within 3 minutes, the device goes back to the one it had and the companion tells you.
 
 The device downloads the image from the companion into its spare app slot, with progress shown on both screens. It only switches to the new firmware if the whole file arrived and its SHA-256 matches; any failure leaves the running firmware untouched. Over Wi-Fi, the request has to be signed with a secret the companion gave the device during **Add device**, so other machines on your network can't push firmware to it (all other traffic is encrypted with keys from the same secret). Details are in [`DESIGN.md`](DESIGN.md) §11.5.
 
@@ -319,7 +319,7 @@ The companion looks for the device by name (`HawaOS-XXXX`) every few seconds; th
 | Settings and Wi-Fi changes | encrypted; can't be read, faked or replayed, even after a reboot |
 | Album art | encrypted and tied to its track, so it can't be read or swapped |
 | Button presses and replies from the device | encrypted; stale or replayed ones are rejected |
-| Firmware updates | request encrypted and signed; image checked against its SHA-256 before switching |
+| Firmware updates | request encrypted and signed; image checked against its SHA-256 before switching; rolled back if it doesn't come up healthy |
 
 Every message carries a counter, so a captured one can't be sent again, and the device sends its replies and button presses only to a companion that has proved it holds the secret, so they can't be redirected. Anyone else only gets told their message was refused.
 
@@ -341,7 +341,7 @@ The full protocol, key derivation and replay rules are in [`DESIGN.md`](DESIGN.m
 - [x] Always-on display, Control Center, on-device Settings
 - [x] 17 synced accent themes with accent-tinted dark mode
 - [x] First-run setup wizard over USB or Bluetooth, with encrypted Wi-Fi provisioning
-- [x] Firmware updates over Wi-Fi, checksum-verified and signed
+- [x] Firmware updates over Wi-Fi, checksum-verified and signed, with automatic rollback
 - [x] Encrypted, authenticated network traffic with replay protection
 - [x] Bluetooth as an everyday link instead of Wi-Fi, with album art over Bluetooth and USB
 - [x] Companion packaged as a Flatpak, with prebuilt firmware in every release

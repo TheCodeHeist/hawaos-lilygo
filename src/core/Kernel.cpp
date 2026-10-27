@@ -15,6 +15,7 @@
 #include "core/Settings.h"
 #include "drivers/Buttons.h"
 #include "drivers/Display.h"
+#include "services/FirmwareHealth.h"
 #include "services/SetupService.h"
 #include "services/Wallpaper.h"
 #include "services/WifiService.h"
@@ -153,6 +154,7 @@ void uiTaskEntry(void * /*param*/) {
       }
 
       lv_timer_handler();
+      FirmwareHealth::uiAlive();
     }
 
     if (nowMs - lastHeapLogMs >= Config::HEAP_LOG_INTERVAL_MS) {
@@ -217,6 +219,7 @@ void begin() {
   Serial.println("=====================================================");
   logMemoryStats("boot-logo-shown");
 
+  FirmwareHealth::begin();
   DataStore::begin();
   Wallpaper::begin();
   EventBus::begin();

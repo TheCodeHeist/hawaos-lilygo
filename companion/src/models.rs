@@ -113,6 +113,9 @@ pub struct IncomingPacket {
     pub aod: Option<bool>,
     pub aod_timeout_s: Option<u16>,
     pub aod_off_min: Option<u16>,
+    /// Set when a firmware update failed its start-up check and the device
+    /// went back to the firmware it had (DESIGN.md 11.5).
+    pub rolled_back: Option<String>,
     pub reduce_motion: Option<bool>,
     pub wallpaper: Option<String>,
     pub use_24h: Option<bool>,

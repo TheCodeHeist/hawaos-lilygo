@@ -5,6 +5,7 @@
 #include "core/Settings.h"
 #include "services/BleLink.h"
 #include "services/CompanionAuth.h"
+#include "services/FirmwareHealth.h"
 #include <mbedtls/base64.h>
 #include "services/NtpService.h"
 #include "services/OtaService.h"
@@ -396,6 +397,9 @@ bool handleSetupMessage(const char *type, JsonDocument &doc, Link link,
     // must be signed with the token from setup.
     if (link == Link::Udp && !OtaService::checkMac(sha, size, doc["mac"] | "")) {
       err = "unauthorized";
+    } else if (FirmwareHealth::onTrial()) {
+      // Writing now would overwrite the firmware a rollback goes back to.
+      err = "verifying";
     } else if (!OtaService::start(doc["url"] | "", size, sha)) {
       err = "rejected";
     }
@@ -491,6 +495,9 @@ void handleJsonMessage(const char *payload, size_t len, Link link,
   }
 
   s_lastRxViaUsb = viaUsb;
+  if (trusted || viaUsb) {
+    FirmwareHealth::companionHeard(); // sealed, or someone at the cable
+  }
 
   const char *hostIpStr = doc["host_ip"] | "";
   if (hostIpStr[0] != '\0') {
@@ -976,6 +983,12 @@ void flushPendingOutbound() {
     const char *orientStr =
         Settings::getOrientationInverted() ? "inverted" : "normal";
 
+    // A failed update went back to this firmware (DESIGN.md 11.5).
+    char rolledBack[40] = {0};
+    if (FirmwareHealth::rolledBackFrom()[0] != '\0') {
+      snprintf(rolledBack, sizeof(rolledBack), ",\"rolled_back\":\"%s\"",
+               FirmwareHealth::rolledBackFrom());
+    }
     char buf[768];
     snprintf(buf, sizeof(buf),
              "{\"type\":\"config_ack\",\"id\":\"%s\",\"model\":\"%s\","
@@ -986,7 +999,7 @@ void flushPendingOutbound() {
              "\"aod_timeout_s\":%u,\"aod_off_min\":%u,\"reduce_motion\":%s,\"wallpaper\":\"%s\","
              "\"wallpaper_hash\":\"%s\","
              "\"use_24h\":%s,\"notify_popup\":%s,\"orientation\":\"%s\","
-             "\"link\":\"%s\"}",
+             "\"link\":\"%s\"%s}",
              SetupService::deviceId(), Config::DEVICE_MODEL, Config::FW_VERSION,
              Settings::isSetupDone() ? "false" : "true",
              static_cast<unsigned long>(ackVer), ipStr.c_str(),
@@ -1001,7 +1014,8 @@ void flushPendingOutbound() {
              Settings::getUse24Hour() ? "true" : "false",
              Settings::getNotifyPopupEnabled() ? "true" : "false",
              orientStr,
-             Settings::getLinkMode() == LinkMode::Ble ? "ble" : "wifi");
+             Settings::getLinkMode() == LinkMode::Ble ? "ble" : "wifi",
+             rolledBack);
     sendJsonPacket(buf);
   }
 }

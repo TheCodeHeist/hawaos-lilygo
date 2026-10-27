@@ -181,6 +181,20 @@ pub fn handle_incoming_json_line(line: &str, state: &SharedState) {
                     }
                     g.device_fw = Some(fw);
                 }
+                // Once per failed firmware: the device restarted on the old one.
+                if let Some(id) = pkt.rolled_back.filter(|id| !id.is_empty()) {
+                    if id != g.config.rollback_seen {
+                        let fw = g.device_fw.as_ref().map_or("its previous firmware".into(), |v| format!("version {v}"));
+                        let msg = format!(
+                            "The new firmware didn't start properly, so the device went back to {fw}. Nothing was lost."
+                        );
+                        g.push_log(format!("Firmware update rolled back ({id})"));
+                        g.ota = Some(crate::models::OtaProgress::new("failed", 0, Some(msg.clone())));
+                        g.notice = Some(msg);
+                        g.config.rollback_seen = id;
+                        save_config(&g.config);
+                    }
+                }
                 if let Some(th) = pkt.theme {
                     g.config.device_theme = th;
                 }
