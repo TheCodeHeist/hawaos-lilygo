@@ -82,7 +82,9 @@ pub fn handle_incoming_json_line(line: &str, state: &SharedState) {
                 }
             }
         } else if pkt.msg_type == "cmd" {
-            if let Some(cmd) = pkt.cmd {
+            if pkt.cmd.as_deref() == Some("mic_toggle") {
+                crate::session::toggle_mic(state);
+            } else if let Some(cmd) = pkt.cmd {
                 let player_opt = state.lock().ok().and_then(|g| g.active_player.clone());
                 handle_device_command(&cmd, player_opt.as_deref());
                 if let Ok(mut g) = state.lock() {

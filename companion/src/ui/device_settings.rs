@@ -349,6 +349,27 @@ impl CompanionWindowView {
                             })),
                         ))
                     })
+                    .child(setting_row(
+                        pal,
+                        "When the computer locks",
+                        Some("Unlocking wakes the device again. A running timer keeps the screen lit."),
+                        button_row().children([("off", "Screen off"), ("aod", "Always-on"), ("none", "Nothing")].into_iter().enumerate().map(
+                            |(i, (id, label))| {
+                                Button::new(("lock-screen", i))
+                                    .small()
+                                    .with_variant(choice(pal, cfg.lock_screen == id, cx))
+                                    .label(label)
+                                    .on_click(cx.listener(move |this, _, _, cx| {
+                                        // The companion acts on it (session.rs); nothing to push.
+                                        if let Ok(mut g) = this.state.lock() {
+                                            g.config.lock_screen = id.to_string();
+                                            save_config(&g.config);
+                                        }
+                                        cx.notify();
+                                    }))
+                            },
+                        )),
+                    ))
                     .child(divider(pal))
                     .child(setting_row(
                         pal,

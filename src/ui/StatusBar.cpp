@@ -16,6 +16,7 @@ lv_obj_t *s_titleLbl = nullptr;
 lv_obj_t *s_connIcon = nullptr;
 lv_obj_t *s_bleIcon = nullptr;
 lv_obj_t *s_bellIcon = nullptr;
+lv_obj_t *s_micIcon = nullptr; // while an app records from the computer's mic
 
 // Floating Notification Popup Banner on lv_layer_top()
 lv_obj_t *s_popupCard = nullptr;
@@ -113,6 +114,11 @@ void begin() {
   lv_obj_set_style_text_font(s_bellIcon, Theme::iconFont20(), LV_PART_MAIN);
   lv_obj_align(s_bellIcon, LV_ALIGN_RIGHT_MID, -28, 0);
   lv_obj_add_flag(s_bellIcon, LV_OBJ_FLAG_HIDDEN);
+
+  s_micIcon = lv_label_create(s_bar);
+  lv_label_set_text(s_micIcon, ICON_MIC);
+  lv_obj_set_style_text_font(s_micIcon, Theme::iconFont20(), LV_PART_MAIN);
+  lv_obj_add_flag(s_micIcon, LV_OBJ_FLAG_HIDDEN);
 
   // Create floating notification popup card on lv_layer_top() (above s_bar)
   s_popupCard = lv_obj_create(topLayer);
@@ -229,8 +235,21 @@ void updateData(const DataSnapshot &d) {
     lv_obj_set_style_text_color(s_bellIcon, lv_color_hex(p.accent),
                                 LV_PART_MAIN);
     lv_obj_align(s_bellIcon, LV_ALIGN_RIGHT_MID, rightOffset, 0);
+    rightOffset -= 28;
   } else {
     lv_obj_add_flag(s_bellIcon, LV_OBJ_FLAG_HIDDEN);
+  }
+
+  // During a call: whether it can hear you.
+  const PcState pc = DataStore::pcState(millis());
+  if (pc.micInUse) {
+    lv_obj_clear_flag(s_micIcon, LV_OBJ_FLAG_HIDDEN);
+    lv_label_set_text(s_micIcon, pc.micMuted ? ICON_MIC_OFF : ICON_MIC);
+    lv_obj_set_style_text_color(
+        s_micIcon, lv_color_hex(pc.micMuted ? p.err : p.accent), LV_PART_MAIN);
+    lv_obj_align(s_micIcon, LV_ALIGN_RIGHT_MID, rightOffset, 0);
+  } else {
+    lv_obj_add_flag(s_micIcon, LV_OBJ_FLAG_HIDDEN);
   }
 }
 

@@ -3306,6 +3306,7 @@ dependencies = [
  "windows-registry 0.6.1",
  "winresource",
  "x25519-dalek",
+ "zbus",
 ]
 
 [[package]]

@@ -35,6 +35,8 @@ x25519-dalek = { version = "3.0.0", features = ["getrandom"] }
 # The tray over StatusNotifierItem (D-Bus).
 [target.'cfg(target_os = "linux")'.dependencies]
 ksni = { version = "0.3", features = ["blocking"] }
+# Whether the session is locked (platform/linux/session.rs); already built for ksni and gpui.
+zbus = { version = "5", default-features = false, features = ["async-io", "blocking-api"] }
 
 # Media sessions (WinRT), the WLAN API, autostart in the registry, the tray.
 # windows 0.62 is the version gpui, btleplug and sysinfo already use.
@@ -45,7 +47,11 @@ windows = { version = "0.62", features = [
   "Media_Control",
   "Storage_Streams",
   "Win32_Foundation",
+  "Win32_Media_Audio",
+  "Win32_Media_Audio_Endpoints",
   "Win32_NetworkManagement_WiFi",
+  "Win32_System_Com",
+  "Win32_System_StationsAndDesktops",
   "Win32_System_WinRT",
   "Win32_UI_WindowsAndMessaging",
 ] }

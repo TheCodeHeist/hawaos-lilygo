@@ -36,6 +36,8 @@ ICON_NAMES = [
     "bell",
     "bell-off",
     "music",
+    "mic",
+    "mic-off",
     "play",
     "pause",
     "skip-back",

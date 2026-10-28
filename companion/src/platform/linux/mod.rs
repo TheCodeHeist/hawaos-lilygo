@@ -2,6 +2,7 @@
 //! session bus, XDG autostart and config folders, NetworkManager's Wi-Fi scan.
 
 mod notifications;
+mod session;
 
 use std::collections::HashSet;
 use std::env;
@@ -10,6 +11,7 @@ use std::path::PathBuf;
 use std::process::Command;
 
 pub use notifications::spawn_notification_listener;
+pub use session::{mic, session_locked, toggle_mic};
 
 use super::{Art, MediaCommand, Player};
 use crate::config::{DiscoveredWifi, APP_ID};

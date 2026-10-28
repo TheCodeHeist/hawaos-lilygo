@@ -9,6 +9,20 @@ enum class MediaPlayState : uint8_t {
   Paused = 2,
 };
 
+// What the computer is doing, from the companion's stats (DESIGN.md 10, 9.1).
+enum class PcLock : uint8_t {
+  Unlocked = 0,
+  ScreenOff = 1, // locked: AOD with the backlight off
+  Aod = 2,       // locked: AOD
+};
+
+struct PcState {
+  PcLock lock = PcLock::Unlocked;
+  bool micKnown = false; // the companion reports a microphone
+  bool micInUse = false; // an app records from it (a call)
+  bool micMuted = false;
+};
+
 enum class StopwatchState : uint8_t {
   Stopped = 0,
   Running = 1,
@@ -117,6 +131,9 @@ struct DataSnapshot {
   bool usbConnected = false;
   bool ntpSynced = false;
   bool bleConnected = false;
+
+  // The computer's lock and microphone, refreshed with each stats message.
+  PcState pc{};
 };
 
 namespace DataStore {
@@ -138,6 +155,13 @@ void setSnapshot(const DataSnapshot &snapshot);
 
 void updateStats(uint32_t ts, uint8_t cpuPct, uint8_t ramPct,
                  uint32_t netUpKbps, uint32_t netDownKbps, bool viaUsb);
+void updatePc(PcLock lock, bool micKnown, bool micInUse, bool micMuted);
+// The lock is kept while the companion is silent (a computer asleep after
+// locking keeps the screen dark); the mic counts as unknown after 5 s without
+// stats, so a dropped link doesn't leave the indicator up.
+PcState pcState(uint32_t nowMs);
+// Shown at once on a mute press; the companion's next stats confirm it.
+void setMicMuted(bool muted);
 void updateMedia(MediaPlayState state, const char *title, const char *artist,
                  const char *album, uint32_t posMs, uint32_t durMs,
                  const char *artHash, uint32_t bgTop, uint32_t bgBottom,

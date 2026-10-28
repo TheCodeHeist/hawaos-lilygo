@@ -29,6 +29,11 @@ pub struct CompanionConfig {
     pub check_updates: bool,
     /// The release whose notice was dismissed; a later one shows again.
     pub update_dismissed: String,
+    /// What the device does while the computer is locked: "off" (screen
+    /// off), "aod" (always-on display) or "none" (session.rs).
+    pub lock_screen: String,
+    /// Look up synced lyrics on lrclib.net for the playing song (lyrics.rs).
+    pub lyrics: bool,
 
     // Device configuration fields (DESIGN.md Section 11.3)
     pub config_version: u32,
@@ -72,6 +77,8 @@ impl Default for CompanionConfig {
             close_to_tray: true,
             check_updates: true,
             update_dismissed: String::new(),
+            lock_screen: "off".to_string(),
+            lyrics: true,
             companion_dark_mode: true,
             window_transparency: "auto".to_string(),
             config_version: 1,

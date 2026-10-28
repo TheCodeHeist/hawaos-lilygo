@@ -489,6 +489,40 @@ uint32_t getTimerRemainingMs(uint32_t nowMs) {
   return rem;
 }
 
+void updatePc(PcLock lock, bool micKnown, bool micInUse, bool micMuted) {
+  if (s_mutex != nullptr &&
+      xSemaphoreTake(s_mutex, pdMS_TO_TICKS(20)) == pdTRUE) {
+    s_data.pc.lock = lock;
+    s_data.pc.micKnown = micKnown;
+    s_data.pc.micInUse = micKnown && micInUse;
+    s_data.pc.micMuted = micKnown && micMuted;
+    xSemaphoreGive(s_mutex);
+  }
+}
+
+PcState pcState(uint32_t nowMs) {
+  PcState pc{};
+  if (s_mutex != nullptr &&
+      xSemaphoreTake(s_mutex, pdMS_TO_TICKS(10)) == pdTRUE) {
+    pc = s_data.pc;
+    if (s_data.lastStatsMs == 0 || nowMs - s_data.lastStatsMs > 5000) {
+      pc.micKnown = pc.micInUse = pc.micMuted = false;
+    }
+    xSemaphoreGive(s_mutex);
+  }
+  return pc;
+}
+
+void setMicMuted(bool muted) {
+  if (s_mutex != nullptr &&
+      xSemaphoreTake(s_mutex, pdMS_TO_TICKS(20)) == pdTRUE) {
+    if (s_data.pc.micKnown) {
+      s_data.pc.micMuted = muted;
+    }
+    xSemaphoreGive(s_mutex);
+  }
+}
+
 bool isClockToolRunning() {
   bool running = false;
   if (s_mutex != nullptr &&

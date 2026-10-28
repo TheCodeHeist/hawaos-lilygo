@@ -593,6 +593,16 @@ void handleJsonMessage(const char *payload, size_t len, Link link,
     DataStore::updateStats(ts, cpu, ram, netUp, netDown, viaUsb);
     NtpService::setFromCompanion(ts);
 
+    // `lock` only while the computer is locked; `mic` (in_use, muted)
+    // when it has one.
+    const char *lock = doc["lock"] | "";
+    JsonObjectConst mic = doc["mic"].as<JsonObjectConst>();
+    DataStore::updatePc(strcmp(lock, "aod") == 0   ? PcLock::Aod
+                        : strcmp(lock, "off") == 0 ? PcLock::ScreenOff
+                                                   : PcLock::Unlocked,
+                        !mic.isNull(), mic["in_use"] | false,
+                        mic["muted"] | false);
+
     bool pushedNotify = false;
     if (doc["notify"].is<JsonArrayConst>()) {
       JsonArrayConst arr = doc["notify"].as<JsonArrayConst>();

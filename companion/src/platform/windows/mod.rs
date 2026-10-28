@@ -6,6 +6,7 @@
 //! (UserNotificationListener); until then it's off (DESIGN.md Section 16).
 
 mod media;
+mod session;
 mod tray;
 mod wifi;
 
@@ -13,6 +14,7 @@ use std::path::PathBuf;
 use std::sync::Once;
 
 pub use media::{media_command, players};
+pub use session::{mic, session_locked, toggle_mic};
 pub use tray::spawn_system_tray;
 pub use wifi::scan_wifi_networks;
 

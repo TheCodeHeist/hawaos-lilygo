@@ -59,6 +59,7 @@ lv_obj_t *s_aodScreen = nullptr;
 lv_obj_t *s_aodClockLbl = nullptr;
 lv_obj_t *s_aodAmPmLbl = nullptr;
 lv_obj_t *s_aodDateLbl = nullptr;
+lv_obj_t *s_aodMicIcon = nullptr; // during a call: live or muted
 lv_obj_t *s_aodArtBox = nullptr;
 lv_obj_t *s_aodArtIcon = nullptr;
 lv_obj_t *s_aodArtImg = nullptr;
@@ -99,6 +100,9 @@ bool s_aodAlertActive = false;
 // Backlight fully off after Settings::getAodOffMin() in AOD (DESIGN.md 10).
 uint32_t s_aodLitSinceMs = 0;
 bool s_backlightOff = false;
+// The computer's lock as last acted on (DESIGN.md 10): locking dims or
+// darkens the device, unlocking wakes it.
+PcLock s_pcLock = PcLock::Unlocked;
 uint32_t s_aodAlertStartMs = 0;
 constexpr uint32_t kAodAlertDurationMs = 4500;
 
@@ -153,6 +157,7 @@ void clearViewPointers() {
   s_aodClockLbl = nullptr;
   s_aodAmPmLbl = nullptr;
   s_aodDateLbl = nullptr;
+  s_aodMicIcon = nullptr;
   s_aodArtBox = nullptr;
   s_aodArtIcon = nullptr;
   s_aodArtImg = nullptr;
@@ -278,6 +283,13 @@ void buildLauncherScreen(lv_obj_t *root) {
   refreshLauncherCarousel();
 }
 
+// Mutes or unmutes the computer's microphone, showing the result at once.
+void toggleMic() {
+  const PcState pc = DataStore::pcState(millis());
+  CompanionLink::sendMediaCommand("mic_toggle", 0);
+  DataStore::setMicMuted(!pc.micMuted);
+}
+
 // =============================================================================
 // Control Center 2x2 Full-Screen Tiles (DESIGN.md Section 9.7)
 // =============================================================================
@@ -313,10 +325,11 @@ void refreshControlCenterTiles() {
                           : (d.wifiSsid[0] ? "Reconnect" : "Use Companion"));
   }
 
-  // Tile 3: AOD (Enter AOD now)
-  lv_label_set_text(s_ccIcons[3], ICON_CLOCK);
-  lv_label_set_text(s_ccTitleLbls[3], "Ambient");
-  lv_label_set_text(s_ccValLbls[3], "Enter AOD");
+  // Tile 3: the computer's microphone (Select = mute / unmute)
+  const PcState pc = DataStore::pcState(millis());
+  lv_label_set_text(s_ccIcons[3], pc.micMuted ? ICON_MIC_OFF : ICON_MIC);
+  lv_label_set_text(s_ccTitleLbls[3], pc.micInUse ? "Mic \xc2\xb7 in use" : "Microphone");
+  lv_label_set_text(s_ccValLbls[3], !pc.micKnown ? "No mic" : pc.micMuted ? "Muted" : "On");
 
   for (int i = 0; i < 4; ++i) {
     const bool focused = (i == s_ccCursor);
@@ -429,6 +442,19 @@ void refreshAodContent() {
 
   const bool use24 = Settings::getUse24Hour();
   const uint32_t nowMs = millis();
+
+  if (s_aodMicIcon != nullptr) {
+    const PcState pc = DataStore::pcState(nowMs);
+    if (pc.micInUse) {
+      lv_label_set_text(s_aodMicIcon, pc.micMuted ? ICON_MIC_OFF : ICON_MIC);
+      lv_obj_set_style_text_color(
+          s_aodMicIcon, lv_color_hex(pc.micMuted ? p.err : p.accent),
+          LV_PART_MAIN);
+      lv_obj_clear_flag(s_aodMicIcon, LV_OBJ_FLAG_HIDDEN);
+    } else {
+      lv_obj_add_flag(s_aodMicIcon, LV_OBJ_FLAG_HIDDEN);
+    }
+  }
 
   // Media active check
   bool showMedia = false;
@@ -810,6 +836,12 @@ void buildAodScreen(lv_obj_t *root, bool keepBackdrop = false) {
   lv_obj_set_style_text_font(s_aodDateLbl, Theme::fontBody(), LV_PART_MAIN);
   lv_obj_set_style_text_color(s_aodDateLbl, lv_color_hex(p.textDim),
                               LV_PART_MAIN);
+
+  // Top centre is free in every AOD layout.
+  s_aodMicIcon = lv_label_create(root);
+  lv_obj_set_style_text_font(s_aodMicIcon, Theme::iconFont20(), LV_PART_MAIN);
+  lv_obj_align(s_aodMicIcon, LV_ALIGN_TOP_MID, 0, 8);
+  lv_obj_add_flag(s_aodMicIcon, LV_OBJ_FLAG_HIDDEN);
 
   // Media playing AOD elements (96px art + scrolling title & artist + 3px
   // progress bar)
@@ -1454,6 +1486,22 @@ void tick(uint32_t nowMs) {
     return;
   }
 
+  // Follow the computer's lock (DESIGN.md 10). Not mid-update: the update
+  // overlay keeps the screen up, and the change is acted on afterwards.
+  const PcState pc = DataStore::pcState(nowMs);
+  if (pc.lock != s_pcLock && s_otaOverlay == nullptr) {
+    const PcLock was = s_pcLock;
+    s_pcLock = pc.lock;
+    Serial.printf("[AppManager] Computer %s\n",
+                  pc.lock == PcLock::Unlocked ? "unlocked" : "locked");
+    if (pc.lock == PcLock::Unlocked) {
+      exitAod();
+    } else if (was == PcLock::Unlocked) {
+      enterAod(); // ScreenOff then goes dark on the next tick
+    }
+    return; // nowMs predates the timestamps those just set
+  }
+
   // Keep idle timer awake while notification popup is actively displayed
   if (StatusBar::isPopupVisible() || s_aodAlertActive) {
     s_lastInputMs = nowMs;
@@ -1482,15 +1530,18 @@ void tick(uint32_t nowMs) {
     if (s_backlightOff) {
       return; // nothing to draw on a dark screen
     }
-    // Backlight off after the set time; a running timer or stopwatch keeps
-    // it lit so it can be glanced at.
+    // Backlight off after the set time, or at once while the computer is
+    // locked with "screen off"; a running timer or stopwatch keeps it lit so
+    // it can be glanced at.
     const uint16_t offMin = Settings::getAodOffMin();
-    if (clockToolsRunning || offMin == 0) {
+    const bool lockedDark = s_pcLock == PcLock::ScreenOff;
+    if (clockToolsRunning || (offMin == 0 && !lockedDark)) {
       s_aodLitSinceMs = nowMs;
-    } else if (nowMs - s_aodLitSinceMs >= offMin * 60000UL) {
+    } else if (lockedDark || nowMs - s_aodLitSinceMs >= offMin * 60000UL) {
       Display::setBrightness(0);
       s_backlightOff = true;
-      Serial.printf("[AppManager] Backlight off after %u min in AOD\n", offMin);
+      Serial.printf("[AppManager] Backlight off (%s)\n",
+                    lockedDark ? "computer locked" : "AOD timeout");
       return;
     }
     if (clockToolsRunning) {
@@ -1535,6 +1586,14 @@ void handleButton(Button b, Press p) {
     // unseen.
     if (s_backlightOff) {
       exitAod();
+      return;
+    }
+
+    // During a call, Select mutes or unmutes the computer's microphone.
+    if (b == Button::Select && p == Press::Short &&
+        DataStore::pcState(millis()).micInUse) {
+      toggleMic();
+      refreshAodContent();
       return;
     }
 
@@ -1584,7 +1643,10 @@ void handleButton(Button b, Press p) {
         WifiService::forceReconnect();
         refreshControlCenterTiles();
       } else if (s_ccCursor == 3) {
-        enterAod();
+        if (DataStore::pcState(millis()).micKnown) {
+          toggleMic();
+          refreshControlCenterTiles();
+        }
       }
     } else if ((b == Button::Select && p == Press::Long) ||
                (b == Button::Next && p == Press::Long)) {

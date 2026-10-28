@@ -1,6 +1,7 @@
 //! What differs between the desktops the companion runs on (DESIGN.md
 //! Section 16): media players, notifications, autostart, the Wi-Fi scan for
-//! setup, finding the board's serial port, and where settings live. Each
+//! setup, finding the board's serial port, where settings live, whether the
+//! session is locked, and the microphone. Each
 //! backend provides the same functions; the rest of the companion only calls
 //! these.
 
@@ -52,6 +53,14 @@ impl Art {
             Art::Image { key, .. } => key,
         }
     }
+}
+
+/// The default microphone, for the device's mute indicator and toggle.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct Mic {
+    /// An app is recording from it right now (a call, a recorder).
+    pub in_use: bool,
+    pub muted: bool,
 }
 
 /// Media keys from the device or the tray.

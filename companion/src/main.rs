@@ -12,6 +12,7 @@ mod ble_daemon;
 mod ota;
 mod platform;
 mod protocol;
+mod session;
 mod setup;
 mod single_instance;
 #[cfg(target_os = "linux")]
@@ -64,6 +65,7 @@ fn main() {
     spawn_notification_listener(Arc::clone(&state));
     spawn_system_tray(Arc::clone(&state));
     update_check::spawn(Arc::clone(&state));
+    session::spawn(Arc::clone(&state));
 
     gpui_kit::application()
         .with_assets(AllAssets)

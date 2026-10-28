@@ -6,7 +6,7 @@
 # base (Ubuntu 22.04, glibc 2.35) so it runs on every supported distribution.
 # Dependencies are what the binary links and dlopens (graphics, D-Bus) plus
 # the tools it runs: playerctl for media, dbus-monitor for notifications,
-# stdbuf (coreutils). RPM uses library capabilities, which Fedora and
+# stdbuf (coreutils); pactl (the microphone) is recommended. RPM uses library capabilities, which Fedora and
 # openSUSE both resolve whatever the package is called.
 name: hawaos-companion
 arch: amd64
@@ -64,6 +64,8 @@ overrides:
     recommends:
       - mesa-vulkan-drivers
       - network-manager
+      # pactl: the microphone indicator and mute button
+      - pulseaudio-utils
   rpm:
     depends:
       - libdbus-1.so.3()(64bit)
@@ -77,6 +79,9 @@ overrides:
       - /usr/bin/playerctl
       - /usr/bin/dbus-monitor
       - /usr/bin/stdbuf
+    recommends:
+      # pactl: the microphone indicator and mute button
+      - pulseaudio-utils
 
 rpm:
   group: Applications/System

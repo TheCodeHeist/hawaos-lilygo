@@ -22,6 +22,11 @@ finish-args:
   - --socket=session-bus
   # Bluetooth: setup and the everyday Bluetooth link go through BlueZ.
   - --system-talk-name=org.bluez
+  # Whether the session is locked (the device darkens with it), when the
+  # desktop's screen saver interface doesn't say.
+  - --system-talk-name=org.freedesktop.login1
+  # The microphone's mute state and the device's mute button (pactl).
+  - --socket=pulseaudio
   # Same settings as a non-Flatpak build, and "Start with system".
   - --filesystem=xdg-config/hawaos-companion:create
   - --filesystem=xdg-config/autostart:create

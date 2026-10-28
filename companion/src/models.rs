@@ -22,6 +22,13 @@ pub struct StatsMsg<'a> {
     pub net_down_kbps: u32,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub host_ip: Option<&'a str>,
+    /// While the computer is locked: what the device should do, "off" or
+    /// "aod" (DESIGN.md 10). Absent when unlocked.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lock: Option<&'a str>,
+    /// The default microphone, when there is one.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mic: Option<crate::platform::Mic>,
 }
 
 #[derive(Serialize, Clone, PartialEq, Debug)]
@@ -207,6 +214,10 @@ pub struct SharedDaemonState {
     pub open_url_requested: Option<String>,
     /// A newer release's version, once update_check.rs finds one.
     pub update_available: Option<String>,
+    /// The computer's session is locked (session.rs).
+    pub session_locked: bool,
+    /// The default microphone, if there's a sound server (session.rs).
+    pub mic: Option<crate::platform::Mic>,
     /// Tray "Add device...": show the setup wizard when the window opens.
     pub open_setup_requested: bool,
     pub quit_requested: bool,
@@ -295,6 +306,8 @@ impl SharedDaemonState {
             open_window_requested: false,
             open_url_requested: None,
             update_available: None,
+            session_locked: false,
+            mic: None,
             open_setup_requested: false,
             quit_requested: false,
             weather: None,

@@ -149,7 +149,7 @@ Gesture engine: debounced; **short press fires on release immediately**. Long pr
 | Select long | n/a | **back** | wake only |
 | Chord (both) | open **Control Center** | open **Control Center** | wake only |
 
-- Any press in AOD **wakes and is consumed** (never forwarded to the app).
+- Any press in AOD **wakes and is consumed** (never forwarded to the app). Exceptions: while a call uses the computer's microphone, Select short mutes or unmutes it; otherwise, while a timer or stopwatch runs, Select short toggles it. A press on a dark screen only wakes.
 - App interface additions (in `core/App.h`):
 
 ```cpp
@@ -163,7 +163,7 @@ virtual bool wantsDouble(Button b) const { return false; } // opt in to Press::D
 Wireframes are approximate (320x170); dimensions are starting values.
 
 ### 9.1 Status bar (22 px, all screens except Boot, AOD, Media)
-Left: screen title (caption, `textDim`). Right: connection icon (`usb` / `wifi` / `wifi-off`), `bluetooth` if active, `bell` if unread notifications. 20 px icons, 8 px gaps.
+Left: screen title (caption, `textDim`). Right: connection icon (`usb` / `wifi` / `wifi-off`), `bluetooth` if active, `bell` if unread notifications, and during a call the computer's microphone (`mic` in the accent, `mic-off` in `err` when muted). 20 px icons, 8 px gaps.
 
 ### 9.2 Launcher (Redmi-style menu, horizontal carousel)
 ```
@@ -203,7 +203,7 @@ Always dark. Background: the **tinted gradient** from the companion (`bg_top` to
 - Progress is **interpolated locally** (section 11); redraw the bar once per second.
 
 ### 9.7 Control Center (opened by chord, full-screen 2x2 tiles)
-Tiles: **Brightness** (Select cycles 20/40/60/80/100%), **Theme** (`sun` / `moon`, Select toggles), **Connection** (shows USB/WiFi state, Select = reconnect), **AOD** (Select = enter AOD now). Next moves focus, Select long or chord again closes.
+Tiles: **Brightness** (Select cycles 20/40/60/80/100%), **Theme** (`sun` / `moon`, Select toggles), **Connection** (shows USB/WiFi state, Select = reconnect), **Microphone** (the computer's default microphone: On / Muted / No mic, and whether a call is using it; Select = mute or unmute). Next moves focus, Select long or chord again closes.
 
 ### 9.8 On-device Settings (minimal, everything else is in the companion)
 Only: WiFi setup/reset, brightness, theme, AOD timeout, **Set Up Again** (back to 9.9), reboot, about/version. Everything else is configured from the Rust companion and pushed to the device (section 11.3).
@@ -248,6 +248,8 @@ Concept: after an idle timeout the UI dims into a low-power ambient mode. When m
 - **Animation:** one value `t` (0 to 1) animated with `lv_anim`, 450 ms ease-out; each frame sets the background gradient colors via `lv_color_mix(from, to, t)`. Content (art, text) appears on the last frame or with a short opacity step on small objects only. Track changes tween from the previous tint to the new tint with the same function. Exit: 180 ms back to the normal UI.
 - **Power:** AOD is always dark regardless of theme. It is an LCD, so black does not save power and burn-in is not a concern. Savings come from **backlight PWM at about 15 to 25%**, UI timer at about **5 Hz**, and 1 Hz progress updates. Do not use light sleep (it would drop WiFi/USB). **Screen off:** `aod_off_min` (companion: Behavior > Screen off after; 0 = never, the default, or 5/15/30/60) turns the backlight fully off after that long in AOD, and stops drawing. A running timer or stopwatch keeps it lit and restarts the count. A notification lights it again (and restarts the count); a button press on the dark screen wakes the device fully, so it can't toggle a timer unseen.
 
+**Following the computer's lock.** The companion reports while the computer's session is locked (`lock` in `stats`, 11.3), with the user's choice (companion: Behavior > When the computer locks): **Screen off** (the default) enters AOD and turns the backlight off at once, **Always-on** enters AOD, **Nothing** sends nothing. Unlocking wakes the device fully. While locked with Screen off, AOD goes dark immediately whenever it's entered (after a button press, say); a running timer or stopwatch still keeps it lit, and a notification still lights it for its alert. If the companion goes quiet (the computer sleeps after locking), the device stays as it was rather than waking.
+
 ## 11. Companion contract (media, config)
 
 The transport is an open decision (see section 14). Design a `Transport` abstraction so the same messages can travel over **WiFi (UDP for small messages, HTTP or TCP for bulk)** and optionally **USB CDC serial** (length-prefixed frames `[u8 type][u32 len][payload]`). For UDP, one JSON message per datagram, under about 1 KB. The device learns the companion's address from incoming datagrams.
@@ -269,7 +271,9 @@ The transport is an open decision (see section 14). Design a `Transport` abstrac
 - Show a placeholder (Lucide `music` on `surface2`) until art arrives or when there is none.
 
 ### 11.3 Commands and config
-Device to companion: `{"type":"cmd","cmd":"play_pause|next|prev|seek","pos_ms":0}`.
+Device to companion: `{"type":"cmd","cmd":"play_pause|next|prev|seek|mic_toggle","pos_ms":0}`.
+
+`stats` (companion to device, 1 Hz) carries the computer's state besides the numbers: `"lock":"off|aod"` only while the session is locked (10), and `"mic":{"in_use":true,"muted":false}` when there is a default microphone (`in_use`: an app is recording from it). The device drops the microphone after 5 s without stats. Linux reads the lock from the screen saver interface on the session bus (`org.freedesktop.ScreenSaver`, `org.gnome.ScreenSaver`), then logind's `LockedHint`; the microphone from `pactl` (PipeWire or PulseAudio), counting only recording streams on real inputs, not monitors. Windows: the input desktop (the lock screen's can't be opened), and Core Audio's default communications capture device (its endpoint mute; an active capture session means in use).
 Companion to device (persisted in `Preferences`, acknowledged with `config_ack`):
 ```json
 {"type":"config","v":3,"theme":"dark|light|auto","accent":"cyan","brightness":60,

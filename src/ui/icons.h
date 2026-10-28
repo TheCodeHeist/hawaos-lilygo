@@ -31,6 +31,8 @@ LV_FONT_DECLARE(font_lucide_48);
 #define ICON_BELL                  "\xee\x81\x99" // bell (U+E059)
 #define ICON_BELL_OFF              "\xee\x81\x9a" // bell-off (U+E05A)
 #define ICON_MUSIC                 "\xee\x84\xa2" // music (U+E122)
+#define ICON_MIC                   "\xee\x84\x98" // mic (U+E118)
+#define ICON_MIC_OFF               "\xee\x84\x99" // mic-off (U+E119)
 #define ICON_PLAY                  "\xee\x84\xbc" // play (U+E13C)
 #define ICON_PAUSE                 "\xee\x84\xae" // pause (U+E12E)
 #define ICON_SKIP_BACK             "\xee\x85\x9f" // skip-back (U+E15F)

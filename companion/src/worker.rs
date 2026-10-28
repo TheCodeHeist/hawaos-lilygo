@@ -333,7 +333,7 @@ pub fn spawn_daemon_worker(state: SharedState, art_cache: SharedArtCache) {
                     }
                 }
 
-                let (target_ip, stream_usb, usb_port, token, use_ble, glyphs) = if let Ok(mut g) = state.lock() {
+                let (target_ip, stream_usb, usb_port, token, use_ble, glyphs, lock, mic) = if let Ok(mut g) = state.lock() {
                     g.cpu_pct = cpu_pct;
                     g.ram_pct = ram_pct;
                     g.used_ram_gb = (used_mem as f32) / (1024.0 * 1024.0 * 1024.0);
@@ -354,9 +354,11 @@ pub fn spawn_daemon_worker(state: SharedState, art_cache: SharedArtCache) {
                         g.config.device_token.clone(),
                         g.config.use_ble,
                         g.device_glyphs,
+                        crate::session::lock_field(&g),
+                        g.mic,
                     )
                 } else {
-                    (DEFAULT_DEVICE_IP.to_string(), false, String::new(), String::new(), false, false)
+                    (DEFAULT_DEVICE_IP.to_string(), false, String::new(), String::new(), false, false, None, None)
                 };
 
                 let clean_ip = sanitize_ip_str(&target_ip);
@@ -376,6 +378,8 @@ pub fn spawn_daemon_worker(state: SharedState, art_cache: SharedArtCache) {
                     } else {
                         Some(&local_ip_str)
                     },
+                    lock,
+                    mic,
                 };
 
                 if let Ok(json_str) = serde_json::to_string(&stats_msg) {
