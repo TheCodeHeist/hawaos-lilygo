@@ -12,10 +12,10 @@ on:
       - "companion/**"
       - "assets/**"
       - "packaging/linux/**"
-      - "install.sh"
       - "packaging/flatpak/*.desktop"
       - "packaging/flatpak/*.metainfo.xml"
       - "packaging/flatpak/*.png"
+      - "install.sh"
       - ".github/workflows/linux.yml"
   release:
     types: [published]
@@ -87,7 +87,7 @@ jobs:
   # Installs the package the way users do, through install.sh (which picks
   # the .deb or .rpm, checks its checksum and runs the package manager; that
   # fails if a dependency doesn't resolve), then checks every library the
-  # binary links or loads is there.
+  # binary links or loads is there, then updates through install.sh again.
   install:
     needs: build
     runs-on: ubuntu-latest
@@ -96,11 +96,11 @@ jobs:
       matrix:
         include:
           - image: ubuntu:22.04
-            tools: apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y curl
+            tools: apt-get update && apt-get install -y curl
           - image: ubuntu:24.04
-            tools: apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y curl
+            tools: apt-get update && apt-get install -y curl
           - image: debian:12
-            tools: apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y curl
+            tools: apt-get update && apt-get install -y curl
           - image: fedora:latest
             tools: dnf install -y curl
           - image: opensuse/tumbleweed
@@ -119,7 +119,7 @@ jobs:
       - name: Tools
         run: ${{ matrix.tools }}
 
-      - name: Install
+      - name: Install (install.sh)
         run: HAWAOS_RELEASE_DIR=dist bash install.sh
 
       - name: Check
@@ -139,118 +139,6 @@ jobs:
 
       - name: Update (install.sh again)
         run: HAWAOS_RELEASE_DIR=dist bash install.sh
-
-  release:
-    types: [published]
-  workflow_dispatch:
-
-permissions:
-  contents: write # attaching the packages to a release
-
-env:
-  NFPM_VERSION: 2.48.0
-  NFPM_SHA256: 6d7f9a28b2f397934403950fcbba83f598b08d02edbe79a0815b3b4897341750
-
-jobs:
-  build:
-    runs-on: ubuntu-latest
-    container: ubuntu:22.04
-    steps:
-      - name: Build tools and libraries
-        env:
-          DEBIAN_FRONTEND: noninteractive
-        run: |
-          apt-get update
-          apt-get install -y --no-install-recommends \
-            ca-certificates curl git build-essential pkg-config \
-            libdbus-1-dev libxcb1-dev libxkbcommon-dev libxkbcommon-x11-dev \
-            libwayland-dev libvulkan-dev libfreetype-dev libfontconfig-dev
-
-      - uses: actions/checkout@v4
-
-      - name: Rust
-        run: |
-          curl -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
-          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
-
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: companion
-
-      - name: Test
-        working-directory: companion
-        run: cargo test --locked
-
-      - name: Build
-        working-directory: companion
-        run: |
-          cargo build --release --locked
-          # The oldest glibc it asks for decides where it runs.
-          objdump -T target/release/hawaos-companion | grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -1
-
-      - name: Packages
-        run: |
-          curl -fsSL -o nfpm.tar.gz \
-            "https://github.com/goreleaser/nfpm/releases/download/v$NFPM_VERSION/nfpm_${NFPM_VERSION}_Linux_x86_64.tar.gz"
-          echo "$NFPM_SHA256  nfpm.tar.gz" | sha256sum -c -
-          tar xzf nfpm.tar.gz nfpm
-          VERSION=$(sed -n 's/^version = "\(.*\)"/\1/p' companion/Cargo.toml | head -1)
-          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
-          mkdir -p dist
-          VERSION=$VERSION ./nfpm pkg -f packaging/linux/nfpm.yaml -p deb -t dist/
-          VERSION=$VERSION ./nfpm pkg -f packaging/linux/nfpm.yaml -p rpm -t dist/
-          (cd dist && sha256sum *.deb *.rpm > SHA256SUMS-linux)
-          ls -l dist
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: hawaos-companion-linux-packages
-          path: dist/*
-
-  # Installs the package with each distribution's own package manager, which
-  # fails if a dependency doesn't resolve, then checks every library the
-  # binary links or loads is there.
-  install:
-    needs: build
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - image: ubuntu:22.04
-            install: apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y ./dist/*.deb
-          - image: ubuntu:24.04
-            install: apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y ./dist/*.deb
-          - image: debian:12
-            install: apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y ./dist/*.deb
-          - image: fedora:latest
-            install: dnf install -y ./dist/*.rpm
-          - image: opensuse/tumbleweed
-            install: zypper --non-interactive install --allow-unsigned-rpm ./dist/*.rpm
-    container: ${{ matrix.image }}
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          name: hawaos-companion-linux-packages
-          path: dist
-
-      - name: Install
-        run: ${{ matrix.install }}
-
-      - name: Check
-        run: |
-          set -e
-          test -x /usr/bin/hawaos-companion
-          test -f /usr/lib/udev/rules.d/70-hawaos.rules
-          if ldd /usr/bin/hawaos-companion | grep 'not found'; then exit 1; fi
-          # Loaded at run time rather than linked.
-          for lib in libvulkan.so.1 libwayland-client.so.0 libwayland-egl.so.1 libEGL.so.1; do
-            ldconfig -p | grep -q "$lib" || { echo "missing $lib"; exit 1; }
-          done
-          for tool in playerctl dbus-monitor stdbuf; do
-            command -v "$tool" >/dev/null || { echo "missing $tool"; exit 1; }
-          done
-          echo "OK on ${{ matrix.image }}"
 
   release:
     if: github.event_name == 'release'
