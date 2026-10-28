@@ -75,6 +75,9 @@ pub fn how_to_update() -> &'static str {
         "Download and run the new installer from the release page."
     } else if std::env::var_os("FLATPAK_ID").is_some() {
         "Run the install command again, or install the new .flatpak from the release page."
+    } else if std::env::current_exe().is_ok_and(|p| p.starts_with("/usr/")) {
+        // The .deb or .rpm.
+        "Run the install command again, or install the new package from the release page."
     } else {
         "See the release page for what's new."
     }
