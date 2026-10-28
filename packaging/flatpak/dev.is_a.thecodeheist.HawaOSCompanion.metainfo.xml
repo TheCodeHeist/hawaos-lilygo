@@ -49,6 +49,11 @@
   <content_rating type="oars-1.1"/>
 
   <releases>
+    <release version="1.0.0" date="2026-10-29">
+      <description>
+        <p>Synced lyrics on the device's Media screen and always-on display, from LRCLIB (you can turn them off). The device follows your computer's lock: its screen turns off, shows the always-on display or stays as it is. A microphone icon shows while an app records you, and the device can mute and unmute it. The companion is also available as .deb and .rpm packages and as an AppImage.</p>
+      </description>
+    </release>
     <release version="0.9.0" date="2026-10-28">
       <description>
         <p>The companion now runs on Windows 10 and 11 too, with a one-line installer. Opening the companion while it's already running brings up its window instead of starting a second copy. The companion tells you when a newer HawaOS release is out (you can turn this off).</p>
