@@ -1,0 +1,6 @@
+#!/bin/sh
+# Starts the companion. The bundled playerctl and dbus-monitor come last on
+# PATH, so the system's own are used when it has them.
+HERE="$(dirname "$(readlink -f "$0")")"
+export PATH="$PATH:$HERE/usr/libexec/hawaos"
+exec "$HERE/usr/bin/hawaos-companion" "$@"

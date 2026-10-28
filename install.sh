@@ -117,9 +117,9 @@ fi
 chmod 644 "$tmp/$file"
 
 if [ "$want" = native ]; then
-  sudo=""
-  [ "$(id -u)" -eq 0 ] || sudo="sudo"
-  say "Installing with $pm (this asks for your password)"
+  sudo="" note=""
+  [ "$(id -u)" -eq 0 ] || { sudo="sudo"; note=" (sudo asks for your password)"; }
+  say "Installing with $pm$note"
   case "$pm" in
     apt) $sudo apt-get install -y "$tmp/$file" ;;
     dnf) $sudo dnf install -y "$tmp/$file" ;;

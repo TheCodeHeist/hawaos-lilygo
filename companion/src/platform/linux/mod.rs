@@ -104,9 +104,12 @@ pub fn set_autostart_installed(enable: bool) -> std::io::Result<()> {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
         }
-        // Inside a Flatpak the binary's path only exists in the sandbox.
+        // Inside a Flatpak the binary's path only exists in the sandbox, and
+        // an AppImage runs from a temporary mount: start the file itself.
+        let appimage = env::var("APPIMAGE").ok().filter(|p| !p.is_empty());
         let exec = match env::var("FLATPAK_ID") {
             Ok(id) if !id.is_empty() => format!("flatpak run {id}"),
+            _ if appimage.is_some() => format!("\"{}\"", appimage.unwrap_or_default()),
             _ => format!(
                 "\"{}\"",
                 env::current_exe()

@@ -1,0 +1,5 @@
+#!/bin/sh
+# The bundled playerctl, with its library. LD_LIBRARY_PATH is set for it alone,
+# not for the companion, which opens the browser and other host programs.
+HERE="$(dirname "$(readlink -f "$0")")"
+LD_LIBRARY_PATH="$HERE/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" exec "$HERE/bin/playerctl" "$@"

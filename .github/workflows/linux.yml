@@ -1,8 +1,8 @@
-# The Linux companion as .deb and .rpm: built on Ubuntu 22.04 (glibc 2.35, so
+# The Linux companion as .deb, .rpm and AppImage: built on Ubuntu 22.04 (glibc 2.35, so
 # the binary runs on every current distribution), installed on several
 # distributions to check the dependencies resolve, and attached to each
 # published release (tools/release.sh publishes the Flatpak; this adds the
-# native packages).
+# rest).
 name: Linux packages
 
 on:
@@ -41,7 +41,8 @@ jobs:
           apt-get install -y --no-install-recommends \
             ca-certificates curl git build-essential pkg-config \
             libdbus-1-dev libxcb1-dev libxkbcommon-dev libxkbcommon-x11-dev \
-            libwayland-dev libvulkan-dev libfreetype-dev libfontconfig-dev
+            libwayland-dev libvulkan-dev libfreetype-dev libfontconfig-dev \
+            playerctl dbus file
 
       - uses: actions/checkout@v4
 
@@ -76,8 +77,12 @@ jobs:
           mkdir -p dist
           VERSION=$VERSION ./nfpm pkg -f packaging/linux/nfpm.yaml -p deb -t dist/
           VERSION=$VERSION ./nfpm pkg -f packaging/linux/nfpm.yaml -p rpm -t dist/
-          (cd dist && sha256sum *.deb *.rpm > SHA256SUMS-linux)
           ls -l dist
+
+      - name: AppImage
+        run: |
+          packaging/linux/build-appimage.sh "$VERSION" dist/
+          (cd dist && sha256sum *.deb *.rpm *.AppImage > SHA256SUMS-linux)
 
       - uses: actions/upload-artifact@v4
         with:
@@ -140,9 +145,40 @@ jobs:
       - name: Update (install.sh again)
         run: HAWAOS_RELEASE_DIR=dist bash install.sh
 
+  # Unpacks the AppImage on a stock Ubuntu runner and checks the companion's
+  # libraries resolve and the bundled tools run.
+  appimage:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: hawaos-companion-linux-packages
+          path: dist
+
+      - name: Check
+        run: |
+          set -e
+          chmod +x dist/*.AppImage
+          dist/*.AppImage --appimage-extract >/dev/null
+          cd squashfs-root
+          test -x AppRun
+          test -f dev.is_a.thecodeheist.HawaOSCompanion.desktop
+          sudo apt-get update && sudo apt-get install -y libxkbcommon-x11-0
+          if ldd usr/bin/hawaos-companion | grep 'not found'; then exit 1; fi
+          usr/libexec/hawaos/playerctl --version
+          usr/libexec/hawaos/dbus-monitor --help > help.txt 2>&1 || true
+          grep -q 'dbus-monitor' help.txt
+          # The update information AppImageUpdate reads. (No pipe into grep -q:
+          # the runner's shell has pipefail, and strings would get SIGPIPE.)
+          strings ../dist/*.AppImage > strings.txt
+          grep -q 'gh-releases-zsync|TheCodeHeist|hawaos-lilygo' strings.txt
+          test -f ../dist/*.AppImage.zsync
+          echo "AppImage OK"
+
   release:
     if: github.event_name == 'release'
-    needs: install
+    needs: [install, appimage]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
@@ -155,5 +191,5 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           cd dist
-          gh release upload "${{ github.event.release.tag_name }}" *.deb *.rpm SHA256SUMS-linux \
+          gh release upload "${{ github.event.release.tag_name }}" *.deb *.rpm *.AppImage *.zsync SHA256SUMS-linux \
             --clobber --repo "${{ github.repository }}"
