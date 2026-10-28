@@ -1,0 +1,83 @@
+# The companion as .deb and .rpm, built by .github/workflows/linux.yml:
+#
+#   VERSION=0.9.0 nfpm pkg -f packaging/linux/nfpm.yaml -p deb -t dist/
+#
+# Paths are relative to the repo root. The binary should come from an old
+# base (Ubuntu 22.04, glibc 2.35) so it runs on every supported distribution.
+# Dependencies are what the binary links and dlopens (graphics, D-Bus) plus
+# the tools it runs: playerctl for media, dbus-monitor for notifications,
+# stdbuf (coreutils). RPM uses library capabilities, which Fedora and
+# openSUSE both resolve whatever the package is called.
+name: hawaos-companion
+arch: amd64
+platform: linux
+version: ${VERSION}
+version_schema: semver
+release: 1
+section: utils
+priority: optional
+maintainer: Md Riyasat Hossain <https://github.com/TheCodeHeist>
+vendor: TheCodeHeist
+homepage: https://github.com/TheCodeHeist/hawaos-lilygo
+license: MIT
+description: |-
+  Desktop companion for the HawaOS desk display
+  Streams system stats, music with album art, weather and notifications to a
+  LilyGo T-Display-S3 running HawaOS, over Wi-Fi, Bluetooth or USB, and sets
+  the board up and updates its firmware.
+
+contents:
+  - src: companion/target/release/hawaos-companion
+    dst: /usr/bin/hawaos-companion
+    file_info: { mode: 0755 }
+  - src: packaging/flatpak/dev.is_a.thecodeheist.HawaOSCompanion.desktop
+    dst: /usr/share/applications/dev.is_a.thecodeheist.HawaOSCompanion.desktop
+  - src: packaging/flatpak/dev.is_a.thecodeheist.HawaOSCompanion.metainfo.xml
+    dst: /usr/share/metainfo/dev.is_a.thecodeheist.HawaOSCompanion.metainfo.xml
+  - src: packaging/flatpak/dev.is_a.thecodeheist.HawaOSCompanion.png
+    dst: /usr/share/icons/hicolor/256x256/apps/dev.is_a.thecodeheist.HawaOSCompanion.png
+  - src: assets/logo.svg
+    dst: /usr/share/icons/hicolor/scalable/apps/dev.is_a.thecodeheist.HawaOSCompanion.svg
+  - src: packaging/linux/70-hawaos.rules
+    dst: /usr/lib/udev/rules.d/70-hawaos.rules
+
+scripts:
+  postinstall: packaging/linux/postinstall.sh
+
+overrides:
+  deb:
+    depends:
+      - libc6 (>= 2.35)
+      - libgcc-s1
+      - libdbus-1-3
+      - libxcb1
+      - libxkbcommon0
+      - libxkbcommon-x11-0
+      - libvulkan1
+      - libwayland-client0
+      - libwayland-egl1
+      - libegl1
+      - playerctl
+      # dbus-monitor moved from dbus to dbus-bin in Debian 12 / Ubuntu 23.04.
+      - dbus-bin | dbus
+      - coreutils
+    recommends:
+      - mesa-vulkan-drivers
+      - network-manager
+  rpm:
+    depends:
+      - libdbus-1.so.3()(64bit)
+      - libxcb.so.1()(64bit)
+      - libxkbcommon.so.0()(64bit)
+      - libxkbcommon-x11.so.0()(64bit)
+      - libvulkan.so.1()(64bit)
+      - libwayland-client.so.0()(64bit)
+      - libwayland-egl.so.1()(64bit)
+      - libEGL.so.1()(64bit)
+      - /usr/bin/playerctl
+      - /usr/bin/dbus-monitor
+      - /usr/bin/stdbuf
+
+rpm:
+  group: Applications/System
+  summary: Desktop companion for the HawaOS desk display

@@ -1,0 +1,4 @@
+# HawaOS: lets the logged-in user open the LilyGo T-Display-S3's USB serial
+# port (ESP32-S3 native USB, 303a:1001) for setup and the USB link, without
+# joining the dialout group. Installed by the .deb and .rpm packages.
+SUBSYSTEM=="tty", ATTRS{idVendor}=="303a", ATTRS{idProduct}=="1001", TAG+="uaccess"
