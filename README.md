@@ -28,7 +28,7 @@
 <table>
   <tr>
     <td width="50%"><img src="docs/media/screen-home.png" alt="Home"><br><b>Home</b>: big clock, CPU and RAM at a glance, the current track</td>
-    <td width="50%"><img src="docs/media/screen-media.png" alt="Now Playing"><br><b>Now Playing</b>: album-art tinted background, transport controls</td>
+    <td width="50%"><img src="docs/media/screen-media.png" alt="Now Playing"><br><b>Now Playing</b>: album-art tinted background, transport controls, and the line being sung when the song has synced lyrics</td>
   </tr>
   <tr>
     <td><img src="docs/media/screen-weather.png" alt="Weather"><br><b>Weather</b>: current conditions and a 3-day forecast</td>
@@ -42,7 +42,9 @@
     <td><img src="docs/media/screen-launcher.png" alt="Launcher"><br><b>Launcher</b>: carousel of every app</td>
     <td valign="top"><br><b>Also on board</b><br>
       Always-on display that dims to a clock and shifts to the album's tint while music plays, and can turn the screen fully off after a while<br>
-      Control Center (press both buttons): brightness, theme, Wi-Fi, AOD<br>
+      Follows your computer: locking it turns the screen off (or dims it), unlocking wakes it<br>
+      During calls, shows whether your microphone is live or muted, and mutes it with a press<br>
+      Control Center (press both buttons): brightness, theme, Wi-Fi, microphone<br>
       On-device Settings: accent, theme, orientation, AOD timeout, clock format
     </td>
   </tr>
@@ -340,7 +342,7 @@ The companion looks for the device by name (`HawaOS-XXXX`) every few seconds; th
 
 | | Protected |
 |---|---|
-| Stats, media, weather, notifications, clock | encrypted; can't be read or faked |
+| Stats, media, lyrics, weather, notifications, clock, lock and microphone state | encrypted; can't be read or faked |
 | Settings and Wi-Fi changes | encrypted; can't be read, faked or replayed, even after a reboot |
 | Album art | encrypted and tied to its track, so it can't be read or swapped |
 | Button presses and replies from the device | encrypted; stale or replayed ones are rejected |
@@ -354,7 +356,7 @@ Every message carries a counter, so a captured one can't be sent again, and the 
 - USB is trusted as it is: whoever holds the cable holds the device, and setup over USB sends the Wi-Fi password over the cable unencrypted.
 - A device set up before encryption existed has no secret and keeps talking in plain text until you run **Add device** again.
 
-**Outside services.** The companion asks [Open-Meteo](https://open-meteo.com) for weather and, with automatic location on, [ip-api.com](https://ip-api.com) for your rough location; pick a city to turn that off. Twice a day it asks GitHub for the latest HawaOS release, to tell you when there's a new one (only the request itself, nothing about you or the device); turn that off in **Background > Check for updates**. The device itself only talks to the companion and an NTP server.
+**Outside services.** The companion asks [Open-Meteo](https://open-meteo.com) for weather and, with automatic location on, [ip-api.com](https://ip-api.com) for your rough location; pick a city to turn that off. Twice a day it asks GitHub for the latest HawaOS release, to tell you when there's a new one (only the request itself, nothing about you or the device); turn that off in **Background > Check for updates**. For synced lyrics it asks [LRCLIB](https://lrclib.net) for the playing song, sending its title, artist, album and length; turn that off in **Device > Behavior > Synced lyrics**. The device itself only talks to the companion and an NTP server.
 
 The full protocol, key derivation and replay rules are in [`DESIGN.md`](DESIGN.md) §11.4–11.6.
 
@@ -374,6 +376,7 @@ The full protocol, key derivation and replay rules are in [`DESIGN.md`](DESIGN.m
 - [x] Titles and notifications in any script (CJK, Arabic, Hebrew, Bengali, emoji), drawn by the companion
 - [x] Windows companion: media, album art, tray, Bluetooth and USB setup (0.9.0)
 - [x] Linux `.deb`, `.rpm` and AppImage, with `install.sh` choosing for your distribution
+- [x] Synced lyrics, screen that follows the computer's lock, microphone mute indicator and button
 - [ ] Notification mirroring on Windows (needs a signed app)
 
 ## License

@@ -116,6 +116,12 @@ struct DataSnapshot {
   uint32_t mediaBgBottom = 0x05090B; // Pre-darkened companion tint bottom
   bool mediaInkLight = true;         // true = light ink, false = dark ink
 
+  // Synced lyrics (DESIGN.md 9.6): the companion sends the current line as
+  // the song reaches it, and repeats it every 5 s.
+  bool lyricOn = false; // this song has synced lyrics
+  char lyric[96] = {0}; // the current line ("" between lines)
+  uint32_t lyricRxMs = 0;
+
   // Weather state from companion
   WeatherSnapshot weather{};
 
@@ -167,6 +173,10 @@ void updateMedia(MediaPlayState state, const char *title, const char *artist,
                  const char *artHash, uint32_t bgTop, uint32_t bgBottom,
                  bool inkLight);
 void setAlbumArtReady(const char *artHash, bool ready);
+void updateLyric(bool on, const char *line);
+// The song's lyrics are on and the companion still sends them (it repeats
+// every 5 s; after 12 s without, they're dropped).
+bool lyricShown(const DataSnapshot &d, uint32_t nowMs);
 uint16_t *albumArtBuffer(); // 128x128 RGB565 buffer in PSRAM
 
 void updateWeather(const WeatherSnapshot &ws);

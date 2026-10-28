@@ -4,6 +4,7 @@
 
 mod config;
 mod glyphs;
+mod lyrics;
 mod media;
 mod models;
 mod notifications;

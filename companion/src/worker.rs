@@ -41,6 +41,7 @@ pub fn spawn_daemon_worker(state: SharedState, art_cache: SharedArtCache) {
         let mut last_probe = Instant::now();
         let mut prev_media: Option<MediaMsg> = None;
         let mut prev_weather: Option<WeatherMsg> = None;
+        let mut lyrics = LyricFeed::default();
         let mut rx_buf = [0u8; 1460];
 
         trigger_weather_update(&state);
@@ -279,6 +280,11 @@ pub fn spawn_daemon_worker(state: SharedState, art_cache: SharedArtCache) {
                 }
             }
 
+            // 3. Synced lyrics: the line the song is at, when it changes.
+            if let Some(json_str) = lyrics.message(&state) {
+                send_everywhere(&udp, &state, &json_str);
+            }
+
             if last_stats_tick.elapsed() >= Duration::from_secs(1) {
                 if let Ok(mut g) = state.lock() {
                     g.tick_clock();
@@ -326,6 +332,8 @@ pub fn spawn_daemon_worker(state: SharedState, art_cache: SharedArtCache) {
                     .as_secs();
 
                 let (cur_media, cur_art_img, cur_player) = query_media(&art_cache);
+                lyrics.media = cur_media.clone();
+                lyrics.media_at = Instant::now();
                 if let Some(e) = crate::media::take_art_error() {
                     eprintln!("[Daemon] {e}");
                     if let Ok(mut g) = state.lock() {
@@ -575,6 +583,76 @@ fn send_udp(udp: &UdpSocket, addr: SocketAddr, json: &str, token: &str, ble: boo
 
 /// Names the glyph pack a message's text needs (`gl`, `gl_len`): the device
 /// fetches it like album art.
+/// Sends a message over the device's current links (Wi-Fi or Bluetooth,
+/// and USB when streaming over it).
+fn send_everywhere(udp: &UdpSocket, state: &SharedState, json: &str) {
+    let Some(cfg) = state.lock().ok().map(|g| g.config.clone()) else { return };
+    let target: Option<SocketAddr> = format!("{}:{}", sanitize_ip_str(&cfg.target_ip), UDP_PORT).parse().ok();
+    if let Some(addr) = target {
+        let _ = send_udp(udp, addr, json, &cfg.device_token, cfg.use_ble);
+    }
+    if cfg.stream_via_usb {
+        let _ = send_usb_line(&cfg.usb_port, json, state);
+    }
+}
+
+/// Follows the playing song's position through its synced lyrics (lyrics.rs)
+/// and says when the device should show another line.
+struct LyricFeed {
+    library: crate::lyrics::Library,
+    /// The latest media poll, and when it was taken: the position moves on
+    /// from there while playing.
+    media: MediaMsg,
+    media_at: Instant,
+    /// What the device was last told, and when.
+    sent: Option<(bool, String)>,
+    sent_at: Instant,
+}
+
+impl Default for LyricFeed {
+    fn default() -> Self {
+        Self {
+            library: Default::default(),
+            media: MediaMsg::default(),
+            media_at: Instant::now(),
+            sent: None,
+            sent_at: Instant::now(),
+        }
+    }
+}
+
+impl LyricFeed {
+    /// Shown a little early: the line travels and is drawn before it's heard.
+    const LEAD_MS: u32 = 200;
+
+    /// The `lyric` message to send now, if any: when the line changes, and
+    /// every 5 s while a song has lyrics (the device drops them after 12 s).
+    fn message(&mut self, state: &SharedState) -> Option<String> {
+        let (enabled, glyphs) = state.lock().ok().map(|g| (g.config.lyrics, g.device_glyphs))?;
+        let m = &self.media;
+        let playing = m.state == "playing";
+        let found = (enabled && (playing || m.state == "paused"))
+            .then(|| self.library.get(&m.title, &m.artist, &m.album, m.dur_ms))
+            .flatten();
+        let want = match found {
+            Some(lyrics) => {
+                let moved = if playing { self.media_at.elapsed().as_millis() as u32 } else { 0 };
+                (true, lyrics.line_at(m.pos_ms.saturating_add(moved).saturating_add(Self::LEAD_MS)).to_string())
+            }
+            None => (false, String::new()),
+        };
+        let repeat = want.0 && self.sent_at.elapsed() >= Duration::from_secs(5);
+        if self.sent.as_ref() == Some(&want) && !repeat {
+            return None;
+        }
+        self.sent_at = Instant::now();
+        self.sent = Some(want.clone());
+        let text = crate::glyphs::for_device(&[(&want.1, 95)], glyphs);
+        let msg = serde_json::json!({"type": "lyric", "on": want.0, "line": text.fields[0]});
+        Some(with_glyphs(msg, &text).to_string())
+    }
+}
+
 fn with_glyphs(mut msg: serde_json::Value, text: &crate::glyphs::DeviceText) -> serde_json::Value {
     if let Some((hash, len)) = &text.pack {
         msg["gl"] = serde_json::json!(hash);

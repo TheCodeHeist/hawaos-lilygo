@@ -174,6 +174,17 @@ void MediaApp::onEnter(lv_obj_t *root) {
                               LV_PART_MAIN);
   lv_obj_set_pos(m_nextIcon, 264, 120);
 
+  // Synced lyrics: the current line, up to four lines, where the times and
+  // controls are (the progress bar stays).
+  m_lyricLbl = lv_label_create(root);
+  lv_obj_set_style_text_font(m_lyricLbl, Theme::fontBodySb(), LV_PART_MAIN);
+  lv_obj_set_style_text_line_space(m_lyricLbl, -2, LV_PART_MAIN);
+  lv_label_set_long_mode(m_lyricLbl, LV_LABEL_LONG_DOT);
+  lv_obj_set_size(m_lyricLbl, 164, 68);
+  lv_obj_set_pos(m_lyricLbl, 144, 99);
+  lv_label_set_text(m_lyricLbl, "");
+  lv_obj_add_flag(m_lyricLbl, LV_OBJ_FLAG_HIDDEN);
+
   m_lastProgressSec = 0xFFFFFFFF;
   const DataSnapshot snap = DataStore::getSnapshot();
   refreshMedia(snap);
@@ -195,13 +206,16 @@ void MediaApp::onExit() {
   m_playBtnCircle = nullptr;
   m_playIconLbl = nullptr;
   m_nextIcon = nullptr;
+  m_lyricLbl = nullptr;
 }
 
 void MediaApp::onTick(uint32_t nowMs) {
   const uint32_t sec = nowMs / 1000;
   if (sec != m_lastProgressSec) {
     m_lastProgressSec = sec;
-    refreshProgress(DataStore::getSnapshot());
+    const DataSnapshot d = DataStore::getSnapshot();
+    refreshProgress(d);
+    refreshLyric(d); // lyrics the companion stopped sending go away
   }
 }
 
@@ -229,6 +243,41 @@ bool MediaApp::onButton(Button b, Press p) {
 void MediaApp::onData(const DataSnapshot &d) {
   refreshMedia(d);
   refreshProgress(d);
+  refreshLyric(d);
+}
+
+void MediaApp::refreshLyric(const DataSnapshot &d) {
+  if (m_lyricLbl == nullptr)
+    return;
+  const bool shown = DataStore::lyricShown(d, millis());
+  if (shown) {
+    // Between lines (an intro, a solo) a quiet marker keeps the place.
+    setLabelTextIfChanged(m_lyricLbl, d.lyric[0] ? d.lyric : "\xe2\x80\xa2 \xe2\x80\xa2 \xe2\x80\xa2");
+    // Long lines get the smaller font so they fit whole.
+    lv_obj_set_style_text_font(m_lyricLbl,
+                               strlen(d.lyric) > 56 ? Theme::fontCaption()
+                                                    : Theme::fontBodySb(),
+                               LV_PART_MAIN);
+    lv_obj_set_style_text_color(m_lyricLbl, lv_color_hex(m_lyricColor),
+                                LV_PART_MAIN);
+    lv_obj_set_style_text_opa(m_lyricLbl, d.lyric[0] ? LV_OPA_COVER : LV_OPA_50,
+                              LV_PART_MAIN);
+  }
+  const bool wasShown = !lv_obj_has_flag(m_lyricLbl, LV_OBJ_FLAG_HIDDEN);
+  if (shown == wasShown)
+    return;
+  lv_obj_t *controls[] = {m_prevIcon, m_playBtnCircle, m_nextIcon, m_posLbl,
+                          m_durLbl};
+  for (lv_obj_t *o : controls) {
+    if (shown)
+      lv_obj_add_flag(o, LV_OBJ_FLAG_HIDDEN);
+    else
+      lv_obj_clear_flag(o, LV_OBJ_FLAG_HIDDEN);
+  }
+  if (shown)
+    lv_obj_clear_flag(m_lyricLbl, LV_OBJ_FLAG_HIDDEN);
+  else
+    lv_obj_add_flag(m_lyricLbl, LV_OBJ_FLAG_HIDDEN);
 }
 
 void MediaApp::refreshMedia(const DataSnapshot &d) {
@@ -284,6 +333,7 @@ void MediaApp::refreshMedia(const DataSnapshot &d) {
                                 LV_PART_MAIN);
     lv_obj_set_style_text_color(m_nextIcon, lv_color_hex(iconColor),
                                 LV_PART_MAIN);
+    m_lyricColor = titleColor;
 
     // Progress bar styles: indicator uses album art tint; track adapts contrast
     lv_obj_set_style_bg_color(m_progBar, lv_color_hex(progIndicatorColor),

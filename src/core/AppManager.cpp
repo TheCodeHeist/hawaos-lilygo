@@ -67,6 +67,7 @@ lv_img_dsc_t s_aodArtDsc{};
 lv_obj_t *s_aodTitleLbl = nullptr;
 lv_obj_t *s_aodArtistLbl = nullptr;
 lv_obj_t *s_aodProgBar = nullptr;
+lv_obj_t *s_aodLyricLbl = nullptr; // the song's current line, under the artist
 uint32_t s_aodFromTop = 0x000000;
 uint32_t s_aodFromBot = 0x000000;
 uint32_t s_aodCurTop = 0x000000;
@@ -164,6 +165,7 @@ void clearViewPointers() {
   s_aodTitleLbl = nullptr;
   s_aodArtistLbl = nullptr;
   s_aodProgBar = nullptr;
+  s_aodLyricLbl = nullptr;
   s_aodTimerTagLbl = nullptr;
   s_aodTimerDigitsLbl = nullptr;
   s_aodTimerMsLbl = nullptr;
@@ -560,6 +562,7 @@ void refreshAodContent() {
     lv_obj_add_flag(s_aodTitleLbl, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(s_aodArtistLbl, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(s_aodProgBar, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(s_aodLyricLbl, LV_OBJ_FLAG_HIDDEN);
 
     // 3. Middle Section: Timer or Stopwatch display with HOURS and smaller MILLISECONDS
     char digitsBuf[16] = {0};
@@ -747,6 +750,24 @@ void refreshAodContent() {
     setLabelTextIfChanged(s_aodArtistLbl, d.mediaArtist[0] ? d.mediaArtist : "Unknown Artist");
     lv_obj_set_style_text_color(s_aodArtistLbl, lv_color_hex(artistColor), LV_PART_MAIN);
 
+    // With a lyric line, title and artist move up to give it three or four
+    // lines above the progress bar.
+    const bool lyric = DataStore::lyricShown(d, nowMs) && d.lyric[0] != '\0';
+    lv_obj_set_y(s_aodTitleLbl, lyric ? 44 : 62);
+    lv_obj_set_y(s_aodArtistLbl, lyric ? 68 : 92);
+    if (lyric) {
+      // Long lines get the smaller font so they fit whole.
+      lv_obj_set_style_text_font(s_aodLyricLbl,
+                                 strlen(d.lyric) > 56 ? Theme::fontCaption()
+                                                      : Theme::fontBody(),
+                                 LV_PART_MAIN);
+      setLabelTextIfChanged(s_aodLyricLbl, d.lyric);
+      lv_obj_set_style_text_color(s_aodLyricLbl, lv_color_hex(titleColor), LV_PART_MAIN);
+      lv_obj_clear_flag(s_aodLyricLbl, LV_OBJ_FLAG_HIDDEN);
+    } else {
+      lv_obj_add_flag(s_aodLyricLbl, LV_OBJ_FLAG_HIDDEN);
+    }
+
     lv_obj_set_style_bg_color(s_aodProgBar, lv_color_hex(aodProgColor), LV_PART_INDICATOR);
     lv_obj_set_style_bg_color(s_aodProgBar, lv_color_hex(aodTrackColor), LV_PART_MAIN);
     lv_obj_set_style_bg_opa(s_aodProgBar, aodTrackOpa, LV_PART_MAIN);
@@ -794,6 +815,7 @@ void refreshAodContent() {
     lv_obj_add_flag(s_aodTitleLbl, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(s_aodArtistLbl, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(s_aodProgBar, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(s_aodLyricLbl, LV_OBJ_FLAG_HIDDEN);
   }
 }
 
@@ -837,10 +859,11 @@ void buildAodScreen(lv_obj_t *root, bool keepBackdrop = false) {
   lv_obj_set_style_text_color(s_aodDateLbl, lv_color_hex(p.textDim),
                               LV_PART_MAIN);
 
-  // Top centre is free in every AOD layout.
+  // Top centre is free in every AOD layout (a little right of it clears a
+  // 12-hour clock's "PM").
   s_aodMicIcon = lv_label_create(root);
   lv_obj_set_style_text_font(s_aodMicIcon, Theme::iconFont20(), LV_PART_MAIN);
-  lv_obj_align(s_aodMicIcon, LV_ALIGN_TOP_MID, 0, 8);
+  lv_obj_align(s_aodMicIcon, LV_ALIGN_TOP_MID, 10, 8);
   lv_obj_add_flag(s_aodMicIcon, LV_OBJ_FLAG_HIDDEN);
 
   // Media playing AOD elements (96px art + scrolling title & artist + 3px
@@ -888,6 +911,15 @@ void buildAodScreen(lv_obj_t *root, bool keepBackdrop = false) {
   lv_obj_set_style_anim_speed(s_aodArtistLbl, 24, LV_PART_MAIN);
   lv_obj_set_width(s_aodArtistLbl, 170);
   lv_obj_set_pos(s_aodArtistLbl, 130, 92);
+
+  s_aodLyricLbl = lv_label_create(root);
+  lv_obj_set_style_text_font(s_aodLyricLbl, Theme::fontBody(), LV_PART_MAIN);
+  lv_obj_set_style_text_line_space(s_aodLyricLbl, -3, LV_PART_MAIN);
+  lv_label_set_long_mode(s_aodLyricLbl, LV_LABEL_LONG_DOT);
+  lv_obj_set_size(s_aodLyricLbl, 170, 64);
+  lv_obj_set_pos(s_aodLyricLbl, 130, 88);
+  lv_label_set_text(s_aodLyricLbl, "");
+  lv_obj_add_flag(s_aodLyricLbl, LV_OBJ_FLAG_HIDDEN);
 
   s_aodProgBar = lv_bar_create(root);
   lv_obj_set_size(s_aodProgBar, 280, 3);
@@ -1256,6 +1288,8 @@ void showAodNotificationAlert(const char *app, const char *title,
     lv_obj_add_flag(s_aodArtistLbl, LV_OBJ_FLAG_HIDDEN);
   if (s_aodProgBar != nullptr)
     lv_obj_add_flag(s_aodProgBar, LV_OBJ_FLAG_HIDDEN);
+  if (s_aodLyricLbl != nullptr)
+    lv_obj_add_flag(s_aodLyricLbl, LV_OBJ_FLAG_HIDDEN);
 
   // Show alert card
   if (s_aodAlertCard != nullptr) {

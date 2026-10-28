@@ -678,6 +678,14 @@ void handleJsonMessage(const char *payload, size_t len, Link link,
     return;
   }
 
+  // Synced lyrics: the line the song is at (DESIGN.md 9.6).
+  if (strcmp(type, "lyric") == 0) {
+    DataStore::updateLyric(doc["on"] | false, doc["line"] | "");
+    wantGlyphs(doc);
+    postDataUpdated();
+    return;
+  }
+
   if (strcmp(type, "weather") == 0) {
     WeatherSnapshot ws{};
     const char *cityStr = doc["city"] | "";

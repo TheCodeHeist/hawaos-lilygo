@@ -200,6 +200,7 @@ Always dark. Background: the **tinted gradient** from the companion (`bg_top` to
 - Art at x=10, y=30, rounded corners via LVGL radius. Right column starts at about x=154.
 - Controls: icons 24 px; center button is a **primary-filled circle** with `onPrimary` icon. Show only the state icon (`play` when paused, `pause` when playing).
 - Input: Select short = play/pause, Next short = next track, Next double = previous track, Select long = back.
+- **Synced lyrics.** While the song has synced lyrics, the line being sung (body semibold, the title's ink, up to four lines) takes the place of the times and the controls; the progress bar stays and the buttons work the same. Lines over 56 bytes use the caption font so they fit whole. Between lines (an intro, a solo) a dim `• • •` holds the place. The AOD media layout shows the line under the artist (body, or caption when long), moving title and artist up to make room.
 - Progress is **interpolated locally** (section 11); redraw the bar once per second.
 
 ### 9.7 Control Center (opened by chord, full-screen 2x2 tiles)
@@ -272,6 +273,8 @@ The transport is an open decision (see section 14). Design a `Transport` abstrac
 
 ### 11.3 Commands and config
 Device to companion: `{"type":"cmd","cmd":"play_pause|next|prev|seek|mic_toggle","pos_ms":0}`.
+
+**Lyrics** (companion to device): `{"type":"lyric","on":true,"line":"..."}`, with `gl`/`gl_len` for other scripts (11.9). `on` says the song has synced lyrics; `line` is the one being sung (`""` between lines). The companion looks the song up on LRCLIB (`/api/get` with title, artist, album and length, then `/api/search`, accepting a length within 3 s), keeps the answers for the session, follows the position from its 1 Hz media poll (moving it on while playing) and sends the line 200 ms early when it changes, repeating it every 5 s; the device drops lyrics after 12 s without. Off with **Synced lyrics** in the companion's Behavior settings, then nothing is looked up.
 
 `stats` (companion to device, 1 Hz) carries the computer's state besides the numbers: `"lock":"off|aod"` only while the session is locked (10), and `"mic":{"in_use":true,"muted":false}` when there is a default microphone (`in_use`: an app is recording from it). The device drops the microphone after 5 s without stats. Linux reads the lock from the screen saver interface on the session bus (`org.freedesktop.ScreenSaver`, `org.gnome.ScreenSaver`), then logind's `LockedHint`; the microphone from `pactl` (PipeWire or PulseAudio), counting only recording streams on real inputs, not monitors. Windows: the input desktop (the lock screen's can't be opened), and Core Audio's default communications capture device (its endpoint mute; an active capture session means in use).
 Companion to device (persisted in `Preferences`, acknowledged with `config_ack`):

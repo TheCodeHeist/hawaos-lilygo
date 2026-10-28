@@ -373,6 +373,22 @@ impl CompanionWindowView {
                     .child(divider(pal))
                     .child(setting_row(
                         pal,
+                        "Synced lyrics",
+                        Some("Shows the line being sung on the Media screen and the always-on display. Looks the song up on lrclib.net (its title, artist, album and length)."),
+                        Switch::new("lyrics-switch")
+                            .checked(cfg.lyrics)
+                            .on_change(cx.listener(|this, checked: &bool, _, cx| {
+                                // The companion sends the lines; nothing to push.
+                                if let Ok(mut g) = this.state.lock() {
+                                    g.config.lyrics = *checked;
+                                    save_config(&g.config);
+                                }
+                                cx.notify();
+                            })),
+                    ))
+                    .child(divider(pal))
+                    .child(setting_row(
+                        pal,
                         "Notification popups",
                         Some("Show incoming notifications on top of the current screen."),
                         Switch::new("notify-popup-switch")

@@ -22,6 +22,7 @@ public:
 private:
   void refreshMedia(const DataSnapshot &d);
   void refreshProgress(const DataSnapshot &d);
+  void refreshLyric(const DataSnapshot &d);
 
   lv_obj_t *m_root = nullptr;
   lv_obj_t *m_artCard = nullptr;
@@ -39,6 +40,10 @@ private:
   lv_obj_t *m_playBtnCircle = nullptr;
   lv_obj_t *m_playIconLbl = nullptr;
   lv_obj_t *m_nextIcon = nullptr;
+  // Takes the controls' place while the song has synced lyrics; the buttons
+  // work the same.
+  lv_obj_t *m_lyricLbl = nullptr;
+  uint32_t m_lyricColor = 0xFFFFFF;
 
   uint32_t m_lastBgTop = 0xFFFFFFFF;
   uint32_t m_lastBgBot = 0xFFFFFFFF;

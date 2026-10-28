@@ -489,6 +489,21 @@ uint32_t getTimerRemainingMs(uint32_t nowMs) {
   return rem;
 }
 
+void updateLyric(bool on, const char *line) {
+  if (s_mutex != nullptr &&
+      xSemaphoreTake(s_mutex, pdMS_TO_TICKS(20)) == pdTRUE) {
+    s_data.lyricOn = on;
+    copyText(s_data.lyric, on && line != nullptr ? line : "");
+    s_data.lyricRxMs = millis();
+    xSemaphoreGive(s_mutex);
+  }
+}
+
+bool lyricShown(const DataSnapshot &d, uint32_t nowMs) {
+  return d.lyricOn && d.mediaTitle[0] != '\0' && d.lyricRxMs != 0 &&
+         static_cast<int32_t>(nowMs - d.lyricRxMs) < 12000;
+}
+
 void updatePc(PcLock lock, bool micKnown, bool micInUse, bool micMuted) {
   if (s_mutex != nullptr &&
       xSemaphoreTake(s_mutex, pdMS_TO_TICKS(20)) == pdTRUE) {
@@ -505,7 +520,9 @@ PcState pcState(uint32_t nowMs) {
   if (s_mutex != nullptr &&
       xSemaphoreTake(s_mutex, pdMS_TO_TICKS(10)) == pdTRUE) {
     pc = s_data.pc;
-    if (s_data.lastStatsMs == 0 || nowMs - s_data.lastStatsMs > 5000) {
+    // Signed: stats may land after the caller read the clock.
+    if (s_data.lastStatsMs == 0 ||
+        static_cast<int32_t>(nowMs - s_data.lastStatsMs) > 5000) {
       pc.micKnown = pc.micInUse = pc.micMuted = false;
     }
     xSemaphoreGive(s_mutex);
