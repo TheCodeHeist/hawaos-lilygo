@@ -81,7 +81,7 @@ jobs:
 
       - name: AppImage
         run: |
-          packaging/linux/build-appimage.sh "$VERSION" dist/
+          bash packaging/linux/build-appimage.sh "$VERSION" dist/
           (cd dist && sha256sum *.deb *.rpm *.AppImage > SHA256SUMS-linux)
 
       - uses: actions/upload-artifact@v4

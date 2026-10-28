@@ -112,13 +112,15 @@ irm https://raw.githubusercontent.com/TheCodeHeist/hawaos-lilygo/main/install.ps
 
 It downloads the installer from the latest release, checks it against the release's `SHA256SUMS-windows`, installs it silently and starts the companion. Run it again to update (your settings and startup choice are kept); for a specific version, run `$env:HAWAOS_VERSION = "0.9.0"` first. Or download `hawaos-companion-<version>-windows-x64-setup.exe` from the [latest release](https://github.com/TheCodeHeist/hawaos-lilygo/releases/latest) and run it; it isn't signed yet, so Windows SmartScreen asks first: choose **More info**, then **Run anyway**. Either way it installs under your user and starts the companion when you sign in. On first launch, allow the companion through Windows Firewall on private networks (the device talks to it over Wi-Fi). Everything works as on Linux except mirroring desktop notifications to the device, which Windows only allows for signed apps.
 
-**Linux:** on any distribution with [Flatpak](https://flatpak.org/setup/), one command installs the latest companion for your user (no root):
+**Linux:** one command installs the latest companion:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/TheCodeHeist/hawaos-lilygo/main/install.sh | bash
 ```
 
-It downloads the `.flatpak` from the latest release, checks it against the release's `SHA256SUMS`, adds Flathub if needed (the app's runtime comes from there), and installs it. Run it again to update; add `-s -- 0.8.0` after `bash` for a specific version. Then open **HawaOS Companion** from your app menu. It needs a StatusNotifier tray (KDE has one built in; GNOME needs the AppIndicator extension); for setup over USB the script tells you if your user needs the serial port's group (`dialout` on most distributions).
+On Debian and Ubuntu it installs the release's `.deb`, on Fedora and openSUSE its `.rpm` (both through your package manager, so it asks for your password, and both let you use the board's USB port without joining any group). On other distributions it installs the Flatpak for your user, no root needed, adding Flathub if the app's runtime isn't there yet. Every download is checked against the release's checksums. Whichever kind you already have is the one it updates, so just run it again to update; add `-s -- --flatpak` (or `--native`) after `bash` to choose, or `-s -- 1.0.0` for a specific version. Then open **HawaOS Companion** from your app menu. It needs a StatusNotifier tray (KDE has one built in; GNOME needs the AppIndicator extension). With the Flatpak, the script tells you if setup over USB needs your user in the serial port's group (`dialout` on most distributions).
+
+There's also an **AppImage** for any distribution (glibc 2.35 or newer): download it, make it executable and run it. [Gear Lever](https://flathub.org/apps/it.mijorus.gearlever) or AppImageUpdate can keep it up to date.
 
 ### Download
 
@@ -126,7 +128,10 @@ Every [release](https://github.com/TheCodeHeist/hawaos-lilygo/releases) has read
 
 | File | What it's for |
 |---|---|
-| `hawaos-companion-<version>-x86_64.flatpak` | The Linux companion, if you'd rather install by hand: `flatpak install --user <file>` |
+| `hawaos-companion_<version>-1_amd64.deb` | The Linux companion for Debian and Ubuntu (22.04 or newer): `sudo apt install ./<file>` |
+| `hawaos-companion-<version>-1.x86_64.rpm` | The Linux companion for Fedora and openSUSE Tumbleweed: `sudo dnf install <file>` |
+| `hawaos-companion-<version>-x86_64.AppImage` | The Linux companion for any distribution: make it executable and run it |
+| `hawaos-companion-<version>-x86_64.flatpak` | The Linux companion as a Flatpak, if you'd rather install by hand: `flatpak install --user <file>` |
 | `hawaos-companion-<version>-windows-x64-setup.exe` | The Windows companion's installer |
 | `hawaos-<version>-full.bin` | First install on a new board, at offset `0x0`. **Erases saved settings.** |
 | `hawaos-<version>-update.bin` | Updating a device that already runs HawaOS: companion **Device > Firmware > Install update...** |
@@ -368,6 +373,7 @@ The full protocol, key derivation and replay rules are in [`DESIGN.md`](DESIGN.m
 - [x] Image wallpapers pushed from the companion, over Wi-Fi, Bluetooth or USB
 - [x] Titles and notifications in any script (CJK, Arabic, Hebrew, Bengali, emoji), drawn by the companion
 - [x] Windows companion: media, album art, tray, Bluetooth and USB setup (0.9.0)
+- [x] Linux `.deb`, `.rpm` and AppImage, with `install.sh` choosing for your distribution
 - [ ] Notification mirroring on Windows (needs a signed app)
 
 ## License
