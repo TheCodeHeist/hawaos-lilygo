@@ -7,27 +7,66 @@
 
 use std::process::Command;
 use std::sync::OnceLock;
+use std::time::Duration;
 
 use zbus::blocking::Connection;
 
 use crate::platform::Mic;
 
+/// zbus waits for an answer forever by default, and some names never answer
+/// (on KDE, org.gnome.ScreenSaver can be claimed without replying): a stuck
+/// call would stall the poll, and the microphone with it.
+const CALL_TIMEOUT: Duration = Duration::from_secs(2);
+
 fn session_bus() -> Option<&'static Connection> {
     static BUS: OnceLock<Option<Connection>> = OnceLock::new();
-    BUS.get_or_init(|| Connection::session().ok()).as_ref()
+    BUS.get_or_init(|| {
+        zbus::blocking::connection::Builder::session()
+            .ok()?
+            .method_timeout(CALL_TIMEOUT)
+            .build()
+            .ok()
+    })
+    .as_ref()
 }
 
 fn system_bus() -> Option<&'static Connection> {
     static BUS: OnceLock<Option<Connection>> = OnceLock::new();
-    BUS.get_or_init(|| Connection::system().ok()).as_ref()
+    BUS.get_or_init(|| {
+        zbus::blocking::connection::Builder::system()
+            .ok()?
+            .method_timeout(CALL_TIMEOUT)
+            .build()
+            .ok()
+    })
+    .as_ref()
 }
 
-fn screen_saver_active(bus: &Connection, dest: &str, path: &str, iface: &str) -> Option<bool> {
-    let reply = bus.call_method(Some(dest), path, Some(iface), "GetActive", &()).ok()?;
+/// Only asks a name something holds: calling an absent one would have the
+/// bus try to start it.
+fn screen_saver_active(bus: &Connection, dest: &str, path: &str) -> Option<bool> {
+    let owned = bus
+        .call_method(
+            Some("org.freedesktop.DBus"),
+            "/org/freedesktop/DBus",
+            Some("org.freedesktop.DBus"),
+            "NameHasOwner",
+            &(dest,),
+        )
+        .ok()?
+        .body()
+        .deserialize::<bool>()
+        .ok()?;
+    if !owned {
+        return None;
+    }
+    let reply = bus.call_method(Some(dest), path, Some(dest), "GetActive", &()).ok()?;
     reply.body().deserialize::<bool>().ok()
 }
 
-/// None when no desktop interface answers.
+/// None when no desktop interface answers. The first screen saver that
+/// answers decides (KDE and most desktops, then GNOME); logind's hint is
+/// asked only when neither does, or when the screen saver says unlocked.
 pub fn session_locked() -> Option<bool> {
     let mut answered = None;
     if let Some(bus) = session_bus() {
@@ -35,9 +74,12 @@ pub fn session_locked() -> Option<bool> {
             ("org.freedesktop.ScreenSaver", "/org/freedesktop/ScreenSaver"),
             ("org.gnome.ScreenSaver", "/org/gnome/ScreenSaver"),
         ] {
-            match screen_saver_active(bus, dest, path, dest) {
+            match screen_saver_active(bus, dest, path) {
                 Some(true) => return Some(true),
-                Some(false) => answered = Some(false),
+                Some(false) => {
+                    answered = Some(false);
+                    break;
+                }
                 None => {}
             }
         }
