@@ -29,6 +29,7 @@ impl CompanionWindowView {
             })
             .unwrap_or_default();
         let busy = ota.as_ref().is_some_and(OtaProgress::busy);
+        let release = crate::ota::release_for(fw.as_deref());
 
         let status: Option<AnyElement> = ota.as_ref().map(|o| match o.state.as_str() {
             "failed" => h_flex()
@@ -49,6 +50,7 @@ impl CompanionWindowView {
                     h_flex()
                         .justify_between()
                         .child(div().text_sm().text_color(pal.text).child(match st {
+                            "fetching" => "Downloading from GitHub",
                             "verifying" => "Checking the update",
                             "starting" => "Waiting for the device",
                             _ => "Downloading to the device",
@@ -64,36 +66,52 @@ impl CompanionWindowView {
                 Some(v) => pill(format!("v{v} on device"), pal.accent, pal.primary.opacity(0.16)),
                 None => pill("Unknown", pal.text_dim, pal.well),
             }))
-            .child(div().text_xs().text_color(pal.text_dim).child(
-                "Install a firmware.bin built with PlatformIO. The device downloads it over WiFi and checks it before switching.",
-            ))
+            .child(div().text_xs().text_color(pal.text_dim).child(match release {
+                Some(v) => format!(
+                    "Version {v} matches this companion. It's downloaded from the HawaOS release on GitHub and checked against the release's checksums; the device then fetches it over WiFi and checks it again before switching."
+                ),
+                None => "The device runs the firmware that matches this companion. You can also install a firmware.bin built with PlatformIO; the device downloads it over WiFi and checks it before switching.".into(),
+            }))
             .children(status)
             .child(
-                h_flex().justify_end().child(
-                    Button::new("install-firmware")
-                        .secondary()
-                        .icon(IconName::Upload)
-                        .label("Install update...")
-                        .disabled(busy)
-                        .on_click(cx.listener(|this, _, _, cx| {
-                            let picked = cx.prompt_for_paths(PathPromptOptions {
-                                files: true,
-                                directories: false,
-                                multiple: false,
-                                prompt: Some("Install".into()),
-                            });
-                            let state = this.state.clone();
-                            cx.spawn(async move |_, _| {
-                                if let Ok(Ok(Some(paths))) = picked.await {
-                                    if let (Some(path), Ok(mut g)) = (paths.into_iter().next(), state.lock()) {
-                                        g.ota = Some(OtaProgress::new("starting", 0, None));
-                                        g.outbound_queue.push_back(OutboundAction::StartOta { path });
+                h_flex()
+                    .justify_end()
+                    .gap_2()
+                    .child(
+                        Button::new("install-firmware")
+                            .secondary()
+                            .icon(IconName::Upload)
+                            .label(if release.is_some() { "From file..." } else { "Install update..." })
+                            .disabled(busy)
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                let picked = cx.prompt_for_paths(PathPromptOptions {
+                                    files: true,
+                                    directories: false,
+                                    multiple: false,
+                                    prompt: Some("Install".into()),
+                                });
+                                let state = this.state.clone();
+                                cx.spawn(async move |_, _| {
+                                    if let Ok(Ok(Some(paths))) = picked.await {
+                                        if let (Some(path), Ok(mut g)) = (paths.into_iter().next(), state.lock()) {
+                                            g.ota = Some(OtaProgress::new("starting", 0, None));
+                                            g.outbound_queue.push_back(OutboundAction::StartOta { path });
+                                        }
                                     }
-                                }
-                            })
-                            .detach();
-                        })),
-                ),
+                                })
+                                .detach();
+                            })),
+                    )
+                    .children(release.map(|v| {
+                        Button::new("install-release")
+                            .primary()
+                            .icon(IconName::HardDriveDownload)
+                            .label(format!("Update to {v}"))
+                            .disabled(busy)
+                            .on_click(cx.listener(move |this, _, _, _| {
+                                crate::ota::install_release(this.state.clone(), v);
+                            }))
+                    })),
             )
     }
 }

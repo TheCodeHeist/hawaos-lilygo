@@ -256,7 +256,7 @@ pub struct SharedDaemonState {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct OtaProgress {
-    /// "starting" | "downloading" | "verifying" | "done" | "failed"
+    /// "fetching" (from GitHub) | "starting" | "downloading" | "verifying" | "done" | "failed"
     pub state: String,
     pub pct: u8,
     pub error: Option<String>,
@@ -270,7 +270,7 @@ impl OtaProgress {
     }
 
     pub fn busy(&self) -> bool {
-        matches!(self.state.as_str(), "starting" | "downloading" | "verifying")
+        matches!(self.state.as_str(), "fetching" | "starting" | "downloading" | "verifying")
     }
 }
 

@@ -136,7 +136,7 @@ Every [release](https://github.com/TheCodeHeist/hawaos-lilygo/releases) has read
 | `hawaos-companion-<version>-x86_64.flatpak` | The Linux companion as a Flatpak, if you'd rather install by hand: `flatpak install --user <file>` |
 | `hawaos-companion-<version>-windows-x64-setup.exe` | The Windows companion's installer |
 | `hawaos-<version>-full.bin` | First install on a new board, at offset `0x0`. **Erases saved settings.** |
-| `hawaos-<version>-update.bin` | Updating a device that already runs HawaOS: companion **Device > Firmware > Install update...** |
+| `hawaos-<version>-update.bin` | Updating a device that already runs HawaOS: the companion does it for you (**Device > Firmware > Update to &lt;version&gt;**), or pick the file with **Install update...** |
 
 Flash the full image from a browser with [ESP Web Flasher](https://espressif.github.io/esptool-js/) (Chrome or Edge, offset `0x0`), or with esptool:
 
@@ -225,7 +225,7 @@ Switching back to Wi-Fi rejoins the saved network. Linux needs BlueZ and a Bluet
   <img src="docs/media/companion-firmware.png" width="640" alt="Firmware card in the companion downloading an update to the device">
 </p>
 
-After the first USB flash, updates can go over Wi-Fi. Build with `pio run`, then in the companion open **Device > Firmware > Install update...** and pick `.pio/build/tdisplay-s3/firmware.bin`. A new firmware runs on trial: if it crashes, or hasn't reached the companion within 3 minutes, the device goes back to the one it had and the companion tells you.
+After the first USB flash, updates can go over Wi-Fi. When the device runs older firmware than the companion, **Device > Firmware > Update to &lt;version&gt;** downloads the matching firmware from the companion's GitHub release, checks it against the release's `SHA256SUMS` and installs it. For your own build, run `pio run`, then in the companion open **Device > Firmware > Install update...** (**From file...** while a release update is offered) and pick `.pio/build/tdisplay-s3/firmware.bin`. A new firmware runs on trial: if it crashes, or hasn't reached the companion within 3 minutes, the device goes back to the one it had and the companion tells you.
 
 The device downloads the image from the companion into its spare app slot, with progress shown on both screens. It only switches to the new firmware if the whole file arrived and its SHA-256 matches; any failure leaves the running firmware untouched. Over Wi-Fi, the request has to be signed with a secret the companion gave the device during **Add device**, so other machines on your network can't push firmware to it (all other traffic is encrypted with keys from the same secret). Details are in [`DESIGN.md`](DESIGN.md) §11.5.
 
